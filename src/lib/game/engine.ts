@@ -4,6 +4,7 @@ import * as THREE from 'three'
 
 export class Input {
   keys = new Set<string>()
+  held = new Set<string>() // held buttons (RMB = shield block, touch Block)
   mouseDX = 0
   mouseDY = 0
   pointerLocked = false
@@ -37,6 +38,7 @@ export class Input {
 
   private onBlur = () => {
     this.keys.clear()
+    this.held.clear()
     this.dragging = false
   }
 
@@ -62,6 +64,7 @@ export class Input {
       }
     } else if (e.button === 2) {
       this.presses.add('RMB')
+      this.held.add('RMB')
     } else if (e.button === 1) {
       this.presses.add('KeyQ')
       e.preventDefault()
@@ -69,6 +72,7 @@ export class Input {
   }
 
   private onMouseUp = (e: MouseEvent) => {
+    if (e.button === 2) this.held.delete('RMB')
     if (e.button === 0 && this.dragging) {
       this.dragging = false
       // click (not drag) => attack when pointer-lock isn't available
@@ -118,6 +122,15 @@ export class Input {
 
   press(name: string) {
     this.presses.add(name)
+  }
+
+  setHeld(name: string, down: boolean) {
+    if (down) this.held.add(name)
+    else this.held.delete(name)
+  }
+
+  isHeld(name: string): boolean {
+    return this.held.has(name)
   }
 
   consume(name: string): boolean {

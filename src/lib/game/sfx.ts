@@ -131,4 +131,21 @@ export class Sfx {
     this.noise(0.3, 0.5, 500, 120)
     this.tone(90, 0.28, 'square', 0.28, 40)
   }
+  block() {
+    this.tone(1250, 0.09, 'square', 0.16, 680)
+    this.noise(0.07, 0.28, 3800, 900)
+  }
+  guardBreak() {
+    this.tone(320, 0.28, 'sawtooth', 0.26, 80)
+    this.noise(0.22, 0.34, 1400, 180)
+  }
+  hiss() {
+    // creeper fuse — rising filtered noise
+    this.noise(0.95, 0.34, 700, 6000)
+  }
+  boom() {
+    this.noise(0.5, 0.72, 900, 80)
+    this.noise(0.16, 0.42, 3200, 420)
+    this.tone(72, 0.5, 'sine', 0.52, 28)
+  }
 }

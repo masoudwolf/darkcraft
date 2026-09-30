@@ -54,11 +54,20 @@ function Hud({ hud }: { hud: HudState }) {
             style={{ width: `${hpPct}%` }}
           />
         </div>
-        <div className="mt-1.5 h-[13px] w-[82%] border-2 border-black/90 bg-black/70 p-[2px] shadow-[3px_3px_0_rgba(0,0,0,0.45)]">
-          <div
-            className="h-full bg-gradient-to-b from-[#79d94f] to-[#2f7a1c] transition-[width] duration-150"
-            style={{ width: `${stPct}%` }}
-          />
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="h-[13px] w-[70%] border-2 border-black/90 bg-black/70 p-[2px] shadow-[3px_3px_0_rgba(0,0,0,0.45)]">
+            <div
+              className="h-full bg-gradient-to-b from-[#79d94f] to-[#2f7a1c] transition-[width] duration-150"
+              style={{ width: `${stPct}%` }}
+            />
+          </div>
+          {/* block indicator */}
+          <span
+            className={`text-lg leading-none transition-opacity ${hud.blocking ? 'opacity-100 drop-shadow-[0_0_8px_rgba(255,220,120,0.9)]' : 'opacity-25'}`}
+            aria-hidden
+          >
+            🛡️
+          </span>
         </div>
         <div className="mt-2 flex items-center gap-3 text-white">
           <div className="flex items-center gap-1 bg-black/55 px-1.5 py-0.5 border border-black/70">
@@ -111,7 +120,8 @@ function HintBar() {
     ['Shift', 'دویدن'],
     ['Space', 'غلتک'],
     ['کلیک چپ', 'حمله'],
-    ['کلیک راست', 'حمله سنگین'],
+    ['Shift+کلیک چپ', 'حمله سنگین'],
+    ['کلیک راست', 'دفاع (نگه‌دار)'],
     ['Q', 'قفل روی دشمن'],
     ['E', 'شربت'],
     ['F', 'تعامل'],
@@ -166,13 +176,13 @@ function MainMenu({ onStart, hasSave, onClear }: { onStart: () => void; hasSave:
         <span><b className="font-pixel text-[10px] text-emerald-300">WASD</b> حرکت</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">Space</b> غلتک</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">LMB</b> حمله</span>
-        <span><b className="font-pixel text-[10px] text-emerald-300">RMB</b> حمله سنگین</span>
-        <span><b className="font-pixel text-[10px] text-emerald-300">Shift</b> دویدن</span>
+        <span><b className="font-pixel text-[10px] text-emerald-300">Shift+LMB</b> سنگین</span>
+        <span><b className="font-pixel text-[10px] text-emerald-300">RMB</b> دفاع (نگه‌دار)</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">Q</b> قفل هدف</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">E</b> شربت</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">F</b> تعامل</span>
       </div>
-      <p className="mt-6 text-[11px] text-white/35">نسخه ۰.۱ — به‌زودی: باس‌های بیشتر، جادو و مناطق جدید</p>
+      <p className="mt-6 text-[11px] text-white/35">نسخه ۰.۲ — به‌زودی: باس دوم، جادو و مناطق جدید</p>
     </div>
   )
 }
@@ -279,16 +289,19 @@ function TouchControls({
   onMove,
   onLook,
   onPress,
+  onHold,
 }: {
   onMove: (x: number, y: number) => void
   onLook: (dx: number, dy: number) => void
   onPress: (name: string) => void
+  onHold: (name: string, down: boolean) => void
 }) {
   const stickRef = useRef<HTMLDivElement>(null)
   const knobRef = useRef<HTMLDivElement>(null)
   const stickId = useRef<number | null>(null)
   const lookId = useRef<number | null>(null)
   const lookLast = useRef<{ x: number; y: number } | null>(null)
+  const [blockDown, setBlockDown] = useState(false)
 
   const handleStick = useCallback(
     (e: React.TouchEvent) => {
@@ -377,25 +390,57 @@ function TouchControls({
         {(
           [
             ['E', '🍎', 'شربت'],
-            ['RMB', '💥', 'سنگین'],
+            ['Block', '🛡️', 'دفاع'],
             ['LMB', '⚔️', 'حمله'],
+            ['HEAVY', '💥', 'سنگین'],
             ['KeyQ', '🎯', 'قفل'],
-            ['KeyF', '🔥', 'تعامل'],
             ['Space', '💨', 'غلتک'],
+            ['KeyF', '🔥', 'تعامل'],
           ] as const
-        ).map(([code, icon, label]) => (
-          <button
-            key={code}
-            className="h-14 w-14 rounded-full border-2 border-white/30 bg-black/50 text-xl active:scale-95 active:bg-white/25"
-            onTouchStart={(e) => {
-              e.stopPropagation()
-              onPress(code)
-            }}
-            aria-label={label}
-          >
-            {icon}
-          </button>
-        ))}
+        ).map(([code, icon, label]) => {
+          if (code === 'Block') {
+            return (
+              <button
+                key={code}
+                className={`h-14 w-14 rounded-full border-2 text-xl active:scale-95 ${
+                  blockDown
+                    ? 'border-emerald-300 bg-emerald-700/70 scale-95'
+                    : 'border-white/30 bg-black/50'
+                }`}
+                onTouchStart={(e) => {
+                  e.stopPropagation()
+                  setBlockDown(true)
+                  onHold('Block', true)
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation()
+                  setBlockDown(false)
+                  onHold('Block', false)
+                }}
+                onTouchCancel={() => {
+                  setBlockDown(false)
+                  onHold('Block', false)
+                }}
+                aria-label={label}
+              >
+                {icon}
+              </button>
+            )
+          }
+          return (
+            <button
+              key={code}
+              className="h-14 w-14 rounded-full border-2 border-white/30 bg-black/50 text-xl active:scale-95 active:bg-white/25"
+              onTouchStart={(e) => {
+                e.stopPropagation()
+                onPress(code)
+              }}
+              aria-label={label}
+            >
+              {icon}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -453,6 +498,7 @@ export default function GameClient() {
           onMove={(x, y) => gameRef.current?.setTouchMove(x, y)}
           onLook={(dx, dy) => gameRef.current?.touchLook(dx, dy)}
           onPress={(n) => gameRef.current?.touchPress(n)}
+          onHold={(n, d) => gameRef.current?.touchHold(n, d)}
         />
       )}
       {phase === 'menu' && <MainMenu onStart={start} hasSave={hasSave} onClear={clearSave} />}

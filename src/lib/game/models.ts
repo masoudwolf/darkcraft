@@ -4,9 +4,13 @@ import { characterMaterials, type CharKind } from './textures'
 /* Minecraft-style blocky humanoid built from boxes.
    Proportions follow the classic 8px/12px model (1px = 1/16 unit). */
 
+/** height of the somersault pivot above the feet (≈ body center) */
+const SPIN_PIVOT = 0.9
+
 export interface Humanoid {
   group: THREE.Group // yaw applied here
-  root: THREE.Group // anim offsets (roll spin, lean)
+  root: THREE.Group // anim offsets (hop, lean)
+  spin: THREE.Group // roll pivot at body center (somersaults)
   head: THREE.Mesh
   body: THREE.Mesh
   armL: THREE.Group
@@ -38,16 +42,23 @@ export function createSword(scale = 1, rusty = false): THREE.Group {
 
 export function createShield(): THREE.Group {
   const g = new THREE.Group()
-  const wood = new THREE.MeshLambertMaterial({ color: 0x7a5a34 })
-  const iron = new THREE.MeshLambertMaterial({ color: 0x8a8f96 })
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.52, 0.42), wood)
-  const rim = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.56, 0.46), iron)
-  rim.position.z = -0.02
-  body.add(rim.parent === body ? rim : rim)
-  g.add(rim)
-  g.add(body)
-  body.position.z = 0.02
+  const wood = new THREE.MeshLambertMaterial({ color: 0x8a6437 })
+  const woodDark = new THREE.MeshLambertMaterial({ color: 0x6b4d2a })
+  const iron = new THREE.MeshLambertMaterial({ color: 0x9aa0a8 })
+  // iron back plate — slightly larger than the face so it reads as a rim
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.58, 0.48), iron)
+  rim.position.x = -0.026
+  // wooden face (large faces point ±X)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.52, 0.42), wood)
+  body.position.x = 0.012
   body.castShadow = true
+  // plank seam
+  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, 0.42), woodDark)
+  seam.position.x = 0.012
+  // iron boss emblem on the outer face
+  const boss = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.2, 0.18), iron)
+  boss.position.x = 0.056
+  g.add(rim, body, seam, boss)
   return g
 }
 
@@ -61,6 +72,16 @@ export function createHumanoid(
   const root = new THREE.Group()
   group.add(root)
 
+  // spin pivot — lets the roll animation somersault around the body's
+  // center instead of cartwheeling around the feet (which looked like
+  // a carousel and clipped through the ground)
+  const spin = new THREE.Group()
+  spin.position.y = SPIN_PIVOT
+  const spinInner = new THREE.Group()
+  spinInner.position.y = -SPIN_PIVOT
+  spin.add(spinInner)
+  root.add(spin)
+
   const mkMesh = (w: number, h: number, d: number, mat: THREE.Material | THREE.Material[], x = 0, y = 0, z = 0) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
     m.position.set(x, y, z)
@@ -68,45 +89,69 @@ export function createHumanoid(
     return m
   }
 
-  // legs pivot at hip (y=0.75)
+  const isCreeper = kind === 'creeper'
+
+  // legs pivot at hip
   const legL = new THREE.Group()
-  legL.position.set(0.125, 0.75, 0)
-  legL.add(mkMesh(0.25, 0.75, 0.25, mats.leg, 0, -0.375, 0))
   const legR = new THREE.Group()
-  legR.position.set(-0.125, 0.75, 0)
-  legR.add(mkMesh(0.25, 0.75, 0.25, mats.leg, 0, -0.375, 0))
+  // body
+  let body: THREE.Mesh
+  // head
+  let head: THREE.Mesh
 
-  // body center at y=1.125
-  const body = mkMesh(0.5, 0.75, 0.25, mats.body, 0, 1.125, 0)
+  if (isCreeper) {
+    // four stubby legs (front pair animated, back pair static)
+    legL.position.set(0.13, 0.42, 0.12)
+    legL.add(mkMesh(0.22, 0.42, 0.22, mats.leg, 0, -0.21, 0))
+    legR.position.set(-0.13, 0.42, 0.12)
+    legR.add(mkMesh(0.22, 0.42, 0.22, mats.leg, 0, -0.21, 0))
+    spinInner.add(
+      mkMesh(0.22, 0.42, 0.22, mats.leg, 0.13, 0.21, -0.12),
+      mkMesh(0.22, 0.42, 0.22, mats.leg, -0.13, 0.21, -0.12)
+    )
+    body = mkMesh(0.46, 0.92, 0.32, mats.body, 0, 0.86, 0)
+    head = mkMesh(0.56, 0.56, 0.56, mats.head, 0, 1.6, 0)
+  } else {
+    legL.position.set(0.125, 0.75, 0)
+    legL.add(mkMesh(0.25, 0.75, 0.25, mats.leg, 0, -0.375, 0))
+    legR.position.set(-0.125, 0.75, 0)
+    legR.add(mkMesh(0.25, 0.75, 0.25, mats.leg, 0, -0.375, 0))
+    body = mkMesh(0.5, 0.75, 0.25, mats.body, 0, 1.125, 0)
+    head = mkMesh(0.5, 0.5, 0.5, mats.head, 0, 1.75, 0)
+  }
 
-  // arms pivot at shoulder (y=1.375)
+  // arms pivot at shoulder (creeper has none — kept as invisible pivots
+  // so shared animation code keeps working)
   const armL = new THREE.Group()
   armL.position.set(0.375, 1.375, 0)
-  armL.add(mkMesh(0.25, 0.75, 0.25, mats.arm, 0, -0.3125, 0))
   const armR = new THREE.Group()
   armR.position.set(-0.375, 1.375, 0)
-  armR.add(mkMesh(0.25, 0.75, 0.25, mats.arm, 0, -0.3125, 0))
+  if (!isCreeper) {
+    armL.add(mkMesh(0.25, 0.75, 0.25, mats.arm, 0, -0.3125, 0))
+    armR.add(mkMesh(0.25, 0.75, 0.25, mats.arm, 0, -0.3125, 0))
+  }
 
-  // head center at y=1.75
-  const head = mkMesh(0.5, 0.5, 0.5, mats.head, 0, 1.75, 0)
-
-  root.add(legL, legR, body, armL, armR, head)
+  spinInner.add(legL, legR, body, armL, armR, head)
 
   let sword: THREE.Group | null = null
   if (opts.sword) {
     sword = createSword(opts.swordScale ?? 1, kind === 'boss')
-    sword.position.set(0, -0.72, 0.05)
-    sword.rotation.x = -Math.PI / 2.4
+    sword.position.set(0, -0.72, 0.06)
+    // blade points forward (+Z), tip slightly down — 105° from the forearm.
+    // (was -75° which made the blade point behind the character)
+    sword.rotation.x = Math.PI / 2 + Math.PI / 12
     armR.add(sword)
   }
   if (opts.shield) {
     const sh = createShield()
-    sh.position.set(0, -0.45, 0.12)
+    // strapped to the OUTER side of the left forearm, angled toward the front
+    sh.position.set(0.175, -0.42, 0.02)
+    sh.rotation.y = -0.45
     armL.add(sh)
   }
 
   group.scale.setScalar(scale)
-  return { group, root, head, body, armL, armR, legL, legR, materials: mats.all, sword }
+  return { group, root, spin, head, body, armL, armR, legL, legR, materials: mats.all, sword }
 }
 
 /* ================= ANIMATIONS ================= */
@@ -116,6 +161,7 @@ export const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 export function resetPose(h: Humanoid) {
   h.root.rotation.set(0, 0, 0)
   h.root.position.set(0, 0, 0)
+  h.spin.rotation.set(0, 0, 0)
   h.armL.rotation.set(0, 0, 0.06)
   h.armR.rotation.set(0, 0, -0.06)
   h.legL.rotation.set(0, 0, 0)
@@ -187,12 +233,31 @@ export function animAttack(h: Humanoid, p: number, variant: 'light0' | 'light1' 
   }
 }
 
+/** Forward somersault: spins around the body's center (not the feet),
+    tucks the limbs, and follows a small hop arc so the body never
+    dips below the ground. */
 export function animRoll(h: Humanoid, p: number) {
   resetPose(h)
-  h.root.rotation.x = p * Math.PI * 2
-  h.root.position.y = Math.sin(p * Math.PI) * 0.16
-  h.armL.rotation.x = h.armR.rotation.x = -1.4
-  h.legL.rotation.x = h.legR.rotation.x = 1.1
+  const q = p * p * (3 - 2 * p) // smoothstep — accelerates into the flip
+  const tuck = Math.sin(p * Math.PI)
+  h.spin.rotation.x = q * Math.PI * 2
+  h.root.position.y = tuck * 0.42
+  h.armL.rotation.x = h.armR.rotation.x = -1.7 * tuck
+  h.legL.rotation.x = h.legR.rotation.x = -1.9 * tuck
+  h.head.rotation.x = -1.1 * tuck
+}
+
+/** shield raised in front, subtle brace tremble */
+export function animBlock(h: Humanoid, t: number) {
+  resetPose(h)
+  const br = Math.sin(t * 9) * 0.02
+  h.armL.rotation.x = -1.62 + br
+  h.armL.rotation.y = -0.5
+  h.armL.rotation.z = 0.35
+  h.armR.rotation.x = -0.5
+  h.armR.rotation.z = -0.3
+  h.root.rotation.y = -0.16
+  h.head.rotation.x = 0.06
 }
 
 export function animDrink(h: Humanoid, p: number) {
@@ -246,6 +311,13 @@ export function setOpacity(h: Humanoid, opacity: number) {
 export function setFlash(h: Humanoid, amount: number) {
   for (const m of h.materials) {
     m.emissive.setRGB(amount, amount * 0.08, amount * 0.08)
+  }
+}
+
+/** white flash (creeper fuse) */
+export function setFlashWhite(h: Humanoid, amount: number) {
+  for (const m of h.materials) {
+    m.emissive.setRGB(amount, amount, amount)
   }
 }
 

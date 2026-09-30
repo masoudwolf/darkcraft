@@ -181,7 +181,7 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
 
 /* ================= CHARACTER TEXTURES ================= */
 
-export type CharKind = 'player' | 'zombie' | 'boss'
+export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper'
 
 interface CharTexs {
   skin: THREE.Texture
@@ -231,10 +231,32 @@ function getCharTexs(kind: CharKind): CharTexs {
       eye: '#c82828',
       mouth: [50, 56, 46] as [number, number, number],
     },
+    creeper: {
+      skin: [96, 176, 96] as [number, number, number],
+      skinVary: 30,
+      hairTop: [74, 148, 74] as [number, number, number],
+      body: [84, 162, 84] as [number, number, number],
+      arm: [96, 176, 96] as [number, number, number],
+      sleeve: false,
+      leg: [78, 152, 78] as [number, number, number],
+      eye: '#0d1f0d',
+      mouth: [12, 24, 12] as [number, number, number],
+    },
   }[kind]
 
   const faceTex = makeTex(8, 30, (c, r, s) => {
     fillNoise(c, r, s, cfg.skin, cfg.skinVary)
+    if (kind === 'creeper') {
+      // iconic creeper face on an 8x8 grid
+      const bl = '#0d1f0d'
+      px(c, 1, 2, bl, 2, 2) // left eye
+      px(c, 5, 2, bl, 2, 2) // right eye
+      px(c, 3, 4, bl, 2, 1) // mouth top
+      px(c, 2, 5, bl, 4, 2) // mouth wide
+      px(c, 2, 7, bl, 1, 1) // fang left
+      px(c, 5, 7, bl, 1, 1) // fang right
+      return
+    }
     // eyes (minecraft style)
     px(c, 1, 4, '#ffffff')
     px(c, 2, 4, cfg.eye)
@@ -249,11 +271,27 @@ function getCharTexs(kind: CharKind): CharTexs {
   })
 
   const texs: CharTexs = {
-    skin: makeTex(8, 31, (c, r, s) => fillNoise(c, r, s, cfg.skin, cfg.skinVary)),
+    skin: makeTex(8, 31, (c, r, s) => {
+      fillNoise(c, r, s, cfg.skin, cfg.skinVary)
+      if (kind === 'creeper') {
+        // camo patches
+        for (let i = 0; i < 9; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 2)
+        }
+        for (let i = 0; i < 6; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(150,214,140,0.7)', 2, 1)
+        }
+      }
+    }),
     face: faceTex,
     hairTop: makeTex(8, 32, (c, r, s) => fillNoise(c, r, s, cfg.hairTop, 12)),
     body: makeTex(8, 33, (c, r, s) => {
       fillNoise(c, r, s, cfg.body, 16)
+      if (kind === 'creeper') {
+        for (let i = 0; i < 8; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 2)
+        }
+      }
       if (kind === 'zombie') {
         for (let i = 0; i < 8; i++) {
           px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(20,30,20,0.6)', 2, 2)
@@ -278,7 +316,14 @@ function getCharTexs(kind: CharKind): CharTexs {
         fillNoise(c, r, s, cfg.arm, cfg.skinVary)
       }
     }),
-    leg: makeTex(8, 35, (c, r, s) => fillNoise(c, r, s, cfg.leg, 14)),
+    leg: makeTex(8, 35, (c, r, s) => {
+      fillNoise(c, r, s, cfg.leg, 14)
+      if (kind === 'creeper') {
+        for (let i = 0; i < 6; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 1)
+        }
+      }
+    }),
   }
   charTexs[kind] = texs
   return texs

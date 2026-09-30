@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import {
   createHumanoid, animIdle, animWalk, animZombieWalk, animAttack, animHit, animDead,
-  resetPose, setOpacity, setFlash, type Humanoid,
+  resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
 } from './models'
 import { BONFIRE, type World } from './world'
 import type { Game } from './game'
@@ -48,14 +48,14 @@ export class Enemy {
   private stunDur = 0.38
   world?: World
 
-  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss', spawn: THREE.Vector3, opts: EnemyOpts) {
+  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper', spawn: THREE.Vector3, opts: EnemyOpts) {
     this.opts = opts
     this.hp = opts.hp
     this.maxHp = opts.hp
     this.isBoss = !!opts.isBoss
     this.name = opts.name ?? 'Hollow'
     this.h = createHumanoid(kind, opts.scale, {
-      sword: true,
+      sword: kind !== 'creeper',
       swordScale: kind === 'boss' ? 1.9 : 1,
     })
     this.pos.copy(spawn)
@@ -66,6 +66,10 @@ export class Enemy {
 
   get alive() {
     return !this.dead
+  }
+
+  soulsValue() {
+    return this.opts.souls
   }
 
   reset() {
@@ -182,7 +186,7 @@ export class Enemy {
           this.state = 'windup'
           this.stateT = 0
           this.strikeDone = false
-          this.onWindupStart()
+          this.onWindupStart(game)
           break
         }
         this.yaw = angleToPlayer
@@ -207,6 +211,10 @@ export class Enemy {
         break
       }
       case 'windup': {
+        if (this.windupShouldCancel(dist)) {
+          this.state = 'chase'
+          break
+        }
         this.yaw = angleToPlayer
         this.stateT += dt
         const w = this.windupDur()
@@ -283,7 +291,12 @@ export class Enemy {
     return this.opts.windup
   }
 
-  protected onWindupStart() {}
+  protected onWindupStart(_game?: Game) {}
+
+  /** return true to abort the windup (e.g. creeper defusing) */
+  protected windupShouldCancel(_dist: number): boolean {
+    return false
+  }
 
   protected windupAnim(p: number) {
     resetPose(this.h)
@@ -303,7 +316,7 @@ export class Enemy {
     while (angDiff < -Math.PI) angDiff += Math.PI * 2
     if (dist < reach && Math.abs(angDiff) < 1.15) {
       const dmg = Math.round(this.opts.dmg * (0.9 + Math.random() * 0.2))
-      if (player.takeDamage(dmg, this.pos.x, this.pos.z)) game.onPlayerHit(dmg)
+      if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
     }
   }
 
@@ -370,7 +383,6 @@ export class BossEnemy extends Enemy {
   protected onWindupStart() {
     this.pick = Math.random() < 0.5 ? 'slam' : 'sweep'
   }
-
   protected windupAnim(p: number) {
     resetPose(this.h)
     if (this.pick === 'slam') {
@@ -404,7 +416,7 @@ export class BossEnemy extends Enemy {
       // AOE around boss front
       if (dist < 4.1) {
         const dmg = Math.round(this.opts.dmg * 1.2 * (0.9 + Math.random() * 0.2))
-        if (player.takeDamage(dmg, this.pos.x, this.pos.z)) game.onPlayerHit(dmg)
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
       }
       game.onBossSlam(this.pos)
     } else {
@@ -414,8 +426,72 @@ export class BossEnemy extends Enemy {
       while (angDiff < -Math.PI) angDiff += Math.PI * 2
       if (dist < reach && Math.abs(angDiff) < 2.2) {
         const dmg = Math.round(this.opts.dmg * 0.85 * (0.9 + Math.random() * 0.2))
-        if (player.takeDamage(dmg, this.pos.x, this.pos.z)) game.onPlayerHit(dmg)
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
       }
     }
+  }
+}
+
+/* ================= CREEPER ================= */
+
+export class CreeperEnemy extends Enemy {
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+    super(scene, 'creeper', spawn, {
+      hp: 48,
+      dmg: 36,
+      speed: 3.5,
+      aggro: 12,
+      atkRange: 2.1,
+      windup: 1.05,
+      recover: 0.4,
+      souls: 30,
+      scale: 0.92,
+      name: 'خزنده‌ی سی‌سوخته',
+    })
+  }
+
+  reset() {
+    super.reset()
+    this.h.group.scale.setScalar(this.opts.scale)
+  }
+
+  protected onWindupStart(game?: Game) {
+    game?.sfx.hiss()
+  }
+
+  protected windupShouldCancel(dist: number): boolean {
+    return dist > 4.3
+  }
+
+  protected windupAnim(p: number) {
+    resetPose(this.h)
+    // inflating + white fuse flash, trembling faster near detonation
+    const s = this.opts.scale * (1 + 0.3 * p * p + Math.sin(p * 34) * 0.05 * p)
+    this.h.group.scale.setScalar(s)
+    this.h.legL.rotation.x = 0.45 * p
+    this.h.legR.rotation.x = -0.45 * p
+    setFlashWhite(this.h, p * 0.5 + Math.max(0, Math.sin(p * 26)) * 0.3 * p)
+  }
+
+  protected strikeAnim(p: number) {
+    resetPose(this.h)
+    this.h.group.scale.setScalar(this.opts.scale * (1.3 + 0.15 * p))
+    setFlashWhite(this.h, 0.7 + p * 0.3)
+  }
+
+  protected doStrike(player: Player, game: Game, dist: number, _angleToPlayer: number) {
+    // explosion — blockable from the front, leaves a crater of particles
+    if (dist < 3.4) {
+      const dmg = Math.round(this.opts.dmg * (0.9 + Math.random() * 0.2))
+      if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+    }
+    game.onCreeperBoom(this.pos)
+    // self-destruct
+    this.hp = 0
+    this.dead = true
+    this.state = 'dead'
+    this.stateT = 0
+    this.h.group.visible = false
+    game.onEnemyKilled(this)
   }
 }

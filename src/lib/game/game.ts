@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { Engine } from './engine'
 import { World, BONFIRE, GATE_Z, BOSS_CENTER } from './world'
 import { Player } from './player'
-import { Enemy, BossEnemy } from './enemy'
+import { Enemy, BossEnemy, CreeperEnemy } from './enemy'
 import { createSword } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
@@ -30,6 +30,7 @@ export interface HudState {
   bossMax: number
   prompt: string | null
   banner: 'died' | 'bossfell' | null
+  blocking: boolean
 }
 
 export interface SaveData {
@@ -180,6 +181,7 @@ export class Game {
   private texts: FloatText[] = []
   private orbs: SoulOrb[] = []
   private bloodstain: { mesh: THREE.Group; amount: number } | null = null
+  private boomLights: { light: THREE.PointLight; t: number }[] = []
 
   private reticle: HTMLDivElement
   private vignette: HTMLDivElement
@@ -276,6 +278,18 @@ export class Game {
       })
       e.world = this.world
       this.enemies.push(e)
+    }
+
+    // creepers — fast, fuse up and explode; keep your distance or block!
+    const creeperPts: [number, number][] = [
+      [13, -4], [-14, -9], [9, 12],
+    ]
+    for (const [x, z] of creeperPts) {
+      const p = new THREE.Vector3(x, 0, z)
+      p.y = this.world.surfaceAt(x, z)
+      const c = new CreeperEnemy(scene, p)
+      c.world = this.world
+      this.enemies.push(c)
     }
 
     // boss
@@ -424,6 +438,9 @@ export class Game {
     this.sfx.resume()
     this.engine.input.press(name)
   }
+  touchHold(name: string, down: boolean) {
+    this.engine.input.setHeld(name, down)
+  }
   touchLook(dx: number, dy: number) {
     this.engine.input.touchLookDX += dx
     this.engine.input.touchLookDY += dy
@@ -506,6 +523,38 @@ export class Game {
     this.emit(true)
   }
 
+  onPlayerBlock(dmg: number) {
+    this.shake = Math.max(this.shake, 0.12)
+    this.sfx.block()
+    const fwd = new THREE.Vector3(Math.sin(this.player.yaw), 0, Math.cos(this.player.yaw))
+    const at = this.player.pos
+      .clone()
+      .add(fwd.multiplyScalar(0.75))
+      .add(new THREE.Vector3(0, 1.15, 0))
+    this.spawnBurst(at, 0xffe9a0, 10, 2.6, 0.35, 0.1)
+    this.emit(true)
+  }
+
+  onGuardBreak(chip: number) {
+    this.sfx.guardBreak()
+    this.shake = Math.max(this.shake, 0.3)
+    this.hurtFlash = Math.min(1, 0.35 + chip / 90)
+    this.spawnText('شکستن دفاع!', '#ff7a5c', this.player.pos.clone().add(new THREE.Vector3(0, 2.2, 0)))
+    this.emit(true)
+  }
+
+  onCreeperBoom(pos: THREE.Vector3) {
+    this.shake = Math.max(this.shake, 0.5)
+    this.sfx.boom()
+    const at = pos.clone().add(new THREE.Vector3(0, 1, 0))
+    this.spawnBurst(at, 0xffb347, 30, 6, 0.5, 0.22)
+    this.spawnBurst(at, 0x9fd89f, 20, 3.6, 0.85, 0.3)
+    const light = new THREE.PointLight(0xffa040, 7, 13, 1.8)
+    light.position.copy(pos).add(new THREE.Vector3(0, 1.2, 0))
+    this.engine.scene.add(light)
+    this.boomLights.push({ light, t: 0 })
+  }
+
   onPlayerHeal(heal: number) {
     this.sfx.heal()
     this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xffc44d, 14, 2)
@@ -521,7 +570,7 @@ export class Game {
     )
     orb.position.copy(e.pos).add(new THREE.Vector3(0, 1.2, 0))
     this.engine.scene.add(orb)
-    this.orbs.push({ mesh: orb, t: 0, amount: e.isBoss ? 3000 : 35, from: orb.position.clone() })
+    this.orbs.push({ mesh: orb, t: 0, amount: e.isBoss ? 3000 : e.soulsValue(), from: orb.position.clone() })
     if (e.isBoss) this.onBossKilled()
     this.emit(true)
   }
@@ -819,6 +868,17 @@ export class Game {
   private updateEffects(dt: number) {
     this.bursts = this.bursts.filter((b) => b.update(dt, this.engine.scene))
     this.texts = this.texts.filter((t) => t.update(dt, this.engine.scene))
+    // creeper explosion flash lights
+    this.boomLights = this.boomLights.filter((b) => {
+      b.t += dt
+      b.light.intensity = Math.max(0, 7 * (1 - b.t / 0.4))
+      if (b.t >= 0.4) {
+        this.engine.scene.remove(b.light)
+        b.light.dispose()
+        return false
+      }
+      return true
+    })
     // bloodstain bob
     if (this.bloodstain) {
       this.bloodstain.mesh.rotation.y += dt * 1.5
@@ -920,6 +980,7 @@ export class Game {
       bossMax: this.boss.maxHp,
       prompt: this.phase === 'playing' ? this.prompt : null,
       banner: this.phase === 'dead' ? 'died' : this.banner,
+      blocking: p.state === 'block',
     }
     const json = JSON.stringify(s)
     if (force || json !== this.lastHudJson) {

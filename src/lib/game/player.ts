@@ -1,13 +1,13 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead,
+  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock,
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
 import type { World } from './world'
 import type { Game, PlayerStrikeDef } from './game'
 
-export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead'
+export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead' | 'block'
 
 const ROLL_DUR = 0.48
 const ROLL_IFRAME = 0.34
@@ -70,6 +70,7 @@ export class Player {
   animT = 0
   deathT = 0
   healedThisDrink = false
+  hitDur = 0.34
 
   private rollDir = new THREE.Vector3(0, 0, -1)
   private kbDir = new THREE.Vector3()
@@ -155,13 +156,50 @@ export class Player {
     this.invuln = ROLL_IFRAME
   }
 
-  takeDamage(dmg: number, fromX: number, fromZ: number): boolean {
+  takeDamage(dmg: number, fromX: number, fromZ: number, game?: Game): boolean {
     if (this.invuln > 0 || this.state === 'dead') return false
-    this.hp -= dmg
-    this.invuln = 0.45
     const dx = this.pos.x - fromX
     const dz = this.pos.z - fromZ
     const l = Math.hypot(dx, dz) || 1
+    // ---- shield block: hits landing on the shield's front arc ----
+    if (this.state === 'block' && this.stamina > 0) {
+      const fx = Math.sin(this.yaw)
+      const fz = Math.cos(this.yaw)
+      const aX = -dx / l // direction the attack comes from
+      const aZ = -dz / l
+      const dot = aX * fx + aZ * fz
+      if (dot > 0.3) {
+        const chip = Math.max(1, Math.round(dmg * 0.15))
+        const cost = dmg * 0.9
+        this.kbDir.set(aX, 0, aZ)
+        if (this.stamina >= cost) {
+          this.stamina -= cost
+          this.staminaDelay = 0.7
+          this.pos.x += aX * 0.3
+          this.pos.z += aZ * 0.3
+          game?.onPlayerBlock(dmg)
+        } else {
+          // guard broken!
+          this.stamina = 0
+          this.staminaDelay = 1.1
+          this.hp -= chip
+          this.invuln = 0.45
+          this.hitDur = 0.85
+          this.state = 'hit'
+          this.stateT = 0
+          game?.onGuardBreak(chip)
+          if (this.hp <= 0) {
+            this.hp = 0
+            this.die()
+          }
+        }
+        return false
+      }
+    }
+    // ---- normal hit ----
+    this.hp -= dmg
+    this.invuln = 0.45
+    this.hitDur = 0.34
     this.kbDir.set(dx / l, 0, dz / l)
     if (this.hp <= 0) {
       this.hp = 0
@@ -183,6 +221,8 @@ export class Player {
     const { input, camYaw, dt, world, game } = ctx
     this.invuln = Math.max(0, this.invuln - dt)
     this.animT += dt
+    const wantBlock =
+      (input.isHeld('RMB') || input.isHeld('Block')) && this.stamina > 0
 
     if (this.state === 'dead') {
       this.deathT += dt
@@ -258,15 +298,49 @@ export class Player {
       }
     } else if (this.state === 'hit') {
       this.stateT += dt
-      this.pos.x += this.kbDir.x * 4.5 * (1 - this.stateT / 0.34) * dt
-      this.pos.z += this.kbDir.z * 4.5 * (1 - this.stateT / 0.34) * dt
-      animHit(this.h, Math.min(1, this.stateT / 0.34))
-      if (this.stateT >= 0.34) {
+      this.pos.x += this.kbDir.x * 4.5 * (1 - this.stateT / this.hitDur) * dt
+      this.pos.z += this.kbDir.z * 4.5 * (1 - this.stateT / this.hitDur) * dt
+      animHit(this.h, Math.min(1, this.stateT / this.hitDur))
+      if (this.stateT >= this.hitDur) {
         this.state = 'idle'
+        resetPose(this.h)
+      }
+    } else if (this.state === 'block') {
+      // ---- guarding: slow shuffle, no actions, roll still allowed ----
+      this.stateT += dt
+      if (moving) {
+        const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw)
+        const rgtX = -fwdZ, rgtZ = fwdX
+        const mx = rgtX * ax.x + fwdX * ax.z
+        const mz = rgtZ * ax.x + fwdZ * ax.z
+        this.pos.x += mx * WALK_SPEED * 0.42 * dt
+        this.pos.z += mz * WALK_SPEED * 0.42 * dt
+        this.targetYaw = Math.atan2(mx, mz)
+      }
+      animBlock(this.h, this.animT)
+      // stale attack input is discarded while guarding
+      input.consume('LMB')
+      input.consume('HEAVY')
+      if (input.consume('Space') && this.stamina >= STAMINA_COST_ROLL) {
+        game.sfx.roll()
+        if (moving) {
+          const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw)
+          const rgtX = -fwdZ, rgtZ = fwdX
+          this.startRoll(rgtX * ax.x + fwdX * ax.z, rgtZ * ax.x + fwdZ * ax.z)
+        } else {
+          this.startRoll(0, 0)
+        }
+      } else if (!wantBlock) {
+        this.state = 'idle'
+        this.stateT = 0
         resetPose(this.h)
       }
     } else {
       // idle / run
+      if (wantBlock) {
+        this.state = 'block'
+        this.stateT = 0
+      } else {
       this.sprinting =
         moving && (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight')) && this.stamina > 1
       const speed = this.sprinting ? SPRINT_SPEED : WALK_SPEED
@@ -304,19 +378,32 @@ export class Player {
         } else {
           this.startRoll(0, 0)
         }
-      } else if (input.consume('LMB') && this.stamina >= STAMINA_COST_LIGHT) {
-        this.combo = 0
-        this.startAttack(this.lightDef(0))
-        game.sfx.swing()
-      } else if (input.consume('RMB') && this.stamina >= STAMINA_COST_HEAVY) {
-        this.combo = 0
-        this.startAttack(this.heavyDef())
-        game.sfx.swing()
-      } else if ((input.consume('KeyE') || input.consume('KeyR')) && this.estus > 0) {
-        this.estus--
-        this.state = 'drink'
-        this.stateT = 0
-        this.healedThisDrink = false
+      } else {
+        // heavy attack: Shift+LMB or touch HEAVY button; light: LMB
+        let heavy = false
+        let light = false
+        if (input.consume('HEAVY')) heavy = true
+        else if (
+          (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight')) &&
+          input.consume('LMB')
+        )
+          heavy = true
+        else light = input.consume('LMB')
+        if (heavy && this.stamina >= STAMINA_COST_HEAVY) {
+          this.combo = 0
+          this.startAttack(this.heavyDef())
+          game.sfx.swing()
+        } else if (light && this.stamina >= STAMINA_COST_LIGHT) {
+          this.combo = 0
+          this.startAttack(this.lightDef(0))
+          game.sfx.swing()
+        } else if ((input.consume('KeyE') || input.consume('KeyR')) && this.estus > 0) {
+          this.estus--
+          this.state = 'drink'
+          this.stateT = 0
+          this.healedThisDrink = false
+        }
+      }
       }
     }
 
@@ -337,8 +424,13 @@ export class Player {
 
     // ---- stamina regen ----
     this.staminaDelay -= dt
-    if (this.staminaDelay <= 0 && !this.busy) {
-      this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * dt)
+    if (this.staminaDelay <= 0) {
+      if (!this.busy) {
+        this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * dt)
+      } else if (this.state === 'block') {
+        // slow regen while guarding
+        this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * 0.35 * dt)
+      }
     }
 
     this.resolveGround(world, dt, false)
