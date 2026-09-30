@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, animIdle, animWalk, animZombieWalk, animAttack, animHit, animDead,
+  createHumanoid, createBow, animIdle, animWalk, animZombieWalk, animAttack, animHit, animDead,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
+  animBowDraw, animBowShoot, animPoke,
   resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
 } from './models'
 import { BONFIRE, type World } from './world'
@@ -51,14 +52,14 @@ export class Enemy {
   private stunDur = 0.38
   world?: World
 
-  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper', spawn: THREE.Vector3, opts: EnemyOpts) {
+  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper' | 'skeleton', spawn: THREE.Vector3, opts: EnemyOpts) {
     this.opts = opts
     this.hp = opts.hp
     this.maxHp = opts.hp
     this.isBoss = !!opts.isBoss
     this.name = opts.name ?? 'Hollow'
     this.h = createHumanoid(kind, opts.scale, {
-      sword: kind !== 'creeper',
+      sword: kind === 'zombie' || kind === 'boss',
       swordScale: kind === 'boss' ? 1.9 : 1,
     })
     this.pos.copy(spawn)
@@ -197,10 +198,7 @@ export class Enemy {
           this.onWindupStart(game, dist, angDiff)
           break
         }
-        this.yaw = angleToPlayer
-        this.pos.x += (dx / (dist || 1)) * this.speed() * dt
-        this.pos.z += (dz / (dist || 1)) * this.speed() * dt
-        animZombieWalk(this.h, this.animT, this.isBoss ? 1.25 : 1)
+        this.chaseMove(dt, dx, dz, dist, angleToPlayer)
         break
       }
       case 'return': {
@@ -321,6 +319,14 @@ export class Enemy {
   /** decide whether to start an attack from the current chase position */
   protected wantsAttack(dist: number, _angDiff: number): boolean {
     return dist <= this.opts.atkRange
+  }
+
+  /** movement + facing during chase — overridden by ranged enemies (kiting) */
+  protected chaseMove(dt: number, dx: number, dz: number, dist: number, angleToPlayer: number) {
+    this.yaw = angleToPlayer
+    this.pos.x += (dx / (dist || 1)) * this.speed() * dt
+    this.pos.z += (dz / (dist || 1)) * this.speed() * dt
+    animZombieWalk(this.h, this.animT, this.isBoss ? 1.25 : 1)
   }
 
   protected attackCooldown() {
@@ -779,5 +785,157 @@ export class CreeperEnemy extends Enemy {
     this.stateT = 0
     this.h.group.visible = false
     game.onEnemyKilled(this)
+  }
+}
+
+/* ================= SKELETON ARCHER ================= */
+
+/** Ranged enemy — keeps its distance, draws and looses arrows.
+    Rush it to force a panicky melee smack, or block/roll the arrows. */
+export class SkeletonEnemy extends Enemy {
+  private mode: 'shoot' | 'poke' = 'shoot'
+  private bow: THREE.Group
+
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+    super(scene, 'skeleton', spawn, {
+      hp: 55,
+      dmg: 15,
+      speed: 2.9,
+      aggro: 13.5,
+      atkRange: 2.0,
+      windup: 0.95,
+      recover: 0.55,
+      souls: 45,
+      scale: 0.97,
+      name: 'تیرانداز استخوانی',
+    })
+    // bow strapped into the LEFT hand (limb axis = local X → upright when aiming)
+    this.bow = createBow()
+    this.bow.position.set(0, -0.68, 0.05)
+    this.bow.rotation.y = Math.PI / 2
+    this.h.armL.add(this.bow)
+  }
+
+  reset() {
+    super.reset()
+    this.mode = 'shoot'
+    resetPose(this.h)
+  }
+
+  protected attackCooldown() {
+    return this.mode === 'shoot' ? 1.7 + Math.random() * 1.3 : 1.2 + Math.random() * 0.6
+  }
+
+  /** close poke or a volley — depends on how much room the player gives */
+  protected wantsAttack(dist: number, _angDiff: number): boolean {
+    if (dist < 2.1) return true
+    return dist <= 12.5
+  }
+
+  protected onWindupStart(_game: Game | undefined, dist: number, _angDiff: number) {
+    this.mode = dist < 2.6 ? 'poke' : 'shoot'
+  }
+
+  protected windupDur() {
+    return this.mode === 'shoot' ? 0.95 : 0.42
+  }
+
+  protected strikeDur() {
+    return this.mode === 'shoot' ? 0.3 : 0.26
+  }
+
+  protected strikeImpactP() {
+    return this.mode === 'shoot' ? 0.22 : 0.4
+  }
+
+  /* ---- kiting AI: hold the 6..11m band, backpedal when crowded ---- */
+  protected chaseMove(dt: number, dx: number, dz: number, dist: number, angleToPlayer: number) {
+    this.yaw = angleToPlayer
+    const ux = dx / (dist || 1)
+    const uz = dz / (dist || 1)
+    if (dist < 5.6) {
+      // backpedal away, still facing the player (bone-rattling hurry)
+      this.pos.x -= ux * this.speed() * 0.85 * dt
+      this.pos.z -= uz * this.speed() * 0.85 * dt
+      animWalk(this.h, this.animT, 1.15)
+    } else if (dist > 11.5) {
+      // close the gap to firing range
+      this.pos.x += ux * this.speed() * dt
+      this.pos.z += uz * this.speed() * dt
+      animWalk(this.h, this.animT, 1)
+    } else {
+      // hold ground + a lazy side-strafe so it never feels frozen
+      const sway = Math.sin(this.animT * 1.7) * 0.55
+      this.pos.x += -uz * sway * dt
+      this.pos.z += ux * sway * dt
+      animIdle(this.h, this.animT)
+    }
+  }
+
+  /* ---- telegraphs ---- */
+  protected windupAnim(p: number) {
+    resetPose(this.h)
+    if (this.mode === 'shoot') {
+      animBowDraw(this.h, p)
+    } else {
+      // panicked raised fist before the poke
+      this.h.armR.rotation.x = -2.3 * p
+      this.h.armR.rotation.z = -0.3 * p
+      this.h.root.rotation.y = -0.25 * p
+    }
+  }
+
+  protected strikeAnim(p: number) {
+    if (this.mode === 'shoot') animBowShoot(this.h, p)
+    else animPoke(this.h, p)
+  }
+
+  protected onStrikeStart(player: Player, game: Game) {
+    if (this.mode === 'shoot') {
+      game.spawnArrow(
+        this.pos.clone().add(new THREE.Vector3(0, 1.5, 0)),
+        player.pos.clone().add(new THREE.Vector3(0, 0.95, 0)),
+        Math.round(this.opts.dmg * (0.9 + Math.random() * 0.25))
+      )
+    }
+  }
+
+  protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
+    if (this.mode === 'poke') {
+      const reach = this.opts.atkRange + 0.5
+      let angDiff = angleToPlayer - this.yaw
+      while (angDiff > Math.PI) angDiff -= Math.PI * 2
+      while (angDiff < -Math.PI) angDiff += Math.PI * 2
+      if (dist < reach && Math.abs(angDiff) < 1.1) {
+        const dmg = Math.round(this.opts.dmg * 0.9 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      }
+    }
+    // arrow damage is handled by the projectile itself
+  }
+
+  protected recoverAnim(p: number) {
+    resetPose(this.h)
+    if (this.mode === 'shoot') {
+      this.h.armL.rotation.x = -1.5 + 1.5 * p
+      this.h.armR.rotation.x = -0.85 * (1 - p)
+    } else {
+      this.h.armL.rotation.x = -0.25 * (1 - p)
+    }
+  }
+
+  /* ---- rattle apart when it dies ---- */
+  protected deathDur() {
+    return 0.85
+  }
+
+  protected deathAnim(p: number) {
+    animDead(this.h, p)
+    // bones clatter sideways as it collapses
+    this.h.head.rotation.z = 0.4 * p
+    this.h.armL.rotation.z = 0.6 * p
+    this.h.armR.rotation.z = -0.75 * p
+    this.h.legL.rotation.x = 0.5 * p
+    this.h.legR.rotation.x = -0.35 * p
   }
 }

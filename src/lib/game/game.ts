@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { Engine } from './engine'
-import { World, BONFIRE, GATE_Z, BOSS_CENTER } from './world'
+import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF } from './world'
 import { Player } from './player'
-import { Enemy, BossEnemy, CreeperEnemy } from './enemy'
+import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy } from './enemy'
 import { createSword } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
@@ -39,6 +39,7 @@ export interface SaveData {
   vit: number
   end: number
   str: number
+  estusUp?: boolean
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -200,6 +201,92 @@ class Shockwave {
   }
 }
 
+/* Skeleton arrows — flat blocky projectile, blockable from the front,
+   fully dodgeable with roll i-frames, sticks into the ground briefly. */
+class Arrow {
+  private mesh: THREE.Group
+  private vel = new THREE.Vector3()
+  private t = 0
+  private stuck = false
+  private stuckT = 0
+
+  constructor(
+    private game: Game,
+    private pos: THREE.Vector3,
+    target: THREE.Vector3,
+    private dmg: number
+  ) {
+    const g = new THREE.Group()
+    const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.6), lam(0x9a7a4a))
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.14), lam(0xb8bec8))
+    tip.position.z = 0.34
+    const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.17, 0.13), lam(0xe8e4d8))
+    fl1.position.z = -0.25
+    const fl2 = fl1.clone()
+    fl2.rotation.z = Math.PI / 2
+    g.add(shaft, tip, fl1, fl2)
+    g.position.copy(pos)
+    game.engine.scene.add(g)
+    this.mesh = g
+    // flat-ish shot with a loft so it arcs gently over small bumps
+    this.vel.subVectors(target, pos)
+    const dist = this.vel.length()
+    this.vel.normalize().multiplyScalar(15.5)
+    this.vel.y += dist * 0.42
+  }
+
+  update(dt: number): boolean {
+    if (this.stuck) {
+      this.stuckT += dt
+      return this.stuckT < 1.3
+    }
+    this.t += dt
+    this.vel.y -= 6.5 * dt
+    this.pos.addScaledVector(this.vel, dt)
+    this.mesh.position.copy(this.pos)
+    this.mesh.lookAt(this.pos.x + this.vel.x, this.pos.y + this.vel.y, this.pos.z + this.vel.z)
+
+    // ground impact — stick in with a dust puff
+    const ground = this.game.world.surfaceAt(this.pos.x, this.pos.z)
+    if (this.pos.y <= ground + 0.06) {
+      this.stuck = true
+      this.game.spawnBurst(this.pos.clone(), 0x9a8b70, 5, 1.5, 0.4, 0.1)
+      return true
+    }
+    if (this.t > 3.2 || Math.abs(this.pos.x) > 29 || Math.abs(this.pos.z) > 29) return false
+
+    // player hit — torso capsule approx
+    const p = this.game.player
+    const hy = Math.max(p.pos.y + 0.25, Math.min(p.pos.y + 1.85, this.pos.y))
+    const d2 =
+      (this.pos.x - p.pos.x) ** 2 + (this.pos.z - p.pos.z) ** 2 + (this.pos.y - hy) ** 2
+    if (d2 < 0.55 * 0.55) {
+      const vl = Math.hypot(this.vel.x, this.vel.z) || 1
+      const fromX = this.pos.x - (this.vel.x / vl) * 1.5
+      const fromZ = this.pos.z - (this.vel.z / vl) * 1.5
+      const wasBlocking = p.state === 'block'
+      if (p.takeDamage(this.dmg, fromX, fromZ, this.game)) {
+        this.game.onPlayerHit(this.dmg)
+        this.game.sfx.arrowHit()
+      } else if (wasBlocking) {
+        this.game.onArrowBlocked()
+      }
+      if (p.state !== 'block') this.stuck = true
+      return true
+    }
+    return true
+  }
+
+  dispose(scene: THREE.Scene) {
+    scene.remove(this.mesh)
+    this.mesh.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.geometry) m.geometry.dispose()
+    })
+  }
+}
+
 /* ================= GAME ================= */
 
 export class Game {
@@ -235,11 +322,17 @@ export class Game {
   private texts: FloatText[] = []
   private orbs: SoulOrb[] = []
   private waves: Shockwave[] = []
+  private arrows: Arrow[] = []
   private bloodstain: { mesh: THREE.Group; amount: number } | null = null
   private boomLights: { light: THREE.PointLight; t: number }[] = []
+  private estusShard: { mesh: THREE.Group; light: THREE.PointLight } | null = null
+  private estusUp = false
 
   private reticle: HTMLDivElement
   private vignette: HTMLDivElement
+  private mapCanvas: HTMLCanvasElement
+  private mapCtx: CanvasRenderingContext2D
+  private mapTerrain: HTMLCanvasElement
   private bonfireLight: THREE.PointLight
   private bonfireFlame: THREE.Points
   private flameSeeds: Float32Array
@@ -347,6 +440,19 @@ export class Game {
       this.enemies.push(c)
     }
 
+    // skeleton archers — hold mid-range and pepper you with arrows;
+    // rush them to force a panicky smack, or block/roll the volleys
+    const skelPts: [number, number][] = [
+      [16, 4], [-17, -4], [11, 14],
+    ]
+    for (const [x, z] of skelPts) {
+      const p = new THREE.Vector3(x, 0, z)
+      p.y = this.world.surfaceAt(x, z)
+      const s = new SkeletonEnemy(scene, p)
+      s.world = this.world
+      this.enemies.push(s)
+    }
+
     // boss
     const bossSpawn = new THREE.Vector3(BOSS_CENTER.x, 0, BOSS_CENTER.z)
     bossSpawn.y = this.world.surfaceAt(BOSS_CENTER.x, BOSS_CENTER.z)
@@ -363,6 +469,8 @@ export class Game {
     this.vignette.style.cssText =
       'position:absolute;inset:0;pointer-events:none;opacity:0;z-index:4;background:radial-gradient(ellipse at center, rgba(255,0,0,0) 45%, rgba(180,0,0,0.55) 100%)'
     container.appendChild(this.vignette)
+
+    this.buildMinimap(container)
 
     this.engine.start()
   }
@@ -444,6 +552,14 @@ export class Game {
       this.emit(true)
       return
     }
+    // estus shard dropped by the boss
+    if (this.estusShard) {
+      const sp = this.estusShard.mesh.position
+      if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
+        this.collectEstusShard()
+        return
+      }
+    }
     // bonfire
     const bPos = new THREE.Vector3(BONFIRE.x, this.world.surfaceAt(BONFIRE.x, BONFIRE.z), BONFIRE.z)
     if (bPos.distanceTo(this.player.pos) < 2.6) {
@@ -505,6 +621,7 @@ export class Game {
     this.engine.dispose()
     if (this.reticle.parentElement) this.reticle.parentElement.removeChild(this.reticle)
     if (this.vignette.parentElement) this.vignette.parentElement.removeChild(this.vignette)
+    if (this.mapCanvas?.parentElement) this.mapCanvas.parentElement.removeChild(this.mapCanvas)
   }
 
   /* ================= INTERNAL ================= */
@@ -517,6 +634,7 @@ export class Game {
         vit: this.player.vit,
         end: this.player.end,
         str: this.player.str,
+        estusUp: this.estusUp,
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -539,6 +657,9 @@ export class Game {
       for (let i = 0; i < target.str; i++) this.player.applyLevel('str')
       this.player.level = 1 + target.vit + target.end + target.str
       this.player.souls = d.souls ?? 0
+      // permanent estus-shard upgrade
+      this.estusUp = !!d.estusUp
+      this.player.maxEstus = this.estusUp ? 4 : 3
     } catch { /* ignore */ }
   }
 
@@ -610,6 +731,24 @@ export class Game {
     this.boomLights.push({ light, t: 0 })
   }
 
+  /** skeleton archers call this at the moment of release */
+  spawnArrow(from: THREE.Vector3, target: THREE.Vector3, dmg: number) {
+    this.arrows.push(new Arrow(this, from, target, dmg))
+    this.sfx.arrowShoot()
+  }
+
+  onArrowBlocked() {
+    this.sfx.arrowBlock()
+    this.shake = Math.max(this.shake, 0.08)
+    const fwd = new THREE.Vector3(Math.sin(this.player.yaw), 0, Math.cos(this.player.yaw))
+    const at = this.player.pos
+      .clone()
+      .add(fwd.multiplyScalar(0.75))
+      .add(new THREE.Vector3(0, 1.15, 0))
+    this.spawnBurst(at, 0xffe9a0, 6, 2.2, 0.3, 0.09)
+    this.emit(true)
+  }
+
   onPlayerHeal(heal: number) {
     this.sfx.heal()
     this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xffc44d, 14, 2)
@@ -639,7 +778,52 @@ export class Game {
     this.bannerT = 0
     if (this.player.lockedTarget) this.player.lockedTarget = null
     this.sfx.victory()
+    this.spawnEstusShard()
     this.save()
+  }
+
+  /** the boss drops a glowing estus shard — permanent +1 flask capacity */
+  private spawnEstusShard() {
+    if (this.estusUp || this.estusShard) return
+    const g = new THREE.Group()
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.42, 0.3),
+      new THREE.MeshLambertMaterial({ color: 0xd98a1f, transparent: true, opacity: 0.92 })
+    )
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.46, 0.58, 0.46),
+      new THREE.MeshBasicMaterial({ color: 0xffb63d, transparent: true, opacity: 0.28 })
+    )
+    const cork = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.12, 0.14),
+      new THREE.MeshLambertMaterial({ color: 0x6e4f30 })
+    )
+    cork.position.y = 0.27
+    g.add(glow, body, cork)
+    const bx = this.boss.pos.x
+    const bz = this.boss.pos.z
+    const y = this.world.surfaceAt(bx, bz) + 0.75
+    g.position.set(bx, y, bz)
+    this.engine.scene.add(g)
+    const light = new THREE.PointLight(0xffb040, 2.4, 6.5, 1.8)
+    light.position.set(bx, y + 0.5, bz)
+    this.engine.scene.add(light)
+    this.estusShard = { mesh: g, light }
+  }
+
+  private collectEstusShard() {
+    if (!this.estusShard) return
+    this.engine.scene.remove(this.estusShard.mesh)
+    this.engine.scene.remove(this.estusShard.light)
+    this.estusShard = null
+    this.estusUp = true
+    this.player.maxEstus++
+    this.player.estus = this.player.maxEstus
+    this.sfx.shard()
+    this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), 0xffb63d, 20, 2.6)
+    this.spawnText('تکه‌ی استوس! ظرفیت شربت +۱', '#ffc44d', this.player.pos.clone().add(new THREE.Vector3(0, 2.6, 0)))
+    this.save()
+    this.emit(true)
   }
 
   onBossPhase2() {
@@ -690,6 +874,96 @@ export class Game {
 
   spawnBurst(pos: THREE.Vector3, color: number, count = 14, speed = 3, life = 0.7, size = 0.14) {
     this.bursts.push(new Burst(this.engine.scene, pos, color, count, speed, life, size))
+  }
+
+  /* ================= MINIMAP ================= */
+
+  private buildMinimap(container: HTMLElement) {
+    const c = document.createElement('canvas')
+    c.width = c.height = 132
+    c.style.cssText =
+      'position:absolute;top:12px;right:12px;width:132px;height:132px;border:2px solid rgba(0,0,0,0.92);' +
+      'box-shadow:3px 3px 0 rgba(0,0,0,0.45);image-rendering:pixelated;z-index:6;background:#141c10;pointer-events:none'
+    c.style.display = 'none'
+    container.appendChild(c)
+    this.mapCanvas = c
+    this.mapCtx = c.getContext('2d')!
+
+    // pre-render the blocky terrain once (1px per block)
+    const t = document.createElement('canvas')
+    t.width = t.height = 60
+    const tc = t.getContext('2d')!
+    for (let z = -WORLD_HALF; z < WORLD_HALF; z++) {
+      for (let x = -WORLD_HALF; x < WORLD_HALF; x++) {
+        const h = this.world.getH(x, z)
+        const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
+        const isPath = Math.abs(x) <= 1 && z > GATE_Z && z < BONFIRE.z + 1
+        if (dA < 8.5) tc.fillStyle = '#828282'
+        else if (isPath) tc.fillStyle = '#8a6440'
+        else tc.fillStyle = `rgb(${52 + h * 7},${98 + h * 13},${36 + h * 5})`
+        tc.fillRect(x + WORLD_HALF, z + WORLD_HALF, 1, 1)
+      }
+    }
+    this.mapTerrain = t
+  }
+
+  private drawMinimap() {
+    const c = this.mapCanvas
+    if (this.phase === 'menu') {
+      c.style.display = 'none'
+      return
+    }
+    c.style.display = 'block'
+    const ctx = this.mapCtx
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(this.mapTerrain, 0, 0, 132, 132)
+    const S = 132 / (WORLD_HALF * 2)
+    const px = (x: number) => (x + WORLD_HALF) * S
+    const pz = (z: number) => (z + WORLD_HALF) * S
+
+    // bonfire — warm beacon
+    ctx.fillStyle = '#ffb347'
+    ctx.fillRect(px(BONFIRE.x) - 2, pz(BONFIRE.z) - 2, 4, 4)
+    ctx.fillStyle = '#ffe08a'
+    ctx.fillRect(px(BONFIRE.x) - 1, pz(BONFIRE.z) - 1, 2, 2)
+
+    // boss — dark crimson square until it falls
+    if (!this.bossFell) {
+      ctx.fillStyle = this.bossActive ? '#d43737' : '#8a2020'
+      ctx.fillRect(px(this.boss.pos.x) - 2.5, pz(this.boss.pos.z) - 2.5, 5, 5)
+    }
+
+    // enemies — color-coded by breed
+    for (const e of this.enemies) {
+      if (!e.alive) continue
+      ctx.fillStyle =
+        e instanceof CreeperEnemy ? '#59d959' : e instanceof SkeletonEnemy ? '#ece8dc' : '#d43737'
+      ctx.fillRect(px(e.pos.x) - 1.5, pz(e.pos.z) - 1.5, 3, 3)
+    }
+
+    // bloodstain — blinking emerald
+    if (this.bloodstain) {
+      ctx.fillStyle = Math.sin(this.time * 6) > 0 ? '#59ff6a' : '#2fbf4a'
+      const bp = this.bloodstain.mesh.position
+      ctx.fillRect(px(bp.x) - 1.5, pz(bp.z) - 1.5, 3, 3)
+    }
+
+    // estus shard — amber sparkle
+    if (this.estusShard) {
+      const sp = this.estusShard.mesh.position
+      ctx.fillStyle = Math.sin(this.time * 8) > 0 ? '#ffc44d' : '#ffdf8a'
+      ctx.fillRect(px(sp.x) - 1.5, pz(sp.z) - 1.5, 3, 3)
+    }
+
+    // player — white block + facing notch
+    const ppx = px(this.player.pos.x)
+    const ppz = pz(this.player.pos.z)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(ppx - 2, ppz - 2, 4, 4)
+    const fx = Math.sin(this.player.yaw)
+    const fz = Math.cos(this.player.yaw)
+    ctx.fillStyle = '#59ff6a'
+    ctx.fillRect(ppx + fx * 4.5 - 1, ppz + fz * 4.5 - 1, 2, 2)
   }
 
   private spawnBloodstain() {
@@ -758,6 +1032,12 @@ export class Game {
     if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
       return 'بازیابی سول‌ها'
     }
+    if (this.estusShard) {
+      const sp = this.estusShard.mesh.position
+      if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
+        return 'برداشتن تکه‌ی استوس'
+      }
+    }
     const bPos = new THREE.Vector3(BONFIRE.x, this.world.surfaceAt(BONFIRE.x, BONFIRE.z), BONFIRE.z)
     if (bPos.distanceTo(this.player.pos) < 2.6) return 'استراحت در آتش کمپ'
     if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
@@ -792,6 +1072,7 @@ export class Game {
       this.player.h.group.position.copy(this.player.pos)
       this.player.h.group.rotation.y = this.player.yaw
       this.updateCameraMenu(dt)
+      this.drawMinimap()
       this.emit(false)
       return
     }
@@ -807,6 +1088,7 @@ export class Game {
         this.respawn()
       }
       this.updateCameraFollow(dt, true)
+      this.drawMinimap()
       this.emit(false)
       return
     }
@@ -816,6 +1098,7 @@ export class Game {
       this.updateBonfire(dt)
       this.updateEffects(dt)
       this.updateCameraFollow(dt, false)
+      this.drawMinimap()
       this.emit(false)
       return
     }
@@ -922,6 +1205,7 @@ export class Game {
 
     this.updateCameraFollow(dt, false)
     this.updateReticle()
+    this.drawMinimap()
     this.emit(false)
   }
 
@@ -950,6 +1234,12 @@ export class Game {
     this.texts = this.texts.filter((t) => t.update(dt, this.engine.scene))
     // boss slam/stomp shockwave rings
     this.waves = this.waves.filter((w) => w.update(dt))
+    // skeleton arrows
+    this.arrows = this.arrows.filter((a) => {
+      const alive = a.update(dt)
+      if (!alive) a.dispose(this.engine.scene)
+      return alive
+    })
     // creeper explosion flash lights
     this.boomLights = this.boomLights.filter((b) => {
       b.t += dt
@@ -965,6 +1255,12 @@ export class Game {
     if (this.bloodstain) {
       this.bloodstain.mesh.rotation.y += dt * 1.5
       this.bloodstain.mesh.position.y += Math.sin(this.time * 3) * dt * 0.12
+    }
+    // estus shard bob + spin
+    if (this.estusShard) {
+      this.estusShard.mesh.rotation.y += dt * 1.6
+      this.estusShard.mesh.position.y += Math.sin(this.time * 2.4) * dt * 0.16
+      this.estusShard.light.intensity = 2 + Math.sin(this.time * 4.2) * 0.5
     }
   }
 

@@ -1,7 +1,6 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -38,17 +37,25 @@ yarn-error.log*
 
 
 # typescript
-*.tsbuildinfo
 next-env.d.ts
 local-*
 .claude
 .z-ai-config
 *.log
-dev.log
 dev.out.log
 test
 prompt
 
 server.log
 # Skills directory
+/skills/node_modules
 /skills/
+
+# local artifacts
+node_modules/
+.next/
+dev.log
+tool-results/
+upload/
+download/
+*.tsbuildinfo

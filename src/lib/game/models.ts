@@ -62,6 +62,29 @@ export function createShield(): THREE.Group {
   return g
 }
 
+/** Minecraft-style blocky bow. Limb axis runs along local X so that when
+    the holding arm points forward (rotation.x ≈ -90°) the bow stands upright. */
+export function createBow(): THREE.Group {
+  const g = new THREE.Group()
+  const mat = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const wood = 0x7a5a34
+  const woodDark = 0x5a4022
+  const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rz = 0) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+    mesh.position.set(x, y, z)
+    mesh.rotation.z = rz
+    mesh.castShadow = true
+    g.add(mesh)
+    return mesh
+  }
+  mk(0.09, 0.11, 0.09, mat(woodDark), 0, 0, 0.02) // grip
+  mk(0.3, 0.06, 0.06, mat(wood), 0.21, 0.02, 0.02, 0.32) // upper limb
+  mk(0.3, 0.06, 0.06, mat(wood), -0.21, 0.02, 0.02, -0.32) // lower limb
+  mk(0.72, 0.016, 0.016, mat(0xd8d4c8), 0, 0.03, -0.1) // string
+  g.scale.setScalar(1.05)
+  return g
+}
+
 export function createHumanoid(
   kind: CharKind,
   scale = 1,
@@ -472,6 +495,60 @@ export function animBossDead(h: Humanoid, p: number) {
     h.armL.rotation.x = lerp(0.45, 0.9, e)
     h.armR.rotation.x = lerp(0.45, 0.9, e)
   }
+}
+
+/* ================= BOW (SKELETON ARCHER) ANIMATIONS ================= */
+
+/** draw the string back: bow arm steady forward, draw arm pulls to the cheek,
+    a fine tremble near full draw sells the tension */
+export function animBowDraw(h: Humanoid, p: number) {
+  resetPose(h)
+  const e = 1 - Math.pow(1 - p, 2)
+  h.armL.rotation.x = -1.5 + 0.05 * Math.sin(p * 9)
+  h.armL.rotation.z = 0.08
+  h.armR.rotation.x = -1.5 + 1.02 * e // pulls back toward the cheek
+  h.armR.rotation.z = -0.3 * e
+  h.root.rotation.y = 0.14 * e
+  h.head.rotation.x = 0.04
+  h.legL.rotation.x = 0.1 * e
+  h.legR.rotation.x = -0.14 * e
+  if (p > 0.72) {
+    const tr = Math.sin(p * 52) * 0.022 * (p - 0.72) / 0.28
+    h.armR.rotation.x += tr
+    h.armL.rotation.x -= tr
+  }
+}
+
+/** the release: draw arm snaps forward, bow arm kicks with recoil, then settles */
+export function animBowShoot(h: Humanoid, p: number) {
+  resetPose(h)
+  if (p < 0.3) {
+    const q = p / 0.3
+    h.armR.rotation.x = -0.48 - 0.62 * q // spring forward
+  } else {
+    const q = (p - 0.3) / 0.7
+    h.armR.rotation.x = -1.1 + 0.25 * q
+  }
+  h.armL.rotation.x = -1.5 + Math.sin(p * Math.PI) * 0.16 // recoil kick
+  h.armL.rotation.z = 0.08 - Math.sin(p * Math.PI) * 0.06
+  h.root.rotation.y = 0.14 - 0.14 * Math.min(1, p * 2.4)
+  h.head.rotation.x = 0.04 * (1 - p)
+}
+
+/** close-range smack with the bow-holding arm — quick jab, quick recover */
+export function animPoke(h: Humanoid, p: number) {
+  resetPose(h)
+  if (p < 0.35) {
+    const q = p / 0.35
+    h.armL.rotation.x = lerp(-0.3, -1.75, q)
+    h.armL.rotation.z = lerp(0.06, -0.12, q)
+  } else {
+    const q = (p - 0.35) / 0.65
+    h.armL.rotation.x = lerp(-1.75, -0.25, 1 - Math.pow(1 - q, 3))
+    h.armL.rotation.z = lerp(-0.12, 0.06, q)
+    h.root.rotation.x = 0.14 * Math.sin(q * Math.PI)
+  }
+  h.root.rotation.y = -0.2 * Math.sin(p * Math.PI)
 }
 
 export function setOpacity(h: Humanoid, opacity: number) {

@@ -182,7 +182,7 @@ function MainMenu({ onStart, hasSave, onClear }: { onStart: () => void; hasSave:
         <span><b className="font-pixel text-[10px] text-emerald-300">E</b> شربت</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">F</b> تعامل</span>
       </div>
-      <p className="mt-6 text-[11px] text-white/35">نسخه ۰.۲ — به‌زودی: باس دوم، جادو و مناطق جدید</p>
+      <p className="mt-6 text-[11px] text-white/35">نسخه ۰.۳ — جدید: اسکلت تیرانداز، مینی‌مپ و تکه‌ی استوس | به‌زودی: باس دوم، جادو و مناطق جدید</p>
     </div>
   )
 }
@@ -207,6 +207,7 @@ function BossFell() {
         دشمن بزرگ نابود شد!
       </h2>
       <p className="fadein-anim mt-4 text-sm text-white/70">۳۰۰۰ سول به دست آمد</p>
+      <p className="fadein-anim mt-1 text-xs text-amber-200/80">تکه‌ای استوس کنار جسدش بر زمین افتاده است...</p>
     </div>
   )
 }

@@ -158,6 +158,33 @@ export class Sfx {
     this.noise(1.1, 0.32, 620, 90)
   }
 
+  /* ---- skeleton archer ---- */
+
+  /** bowstring twang + whoosh of the arrow leaving */
+  arrowShoot() {
+    this.tone(620, 0.07, 'square', 0.14, 240)
+    this.noise(0.16, 0.2, 3400, 900, 0.02)
+  }
+
+  /** arrow thudding into something soft */
+  arrowHit() {
+    this.noise(0.08, 0.42, 1100, 260)
+    this.tone(190, 0.09, 'square', 0.16, 90)
+  }
+
+  /** arrow deflected by the shield */
+  arrowBlock() {
+    this.tone(1500, 0.07, 'square', 0.13, 900)
+    this.noise(0.06, 0.24, 4200, 1400)
+  }
+
+  /** estus shard pickup — warm rising chime */
+  shard() {
+    this.tone(392, 0.18, 'triangle', 0.24, 523)
+    this.tone(659, 0.22, 'triangle', 0.22, undefined, 0.12)
+    this.tone(880, 0.3, 'sine', 0.2, undefined, 0.24)
+  }
+
   /** heavy foot/knee impact */
   stomp() {
     this.noise(0.26, 0.55, 340, 60)

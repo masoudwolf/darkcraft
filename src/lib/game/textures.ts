@@ -181,7 +181,7 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
 
 /* ================= CHARACTER TEXTURES ================= */
 
-export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper'
+export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper' | 'skeleton'
 
 interface CharTexs {
   skin: THREE.Texture
@@ -242,6 +242,17 @@ function getCharTexs(kind: CharKind): CharTexs {
       eye: '#0d1f0d',
       mouth: [12, 24, 12] as [number, number, number],
     },
+    skeleton: {
+      skin: [224, 220, 204] as [number, number, number],
+      skinVary: 16,
+      hairTop: [206, 200, 182] as [number, number, number],
+      body: [216, 212, 196] as [number, number, number],
+      arm: [224, 220, 204] as [number, number, number],
+      sleeve: false,
+      leg: [212, 208, 192] as [number, number, number],
+      eye: '#141414',
+      mouth: [64, 60, 52] as [number, number, number],
+    },
   }[kind]
 
   const faceTex = makeTex(8, 30, (c, r, s) => {
@@ -255,6 +266,16 @@ function getCharTexs(kind: CharKind): CharTexs {
       px(c, 2, 5, bl, 4, 2) // mouth wide
       px(c, 2, 7, bl, 1, 1) // fang left
       px(c, 5, 7, bl, 1, 1) // fang right
+      return
+    }
+    if (kind === 'skeleton') {
+      // hollow black sockets + grim teeth — the classic skull grid
+      px(c, 1, 3, '#141414', 2, 2)
+      px(c, 5, 3, '#141414', 2, 2)
+      px(c, 3, 5, '#3a362e', 2, 1)
+      px(c, 2, 6, '#3a362e', 4, 1)
+      px(c, 3, 7, '#cfcaba', 1, 1) // tooth gaps
+      px(c, 5, 7, '#cfcaba', 1, 1)
       return
     }
     // eyes (minecraft style)
@@ -287,6 +308,13 @@ function getCharTexs(kind: CharKind): CharTexs {
     hairTop: makeTex(8, 32, (c, r, s) => fillNoise(c, r, s, cfg.hairTop, 12)),
     body: makeTex(8, 33, (c, r, s) => {
       fillNoise(c, r, s, cfg.body, 16)
+      if (kind === 'skeleton') {
+        // ribcage shading — dark horizontal bone gaps
+        px(c, 0, 2, '#8a8578', s, 1)
+        px(c, 0, 4, '#8a8578', s, 1)
+        px(c, 0, 6, '#8a8578', s, 1)
+        px(c, 3, 1, '#9a9484', 2, 5)
+      }
       if (kind === 'creeper') {
         for (let i = 0; i < 8; i++) {
           px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 2)
@@ -318,6 +346,11 @@ function getCharTexs(kind: CharKind): CharTexs {
     }),
     leg: makeTex(8, 35, (c, r, s) => {
       fillNoise(c, r, s, cfg.leg, 14)
+      if (kind === 'skeleton') {
+        // bone joint shading
+        px(c, 0, 0, '#918c7e', s, 1)
+        px(c, 0, 7, '#918c7e', s, 1)
+      }
       if (kind === 'creeper') {
         for (let i = 0; i < 6; i++) {
           px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 1)
