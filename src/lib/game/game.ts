@@ -146,6 +146,60 @@ interface SoulOrb {
   from: THREE.Vector3
 }
 
+/* Expanding ground ring from boss slams/stomps — chips the player when
+   the wavefront passes under their feet (rolls/blocks still work). */
+class Shockwave {
+  private mesh: THREE.Mesh
+  private t = 0
+  private hit = false
+  private dur: number
+
+  constructor(
+    private game: Game,
+    private pos: THREE.Vector3,
+    private maxR: number,
+    private dmg: number,
+    color = 0xd8c090
+  ) {
+    this.dur = 0.42 + maxR * 0.035
+    const geo = new THREE.RingGeometry(0.82, 1, 36)
+    this.mesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.9,
+        side: THREE.DoubleSide, depthWrite: false,
+      })
+    )
+    this.mesh.rotation.x = -Math.PI / 2
+    this.mesh.position.set(pos.x, pos.y + 0.14, pos.z)
+    game.engine.scene.add(this.mesh)
+  }
+
+  update(dt: number): boolean {
+    this.t += dt / this.dur
+    const prevR = 0.5 + Math.max(0, this.t - dt / this.dur) * this.maxR
+    const r = 0.5 + this.t * this.maxR
+    this.mesh.scale.setScalar(r)
+    const m = this.mesh.material as THREE.MeshBasicMaterial
+    m.opacity = Math.max(0, 0.9 * (1 - this.t))
+    if (!this.hit && this.t > 0.04) {
+      const p = this.game.player
+      const d = Math.hypot(p.pos.x - this.pos.x, p.pos.z - this.pos.z)
+      if (d >= prevR - 0.5 && d <= r + 0.5) {
+        this.hit = true
+        if (p.takeDamage(this.dmg, this.pos.x, this.pos.z, this.game)) this.game.onPlayerHit(this.dmg)
+      }
+    }
+    if (this.t >= 1) {
+      this.game.engine.scene.remove(this.mesh)
+      ;(this.mesh.material as THREE.MeshBasicMaterial).dispose()
+      this.mesh.geometry.dispose()
+      return false
+    }
+    return true
+  }
+}
+
 /* ================= GAME ================= */
 
 export class Game {
@@ -180,6 +234,7 @@ export class Game {
   private bursts: Burst[] = []
   private texts: FloatText[] = []
   private orbs: SoulOrb[] = []
+  private waves: Shockwave[] = []
   private bloodstain: { mesh: THREE.Group; amount: number } | null = null
   private boomLights: { light: THREE.PointLight; t: number }[] = []
 
@@ -588,15 +643,40 @@ export class Game {
   }
 
   onBossPhase2() {
+    this.sfx.phaseRoar()
+    this.shake = Math.max(this.shake, 0.5)
+    const c = this.boss.pos.clone().add(new THREE.Vector3(0, 2.4, 0))
+    this.spawnBurst(c, 0xff5533, 34, 4.5)
+    this.spawnBurst(this.boss.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xff8844, 20, 3, 0.7, 0.2)
+  }
+
+  onBossIntro(pos: THREE.Vector3) {
     this.sfx.bossRoar()
-    this.shake = Math.max(this.shake, 0.4)
-    this.spawnBurst(this.boss.pos.clone().add(new THREE.Vector3(0, 3, 0)), 0xff5533, 26, 4)
+    this.shake = Math.max(this.shake, 0.42)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 2.6, 0)), 0xb04a2a, 24, 3.4)
   }
 
   onBossSlam(pos: THREE.Vector3) {
-    this.shake = Math.max(this.shake, 0.45)
+    this.shake = Math.max(this.shake, 0.5)
     this.sfx.heavy()
-    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xb0a080, 20, 4, 0.6, 0.2)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xb0a080, 24, 4.5, 0.6, 0.22)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.25, 0)), 0x8a7a5c, 14, 2.4, 0.8, 0.28)
+    this.waves.push(new Shockwave(this, pos.clone(), 4.8, 14))
+  }
+
+  onBossStomp(pos: THREE.Vector3) {
+    this.shake = Math.max(this.shake, 0.45)
+    this.sfx.stomp()
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 0xb0a080, 26, 5, 0.55, 0.24)
+    this.waves.push(new Shockwave(this, pos.clone(), 4.0, 16, 0xc9b48a))
+  }
+
+  onBossStagger(pos: THREE.Vector3) {
+    this.sfx.stagger()
+    this.shake = Math.max(this.shake, 0.32)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 2.2, 0)), 0xffe08a, 18, 3, 0.5)
+    this.spawnText('تعادلش شکست!', '#ffd54a', pos.clone().add(new THREE.Vector3(0, 4.4, 0)))
+    this.emit(true)
   }
 
   spawnDamageText(dmg: number, pos: THREE.Vector3, height: number) {
@@ -868,6 +948,8 @@ export class Game {
   private updateEffects(dt: number) {
     this.bursts = this.bursts.filter((b) => b.update(dt, this.engine.scene))
     this.texts = this.texts.filter((t) => t.update(dt, this.engine.scene))
+    // boss slam/stomp shockwave rings
+    this.waves = this.waves.filter((w) => w.update(dt))
     // creeper explosion flash lights
     this.boomLights = this.boomLights.filter((b) => {
       b.t += dt

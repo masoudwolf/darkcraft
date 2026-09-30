@@ -148,4 +148,33 @@ export class Sfx {
     this.noise(0.16, 0.42, 3200, 420)
     this.tone(72, 0.5, 'sine', 0.52, 28)
   }
+
+  /* ---- boss ---- */
+
+  /** deeper, longer roar for the phase-2 awakening */
+  phaseRoar() {
+    this.tone(62, 1.3, 'sawtooth', 0.42, 30)
+    this.tone(124, 0.9, 'square', 0.16, 58, 0.1)
+    this.noise(1.1, 0.32, 620, 90)
+  }
+
+  /** heavy foot/knee impact */
+  stomp() {
+    this.noise(0.26, 0.55, 340, 60)
+    this.tone(58, 0.32, 'sine', 0.5, 26)
+    this.noise(0.08, 0.2, 2600, 700)
+  }
+
+  /** charge dash whoosh */
+  dash() {
+    this.noise(0.32, 0.3, 1100, 260)
+    this.tone(140, 0.2, 'sawtooth', 0.12, 70)
+  }
+
+  /** posture break — metallic groan + impact */
+  stagger() {
+    this.tone(210, 0.5, 'sawtooth', 0.24, 62)
+    this.noise(0.3, 0.4, 1600, 160)
+    this.tone(90, 0.4, 'square', 0.3, 40, 0.12)
+  }
 }

@@ -1,13 +1,16 @@
 import * as THREE from 'three'
 import {
   createHumanoid, animIdle, animWalk, animZombieWalk, animAttack, animHit, animDead,
+  animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
   resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
 } from './models'
 import { BONFIRE, type World } from './world'
 import type { Game } from './game'
 import type { Player } from './player'
 
-export type EnemyState = 'idle' | 'chase' | 'return' | 'windup' | 'strike' | 'recover' | 'hitstun' | 'dead'
+export type EnemyState =
+  | 'idle' | 'chase' | 'return' | 'windup' | 'strike' | 'recover'
+  | 'hitstun' | 'roar' | 'stagger' | 'dead'
 
 export interface EnemyOpts {
   hp: number
@@ -121,10 +124,11 @@ export class Enemy {
 
     if (this.dead) {
       this.deathT += dt
-      animDead(this.h, Math.min(1, this.stateT / 0.9))
+      this.deathAnim(Math.min(1, this.stateT / this.deathDur()))
       this.stateT += dt
-      if (this.deathT > 1.1) {
-        const fade = Math.max(0, 1 - (this.deathT - 1.1) / 1.1)
+      const holdT = this.deathDur() + 0.2
+      if (this.deathT > holdT) {
+        const fade = Math.max(0, 1 - (this.deathT - holdT) / 1.1)
         setOpacity(this.h, fade)
         if (fade <= 0) this.h.group.visible = false
       }
@@ -135,6 +139,10 @@ export class Enemy {
     const dz = player.pos.z - this.pos.z
     const dist = Math.hypot(dx, dz)
     const angleToPlayer = Math.atan2(dx, dz)
+    // signed angle between current facing and the player direction
+    let angDiff = angleToPlayer - this.yaw
+    while (angDiff > Math.PI) angDiff -= Math.PI * 2
+    while (angDiff < -Math.PI) angDiff += Math.PI * 2
     // bonfire safe zone – hollows will not pursue the unkindled who rest
     const playerSafe =
       Math.hypot(player.pos.x - BONFIRE.x, player.pos.z - BONFIRE.z) < 5.5
@@ -182,11 +190,11 @@ export class Enemy {
           this.state = 'return'
           break
         }
-        if (dist <= this.opts.atkRange && this.cd <= 0) {
+        if (this.cd <= 0 && this.wantsAttack(dist, angDiff)) {
           this.state = 'windup'
           this.stateT = 0
           this.strikeDone = false
-          this.onWindupStart(game)
+          this.onWindupStart(game, dist, angDiff)
           break
         }
         this.yaw = angleToPlayer
@@ -224,15 +232,17 @@ export class Enemy {
           this.state = 'strike'
           this.stateT = 0
           this.strikeDone = false
+          this.onStrikeStart(player, game)
         }
         break
       }
       case 'strike': {
         this.stateT += dt
-        const dur = this.isBoss ? 0.32 : 0.22
+        const dur = this.strikeDur()
         const p = Math.min(1, this.stateT / dur)
         this.strikeAnim(p)
-        if (!this.strikeDone && p >= 0.4) {
+        this.strikeMove(dt, p, player, game)
+        if (!this.strikeDone && p >= this.strikeImpactP()) {
           this.strikeDone = true
           this.doStrike(player, game, dist, angleToPlayer)
         }
@@ -245,11 +255,34 @@ export class Enemy {
       case 'recover': {
         this.stateT += dt
         const p = this.stateT / this.opts.recover
-        resetPose(this.h)
-        this.h.armR.rotation.x = 0.9 * (1 - p)
+        this.recoverAnim(p)
         if (p >= 1) {
           this.state = 'chase'
           this.cd = this.attackCooldown()
+        }
+        break
+      }
+      case 'roar': {
+        // cinematic, uninterruptible (handled per-subclass in takeDamage)
+        this.stateT += dt
+        const p = Math.min(1, this.stateT / this.roarDur())
+        this.roarAnim(p)
+        if (p >= 1) {
+          this.state = 'chase'
+          this.stateT = 0
+          this.cd = 0.5
+        }
+        break
+      }
+      case 'stagger': {
+        // posture broken — wide-open punish window
+        this.stateT += dt
+        const p = Math.min(1, this.stateT / this.staggerDur())
+        this.staggerAnim(p)
+        if (p >= 1) {
+          this.state = 'chase'
+          this.stateT = 0
+          this.cd = 0.6
         }
         break
       }
@@ -283,6 +316,13 @@ export class Enemy {
     return this.opts.speed
   }
 
+  /* ---- virtual hooks (overridden by special enemy classes) ---- */
+
+  /** decide whether to start an attack from the current chase position */
+  protected wantsAttack(dist: number, _angDiff: number): boolean {
+    return dist <= this.opts.atkRange
+  }
+
   protected attackCooldown() {
     return 1.1 + Math.random() * 0.8
   }
@@ -291,12 +331,26 @@ export class Enemy {
     return this.opts.windup
   }
 
-  protected onWindupStart(_game?: Game) {}
+  protected strikeDur() {
+    return this.isBoss ? 0.32 : 0.22
+  }
+
+  /** normalized progress (0..1) inside the strike at which damage lands */
+  protected strikeImpactP() {
+    return 0.4
+  }
+
+  protected onWindupStart(_game: Game | undefined, _dist: number, _angDiff: number) {}
 
   /** return true to abort the windup (e.g. creeper defusing) */
   protected windupShouldCancel(_dist: number): boolean {
     return false
   }
+
+  protected onStrikeStart(_player: Player, _game: Game) {}
+
+  /** movement during the strike state (e.g. charge dash) */
+  protected strikeMove(_dt: number, _p: number, _player: Player, _game: Game) {}
 
   protected windupAnim(p: number) {
     resetPose(this.h)
@@ -307,6 +361,31 @@ export class Enemy {
 
   protected strikeAnim(p: number) {
     animAttack(this.h, p, 'light0')
+  }
+
+  protected recoverAnim(p: number) {
+    resetPose(this.h)
+    this.h.armR.rotation.x = 0.9 * (1 - p)
+  }
+
+  protected roarDur() {
+    return 0.001
+  }
+
+  protected roarAnim(_p: number) {}
+
+  protected staggerDur() {
+    return 0.001
+  }
+
+  protected staggerAnim(_p: number) {}
+
+  protected deathDur() {
+    return 0.9
+  }
+
+  protected deathAnim(p: number) {
+    animDead(this.h, p)
   }
 
   protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
@@ -337,8 +416,18 @@ export class Enemy {
 
 /* ================= BOSS ================= */
 
+type BossMove = 'slam' | 'sweep' | 'charge' | 'stomp'
+
 export class BossEnemy extends Enemy {
-  private pick: 'slam' | 'sweep' = 'slam'
+  private pick: BossMove = 'slam'
+  private followUp: BossMove | null = null // queued phase-2 combo
+  private poise = 0
+  private maxPoise = 150
+  private phase2Done = false
+  private introDone = false
+  private dashDir = new THREE.Vector3(0, 0, 1)
+  private chargeHit = false
+  private dustT = 0
 
   constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
     super(scene, 'boss', spawn, {
@@ -365,6 +454,55 @@ export class BossEnemy extends Enemy {
     super.reset()
     this.active = false
     this.pick = 'slam'
+    this.followUp = null
+    this.poise = 0
+    this.phase2Done = false
+    this.introDone = false
+    this.chargeHit = false
+    setFlash(this.h, 0)
+  }
+
+  update(dt: number, player: Player, game: Game) {
+    // ---- intro roar on first activation ----
+    if (this.active && !this.introDone && !this.dead) {
+      this.introDone = true
+      this.state = 'roar'
+      this.stateT = 0
+      game.onBossIntro(this.pos)
+    }
+    // ---- phase-2 awakening (uninterruptible cinematic) ----
+    if (!this.phase2Done && !this.dead && this.hp > 0 && this.hp < this.maxHp * 0.5) {
+      this.phase2Done = true
+      this.state = 'roar'
+      this.stateT = 0
+      game.onBossPhase2()
+    }
+    super.update(dt, player, game)
+    // ---- phase-2 smoldering red aura ----
+    if (this.phase2Done && !this.dead) {
+      const pulse = 0.16 + Math.sin(this.animT * 5.5) * 0.07
+      setFlash(this.h, this.flash * 0.55 + pulse)
+    }
+  }
+
+  /** phase 2: damage taken no longer breaks posture (already enraged) */
+  takeDamage(dmg: number, game: Game, fromX: number, fromZ: number) {
+    if (this.state === 'roar') return // cinematic window — untouchable
+    const wasStaggered = this.state === 'stagger'
+    super.takeDamage(dmg, game, fromX, fromZ)
+    if (this.dead) return
+    if (wasStaggered) {
+      // keep soaking hits without re-staggering, stay slumped
+      this.state = 'stagger'
+      return
+    }
+    this.poise += dmg
+    if (this.poise >= this.maxPoise) {
+      this.poise = 0
+      this.state = 'stagger'
+      this.stateT = 0
+      game.onBossStagger(this.pos)
+    }
   }
 
   protected speed() {
@@ -372,54 +510,201 @@ export class BossEnemy extends Enemy {
   }
 
   protected attackCooldown() {
+    if (this.phase2() && this.followUp) return 0.14 // chained combo
     return this.phase2() ? 0.35 + Math.random() * 0.3 : 0.8 + Math.random() * 0.4
   }
 
+  /** context-aware attack selection — fixes the "always beeline" weakness */
+  protected wantsAttack(dist: number, angDiff: number): boolean {
+    if (dist > 7.5) return true // long-range charge (anti-kite)
+    if (this.phase2() && dist > 5.6) return true // faster gap-closer when enraged
+    if (dist <= 3.6) return true
+    return Math.abs(angDiff) > 1.5 && dist < 4.6
+  }
+
   protected windupDur() {
-    const base = this.pick === 'slam' ? 0.85 : 0.55
+    const base =
+      this.pick === 'slam' ? 0.85 : this.pick === 'sweep' ? 0.55 : this.pick === 'charge' ? 0.7 : 0.62
     return this.phase2() ? base * 0.72 : base
   }
 
-  protected onWindupStart() {
-    this.pick = Math.random() < 0.5 ? 'slam' : 'sweep'
+  protected strikeDur() {
+    switch (this.pick) {
+      case 'slam': return 0.58
+      case 'sweep': return 0.36
+      case 'charge': return 0.55
+      case 'stomp': return 0.5
+    }
   }
+
+  protected strikeImpactP() {
+    if (this.pick === 'slam') return 0.56
+    if (this.pick === 'sweep') return 0.45
+    if (this.pick === 'stomp') return 0.5
+    return 2 // charge damage is contact-based during the dash
+  }
+
+  /* ---- pick the move + queue phase-2 combo chains ---- */
+  protected onWindupStart(_game: Game | undefined, dist: number, angDiff: number) {
+    const chained = this.followUp
+    this.followUp = null
+    if (dist > 7.5) {
+      this.pick = 'charge'
+    } else if (chained && dist < 5.2) {
+      this.pick = chained
+    } else if (dist < 2.2) {
+      // point-blank hug — the knee answers faster than the greatsword
+      this.pick = Math.random() < 0.65 ? 'stomp' : 'slam'
+    } else {
+      this.pick = Math.random() < 0.52 ? 'slam' : 'sweep'
+    }
+    if (this.phase2()) {
+      if (this.pick === 'slam' && Math.random() < 0.5) this.followUp = 'sweep'
+      else if (this.pick === 'sweep' && Math.random() < 0.42) this.followUp = 'slam'
+    }
+  }
+
+  protected onStrikeStart(player: Player, game: Game) {
+    if (this.pick === 'charge') {
+      const dx = player.pos.x - this.pos.x
+      const dz = player.pos.z - this.pos.z
+      const l = Math.hypot(dx, dz) || 1
+      this.dashDir.set(dx / l, 0, dz / l)
+      this.chargeHit = false
+      game.sfx.dash()
+    }
+  }
+
+  /* ---- windup poses (telegraphs) ---- */
   protected windupAnim(p: number) {
     resetPose(this.h)
     if (this.pick === 'slam') {
-      // both arms overhead
+      // both arms overhead, chest open
       this.h.armR.rotation.x = -3.0 * p
       this.h.armL.rotation.x = -2.7 * p
       this.h.root.rotation.x = -0.18 * p
-    } else {
-      // sweep windup: sword arm back
+    } else if (this.pick === 'sweep') {
+      // sword arm drawn back flat
       this.h.armR.rotation.x = -2.4 * p
       this.h.armR.rotation.z = -0.9 * p
       this.h.root.rotation.y = 0.6 * p
+    } else if (this.pick === 'charge') {
+      // crouches low, scraping the ground — get out of the lane!
+      this.h.root.position.y = -0.22 * p
+      this.h.root.rotation.x = 0.42 * p
+      this.h.armR.rotation.x = -0.9 * p
+      this.h.armL.rotation.x = 1.1 * p
+      this.h.legL.rotation.x = 0.7 * p
+      this.h.legR.rotation.x = -0.55 * p
+      this.h.head.rotation.x = -0.3 * p
+    } else {
+      // stomp windup: knee rises, arms spread for balance
+      this.h.legR.rotation.x = -1.35 * p
+      this.h.armL.rotation.x = -0.8 * p
+      this.h.armR.rotation.x = -0.8 * p
+      this.h.armL.rotation.z = 0.5 * p
+      this.h.armR.rotation.z = -0.5 * p
+      this.h.root.position.y = 0.1 * p
     }
   }
 
   protected strikeAnim(p: number) {
-    if (this.pick === 'slam') {
-      resetPose(this.h)
-      this.h.armR.rotation.x = -3.0 + 3.9 * p
-      this.h.armL.rotation.x = -2.7 + 3.4 * p
-      this.h.root.rotation.x = -0.18 + 0.6 * p
-      if (p > 0.55) this.h.root.position.y = -0.15
-    } else {
-      animAttack(this.h, p, 'light1')
-      this.h.root.rotation.y = 0.6 - 1.8 * p
+    switch (this.pick) {
+      case 'slam': animSlam(this.h, p); break
+      case 'sweep': animSweep(this.h, p); break
+      case 'charge': animCharge(this.h, p); break
+      case 'stomp': animStomp(this.h, p); break
     }
+  }
+
+  /** charge dash: forward movement + dust + contact damage */
+  protected strikeMove(dt: number, p: number, player: Player, game: Game) {
+    if (this.pick !== 'charge') return
+    const sp = 15.5 * (1 - 0.35 * p)
+    this.pos.x += this.dashDir.x * sp * dt
+    this.pos.z += this.dashDir.z * sp * dt
+    // dust trail
+    this.dustT -= dt
+    if (this.dustT <= 0) {
+      this.dustT = 0.06
+      game.spawnBurst(
+        this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.25, (Math.random() - 0.5) * 0.8)),
+        0x9a8b70, 4, 1.6, 0.45, 0.16
+      )
+    }
+    // contact hit once per dash
+    if (!this.chargeHit) {
+      const d = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z)
+      if (d < 1.8) {
+        this.chargeHit = true
+        const dmg = Math.round(this.opts.dmg * 0.8 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+        game.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 1.6, 0)), 0xffd27a, 12, 3, 0.4)
+      }
+    }
+  }
+
+  protected recoverAnim(p: number) {
+    resetPose(this.h)
+    if (this.pick === 'slam') {
+      this.h.armR.rotation.x = 0.55 * (1 - p)
+      this.h.armL.rotation.x = 0.45 * (1 - p)
+      this.h.root.rotation.x = 0.25 * (1 - p)
+    } else if (this.pick === 'sweep') {
+      this.h.armR.rotation.x = -0.6 * (1 - p)
+      this.h.armR.rotation.z = 0.85 * (1 - p)
+      this.h.root.rotation.y = -1.1 * (1 - p)
+    } else if (this.pick === 'charge') {
+      this.h.root.rotation.x = 0.35 * (1 - p)
+      this.h.armR.rotation.x = -1.7 * (1 - p)
+    } else {
+      this.h.legR.rotation.x = 0.5 * (1 - p)
+      this.h.root.rotation.x = 0.2 * (1 - p)
+    }
+  }
+
+  /* ---- roar (intro + phase 2) ---- */
+  protected roarDur() {
+    return 2.1
+  }
+
+  protected roarAnim(p: number) {
+    animRoar(this.h, p)
+  }
+
+  protected staggerDur() {
+    return 1.9
+  }
+
+  protected staggerAnim(p: number) {
+    animStagger(this.h, p)
+  }
+
+  /* ---- cinematic death ---- */
+  protected deathDur() {
+    return 1.7
+  }
+
+  protected deathAnim(p: number) {
+    animBossDead(this.h, p)
   }
 
   protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
     if (this.pick === 'slam') {
-      // AOE around boss front
-      if (dist < 4.1) {
-        const dmg = Math.round(this.opts.dmg * 1.2 * (0.9 + Math.random() * 0.2))
+      // AOE impact around the boss + travelling shockwave ring
+      if (dist < 4.2) {
+        const dmg = Math.round(this.opts.dmg * 1.15 * (0.9 + Math.random() * 0.2))
         if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
       }
       game.onBossSlam(this.pos)
-    } else {
+    } else if (this.pick === 'stomp') {
+      // 360° nova — punishes hugging and rear attackers
+      if (dist < 3.6) {
+        const dmg = Math.round(this.opts.dmg * 0.95 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      }
+      game.onBossStomp(this.pos)
+    } else if (this.pick === 'sweep') {
       const reach = this.opts.atkRange + 1.1
       let angDiff = angleToPlayer - this.yaw
       while (angDiff > Math.PI) angDiff -= Math.PI * 2
@@ -429,6 +714,7 @@ export class BossEnemy extends Enemy {
         if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
       }
     }
+    // charge damage is handled contact-style in strikeMove
   }
 }
 
@@ -455,7 +741,7 @@ export class CreeperEnemy extends Enemy {
     this.h.group.scale.setScalar(this.opts.scale)
   }
 
-  protected onWindupStart(game?: Game) {
+  protected onWindupStart(game?: Game, _dist?: number, _angDiff?: number) {
     game?.sfx.hiss()
   }
 

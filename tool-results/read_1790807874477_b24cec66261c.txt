@@ -1,0 +1,995 @@
+     1→import * as THREE from 'three'
+     2→import { Engine } from './engine'
+     3→import { World, BONFIRE, GATE_Z, BOSS_CENTER } from './world'
+     4→import { Player } from './player'
+     5→import { Enemy, BossEnemy, CreeperEnemy } from './enemy'
+     6→import { createSword } from './models'
+     7→import { Sfx } from './sfx'
+     8→import type { PlayerStrikeDef } from './player'
+     9→
+    10→/* ================= HUD STATE ================= */
+    11→
+    12→export type Phase = 'menu' | 'playing' | 'dead' | 'rest'
+    13→
+    14→export interface HudState {
+    15→  phase: Phase
+    16→  hp: number
+    17→  maxHp: number
+    18→  st: number
+    19→  maxSt: number
+    20→  souls: number
+    21→  level: number
+    22→  estus: number
+    23→  maxEstus: number
+    24→  vit: number
+    25→  end: number
+    26→  str: number
+    27→  nextCost: number
+    28→  bossName: string | null
+    29→  bossHp: number
+    30→  bossMax: number
+    31→  prompt: string | null
+    32→  banner: 'died' | 'bossfell' | null
+    33→  blocking: boolean
+    34→}
+    35→
+    36→export interface SaveData {
+    37→  souls: number
+    38→  level: number
+    39→  vit: number
+    40→  end: number
+    41→  str: number
+    42→}
+    43→
+    44→const SAVE_KEY = 'minesouls_v1'
+    45→
+    46→/* ================= PARTICLES / EFFECTS ================= */
+    47→
+    48→class Burst {
+    49→  points: THREE.Points
+    50→  private vel: Float32Array
+    51→  private t = 0
+    52→  private life: number
+    53→
+    54→  constructor(scene: THREE.Scene, pos: THREE.Vector3, color: number, count = 14, speed = 3, life = 0.7, size = 0.14) {
+    55→    this.life = life
+    56→    const positions = new Float32Array(count * 3)
+    57→    this.vel = new Float32Array(count * 3)
+    58→    for (let i = 0; i < count; i++) {
+    59→      positions[i * 3] = pos.x
+    60→      positions[i * 3 + 1] = pos.y
+    61→      positions[i * 3 + 2] = pos.z
+    62→      const a = Math.random() * Math.PI * 2
+    63→      const s = speed * (0.4 + Math.random() * 0.6)
+    64→      this.vel[i * 3] = Math.cos(a) * s
+    65→      this.vel[i * 3 + 1] = 1.5 + Math.random() * 2.5
+    66→      this.vel[i * 3 + 2] = Math.sin(a) * s
+    67→    }
+    68→    const geo = new THREE.BufferGeometry()
+    69→    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    70→    const mat = new THREE.PointsMaterial({
+    71→      color, size, transparent: true, opacity: 1, depthWrite: false,
+    72→    })
+    73→    this.points = new THREE.Points(geo, mat)
+    74→    scene.add(this.points)
+    75→  }
+    76→
+    77→  update(dt: number, scene: THREE.Scene): boolean {
+    78→    this.t += dt
+    79→    const pos = this.points.geometry.getAttribute('position') as THREE.BufferAttribute
+    80→    for (let i = 0; i < pos.count; i++) {
+    81→      pos.setXYZ(
+    82→        i,
+    83→        pos.getX(i) + this.vel[i * 3] * dt,
+    84→        pos.getY(i) + this.vel[i * 3 + 1] * dt,
+    85→        pos.getZ(i) + this.vel[i * 3 + 2] * dt
+    86→      )
+    87→      this.vel[i * 3 + 1] -= 5 * dt
+    88→    }
+    89→    pos.needsUpdate = true
+    90→    const mat = this.points.material as THREE.PointsMaterial
+    91→    mat.opacity = Math.max(0, 1 - this.t / this.life)
+    92→    if (this.t >= this.life) {
+    93→      scene.remove(this.points)
+    94→      this.points.geometry.dispose()
+    95→      mat.dispose()
+    96→      return false
+    97→    }
+    98→    return true
+    99→  }
+   100→}
+   101→
+   102→class FloatText {
+   103→  sprite: THREE.Sprite
+   104→  t = 0
+   105→
+   106→  constructor(text: string, color: string, pos: THREE.Vector3) {
+   107→    const canvas = document.createElement('canvas')
+   108→    canvas.width = 256
+   109→    canvas.height = 96
+   110→    const ctx = canvas.getContext('2d')!
+   111→    ctx.font = 'bold 54px monospace'
+   112→    ctx.textAlign = 'center'
+   113→    ctx.textBaseline = 'middle'
+   114→    ctx.lineWidth = 10
+   115→    ctx.strokeStyle = 'rgba(0,0,0,0.9)'
+   116→    ctx.strokeText(text, 128, 48)
+   117→    ctx.fillStyle = color
+   118→    ctx.fillText(text, 128, 48)
+   119→    const tex = new THREE.CanvasTexture(canvas)
+   120→    tex.colorSpace = THREE.SRGBColorSpace
+   121→    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
+   122→    this.sprite = new THREE.Sprite(mat)
+   123→    this.sprite.scale.set(2.4, 0.9, 1)
+   124→    this.sprite.position.copy(pos)
+   125→  }
+   126→
+   127→  update(dt: number, scene: THREE.Scene): boolean {
+   128→    this.t += dt
+   129→    this.sprite.position.y += dt * 1.4
+   130→    const mat = this.sprite.material as THREE.SpriteMaterial
+   131→    mat.opacity = Math.max(0, 1 - this.t / 1.1)
+   132→    if (this.t >= 1.1) {
+   133→      scene.remove(this.sprite)
+   134→      mat.map?.dispose()
+   135→      mat.dispose()
+   136→      return false
+   137→    }
+   138→    return true
+   139→  }
+   140→}
+   141→
+   142→interface SoulOrb {
+   143→  mesh: THREE.Mesh
+   144→  t: number
+   145→  amount: number
+   146→  from: THREE.Vector3
+   147→}
+   148→
+   149→/* ================= GAME ================= */
+   150→
+   151→export class Game {
+   152→  engine: Engine
+   153→  world: World
+   154→  player: Player
+   155→  sfx = new Sfx()
+   156→  enemies: Enemy[] = []
+   157→  boss: BossEnemy
+   158→  phase: Phase = 'menu'
+   159→  onState?: (s: HudState) => void
+   160→
+   161→  private spawns: THREE.Vector3[] = []
+   162→  private camYaw = Math.PI
+   163→  private camPitch = 0.42
+   164→  private camDist = 5.4
+   165→  private camDistTarget = 5.4
+   166→  private camPos = new THREE.Vector3()
+   167→  private camTarget = new THREE.Vector3()
+   168→  private shake = 0
+   169→  private hitstop = 0
+   170→  private hurtFlash = 0
+   171→  private deadT = 0
+   172→  private bannerT = 0
+   173→  private banner: 'died' | 'bossfell' | null = null
+   174→  private prompt: string | null = null
+   175→  private fogPassT = 0
+   176→  private bossActive = false
+   177→  private bossFell = false
+   178→  private lockLastMove = 0
+   179→
+   180→  private bursts: Burst[] = []
+   181→  private texts: FloatText[] = []
+   182→  private orbs: SoulOrb[] = []
+   183→  private bloodstain: { mesh: THREE.Group; amount: number } | null = null
+   184→  private boomLights: { light: THREE.PointLight; t: number }[] = []
+   185→
+   186→  private reticle: HTMLDivElement
+   187→  private vignette: HTMLDivElement
+   188→  private bonfireLight: THREE.PointLight
+   189→  private bonfireFlame: THREE.Points
+   190→  private flameSeeds: Float32Array
+   191→  private time = 0
+   192→  private sun: THREE.DirectionalLight
+   193→  private shadowTimer = 0
+   194→
+   195→  private lastHudJson = ''
+   196→
+   197→  constructor(private container: HTMLElement) {
+   198→    this.engine = new Engine(container)
+   199→    this.engine.onFrame = (dt) => this.loop(dt)
+   200→    ;(window as unknown as { __minesouls?: Game }).__minesouls = this
+   201→
+   202→    // scene setup
+   203→    const scene = this.engine.scene
+   204→    scene.background = new THREE.Color(0x101720)
+   205→    scene.fog = new THREE.Fog(0x101720, 26, 78)
+   206→
+   207→    const hemi = new THREE.HemisphereLight(0x38445c, 0x2a1c10, 0.75)
+   208→    scene.add(hemi)
+   209→    const sun = new THREE.DirectionalLight(0xffd9a0, 1.25)
+   210→    sun.position.set(28, 46, 18)
+   211→    sun.castShadow = true
+   212→    sun.shadow.mapSize.set(1024, 1024)
+   213→    sun.shadow.autoUpdate = false
+   214→    sun.shadow.needsUpdate = true
+   215→    this.sun = sun
+   216→    sun.shadow.camera.left = -42
+   217→    sun.shadow.camera.right = 42
+   218→    sun.shadow.camera.top = 42
+   219→    sun.shadow.camera.bottom = -42
+   220→    sun.shadow.camera.far = 130
+   221→    sun.shadow.bias = -0.0005
+   222→    scene.add(sun)
+   223→
+   224→    this.world = new World()
+   225→    scene.add(this.world.group)
+   226→
+   227→    // bonfire decor: stuck sword + light + flame particles
+   228→    const bY = this.world.surfaceAt(BONFIRE.x, BONFIRE.z)
+   229→    const fireSword = createSword(1.5)
+   230→    fireSword.position.set(BONFIRE.x, bY + 0.1, BONFIRE.z)
+   231→    fireSword.rotation.z = 0.16
+   232→    fireSword.rotation.x = 0.1
+   233→    scene.add(fireSword)
+   234→
+   235→    this.bonfireLight = new THREE.PointLight(0xff8033, 3, 16, 1.6)
+   236→    this.bonfireLight.position.set(BONFIRE.x, bY + 1.4, BONFIRE.z)
+   237→    scene.add(this.bonfireLight)
+   238→
+   239→    const flameCount = 30
+   240→    const flamePos = new Float32Array(flameCount * 3)
+   241→    const flameCol = new Float32Array(flameCount * 3)
+   242→    this.flameSeeds = new Float32Array(flameCount)
+   243→    for (let i = 0; i < flameCount; i++) {
+   244→      this.flameSeeds[i] = Math.random()
+   245→      flameCol[i * 3] = 1
+   246→      flameCol[i * 3 + 1] = 0.45 + Math.random() * 0.4
+   247→      flameCol[i * 3 + 2] = 0.1
+   248→    }
+   249→    const flameGeo = new THREE.BufferGeometry()
+   250→    flameGeo.setAttribute('position', new THREE.BufferAttribute(flamePos, 3))
+   251→    flameGeo.setAttribute('color', new THREE.BufferAttribute(flameCol, 3))
+   252→    this.bonfireFlame = new THREE.Points(
+   253→      flameGeo,
+   254→      new THREE.PointsMaterial({
+   255→        size: 0.16, vertexColors: true, transparent: true, opacity: 0.95,
+   256→        depthWrite: false, blending: THREE.AdditiveBlending,
+   257→      })
+   258→    )
+   259→    scene.add(this.bonfireFlame)
+   260→
+   261→    // player
+   262→    this.player = new Player(scene)
+   263→    const spawn = new THREE.Vector3(BONFIRE.x + 2.5, 0, BONFIRE.z + 2)
+   264→    spawn.y = this.world.surfaceAt(spawn.x, spawn.z)
+   265→    this.player.reset(spawn, Math.PI * 0.85)
+   266→
+   267→    // enemies
+   268→    const spawnPts: [number, number][] = [
+   269→      [6, 8], [-7, 5], [4, -2], [-5, -7], [11, -3], [-12, -1],
+   270→    ]
+   271→    for (const [x, z] of spawnPts) {
+   272→      const p = new THREE.Vector3(x, 0, z)
+   273→      p.y = this.world.surfaceAt(x, z)
+   274→      this.spawns.push(p)
+   275→      const e = new Enemy(scene, 'zombie', p, {
+   276→        hp: 82, dmg: 21, speed: 2.75, aggro: 12.5, atkRange: 2.05,
+   277→        windup: 0.62, recover: 0.85, souls: 35, scale: 0.98,
+   278→      })
+   279→      e.world = this.world
+   280→      this.enemies.push(e)
+   281→    }
+   282→
+   283→    // creepers — fast, fuse up and explode; keep your distance or block!
+   284→    const creeperPts: [number, number][] = [
+   285→      [13, -4], [-14, -9], [9, 12],
+   286→    ]
+   287→    for (const [x, z] of creeperPts) {
+   288→      const p = new THREE.Vector3(x, 0, z)
+   289→      p.y = this.world.surfaceAt(x, z)
+   290→      const c = new CreeperEnemy(scene, p)
+   291→      c.world = this.world
+   292→      this.enemies.push(c)
+   293→    }
+   294→
+   295→    // boss
+   296→    const bossSpawn = new THREE.Vector3(BOSS_CENTER.x, 0, BOSS_CENTER.z)
+   297→    bossSpawn.y = this.world.surfaceAt(BOSS_CENTER.x, BOSS_CENTER.z)
+   298→    this.boss = new BossEnemy(scene, bossSpawn)
+   299→    this.boss.world = this.world
+   300→
+   301→    // DOM overlays (reticle + hurt vignette)
+   302→    this.reticle = document.createElement('div')
+   303→    this.reticle.style.cssText =
+   304→      'position:absolute;width:14px;height:14px;border:2px solid rgba(255,90,90,0.95);transform:translate(-50%,-50%) rotate(45deg);display:none;pointer-events:none;box-shadow:0 0 6px rgba(255,60,60,0.8);z-index:5'
+   305→    container.appendChild(this.reticle)
+   306→
+   307→    this.vignette = document.createElement('div')
+   308→    this.vignette.style.cssText =
+   309→      'position:absolute;inset:0;pointer-events:none;opacity:0;z-index:4;background:radial-gradient(ellipse at center, rgba(255,0,0,0) 45%, rgba(180,0,0,0.55) 100%)'
+   310→    container.appendChild(this.vignette)
+   311→
+   312→    this.engine.start()
+   313→  }
+   314→
+   315→  get allEnemies(): Enemy[] {
+   316→    return this.bossFell ? this.enemies : [...this.enemies, this.boss]
+   317→  }
+   318→
+   319→  /* ================= PUBLIC API (for React) ================= */
+   320→
+   321→  startGame() {
+   322→    this.sfx.resume()
+   323→    this.loadSave()
+   324→    this.player.fullRestore()
+   325→    this.phase = 'playing'
+   326→    if (!this.engine.input.isTouch) this.engine.input.requestLock()
+   327→    this.emit(true)
+   328→  }
+   329→
+   330→  hasSave(): boolean {
+   331→    try {
+   332→      return !!localStorage.getItem(SAVE_KEY)
+   333→    } catch {
+   334→      return false
+   335→    }
+   336→  }
+   337→
+   338→  clearSave() {
+   339→    try {
+   340→      localStorage.removeItem(SAVE_KEY)
+   341→    } catch { /* ignore */ }
+   342→  }
+   343→
+   344→  nextCost(): number {
+   345→    return 80 * this.player.level
+   346→  }
+   347→
+   348→  rest() {
+   349→    if (this.phase !== 'playing') return
+   350→    this.phase = 'rest'
+   351→    this.player.fullRestore()
+   352→    for (const e of this.enemies) e.reset()
+   353→    if (!this.bossFell) this.boss.reset()
+   354→    this.bossActive = false
+   355→    this.world.setFogGateVisible(!this.bossFell)
+   356→    this.save()
+   357→    this.sfx.bonfire()
+   358→    this.emit(true)
+   359→  }
+   360→
+   361→  leaveRest() {
+   362→    if (this.phase !== 'rest') return
+   363→    this.phase = 'playing'
+   364→    if (!this.engine.input.isTouch) this.engine.input.requestLock()
+   365→    this.emit(true)
+   366→  }
+   367→
+   368→  levelUp(stat: 'vit' | 'end' | 'str') {
+   369→    if (this.phase !== 'rest') return
+   370→    const cost = this.nextCost()
+   371→    if (this.player.souls < cost) return
+   372→    this.player.souls -= cost
+   373→    this.player.applyLevel(stat)
+   374→    this.save()
+   375→    this.sfx.levelUp()
+   376→    this.emit(true)
+   377→  }
+   378→
+   379→  interact() {
+   380→    if (this.phase !== 'playing') return
+   381→    // bloodstain
+   382→    if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
+   383→      this.player.souls += this.bloodstain.amount
+   384→      this.spawnBurst(this.bloodstain.mesh.position, 0x59ff6a, 22, 3.5)
+   385→      this.spawnText(`+${this.bloodstain.amount}`, '#59ff6a', this.player.pos.clone().add(new THREE.Vector3(0, 2.2, 0)))
+   386→      this.engine.scene.remove(this.bloodstain.mesh)
+   387→      this.bloodstain = null
+   388→      this.sfx.souls()
+   389→      this.emit(true)
+   390→      return
+   391→    }
+   392→    // bonfire
+   393→    const bPos = new THREE.Vector3(BONFIRE.x, this.world.surfaceAt(BONFIRE.x, BONFIRE.z), BONFIRE.z)
+   394→    if (bPos.distanceTo(this.player.pos) < 2.6) {
+   395→      this.rest()
+   396→      return
+   397→    }
+   398→    // fog gate
+   399→    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
+   400→      this.fogPassT = 0.75
+   401→      this.sfx.bossRoar()
+   402→    }
+   403→  }
+   404→
+   405→  toggleLock() {
+   406→    if (this.player.lockedTarget) {
+   407→      this.player.lockedTarget = null
+   408→      return
+   409→    }
+   410→    const camF = new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw))
+   411→    let best: Enemy | null = null
+   412→    let bestScore = Infinity
+   413→    for (const e of this.allEnemies) {
+   414→      if (!e.alive || (e.isBoss && !this.bossActive)) continue
+   415→      const to = e.pos.clone().sub(this.player.pos)
+   416→      const d = to.length()
+   417→      if (d > 15) continue
+   418→      to.normalize()
+   419→      const dot = to.dot(camF)
+   420→      if (dot < 0.1) continue
+   421→      const score = d * (2 - dot)
+   422→      if (score < bestScore) {
+   423→        bestScore = score
+   424→        best = e
+   425→      }
+   426→    }
+   427→    if (best) {
+   428→      this.player.lockedTarget = { pos: best.pos, alive: true, isBoss: best.isBoss }
+   429→    }
+   430→  }
+   431→
+   432→  /* touch API */
+   433→  setTouchMove(x: number, y: number) {
+   434→    this.engine.input.touchMove.x = x
+   435→    this.engine.input.touchMove.y = y
+   436→  }
+   437→  touchPress(name: string) {
+   438→    this.sfx.resume()
+   439→    this.engine.input.press(name)
+   440→  }
+   441→  touchHold(name: string, down: boolean) {
+   442→    this.engine.input.setHeld(name, down)
+   443→  }
+   444→  touchLook(dx: number, dy: number) {
+   445→    this.engine.input.touchLookDX += dx
+   446→    this.engine.input.touchLookDY += dy
+   447→  }
+   448→
+   449→  dispose() {
+   450→    this.engine.dispose()
+   451→    if (this.reticle.parentElement) this.reticle.parentElement.removeChild(this.reticle)
+   452→    if (this.vignette.parentElement) this.vignette.parentElement.removeChild(this.vignette)
+   453→  }
+   454→
+   455→  /* ================= INTERNAL ================= */
+   456→
+   457→  private save() {
+   458→    try {
+   459→      const data: SaveData = {
+   460→        souls: this.player.souls,
+   461→        level: this.player.level,
+   462→        vit: this.player.vit,
+   463→        end: this.player.end,
+   464→        str: this.player.str,
+   465→      }
+   466→      localStorage.setItem(SAVE_KEY, JSON.stringify(data))
+   467→    } catch { /* ignore */ }
+   468→  }
+   469→
+   470→  private loadSave() {
+   471→    try {
+   472→      const raw = localStorage.getItem(SAVE_KEY)
+   473→      if (!raw) return
+   474→      const d = JSON.parse(raw) as SaveData
+   475→      // re-apply levels from scratch for consistency
+   476→      const target = { vit: d.vit ?? 0, end: d.end ?? 0, str: d.str ?? 0 }
+   477→      this.player.vit = 0
+   478→      this.player.end = 0
+   479→      this.player.str = 0
+   480→      this.player.maxHp = 95
+   481→      this.player.maxStamina = 95
+   482→      for (let i = 0; i < target.vit; i++) this.player.applyLevel('vit')
+   483→      for (let i = 0; i < target.end; i++) this.player.applyLevel('end')
+   484→      for (let i = 0; i < target.str; i++) this.player.applyLevel('str')
+   485→      this.player.level = 1 + target.vit + target.end + target.str
+   486→      this.player.souls = d.souls ?? 0
+   487→    } catch { /* ignore */ }
+   488→  }
+   489→
+   490→  private playerStrike(def: PlayerStrikeDef) {
+   491→    const fwd = new THREE.Vector3(Math.sin(this.player.yaw), 0, Math.cos(this.player.yaw))
+   492→    let hits = 0
+   493→    for (const e of this.allEnemies) {
+   494→      if (!e.alive) continue
+   495→      const to = e.pos.clone().sub(this.player.pos)
+   496→      const d = to.length()
+   497→      if (d > def.range + (e.isBoss ? 1.2 : 0.3)) continue
+   498→      to.y = 0
+   499→      to.normalize()
+   500→      if (to.dot(fwd) < Math.cos(def.arc)) continue
+   501→      const dmg = Math.max(1, Math.round(def.dmg * (0.92 + Math.random() * 0.16)))
+   502→      e.takeDamage(dmg, this, this.player.pos.x, this.player.pos.z)
+   503→      hits++
+   504→    }
+   505→    if (hits > 0) {
+   506→      this.hitstop = def.heavy ? 0.09 : 0.06
+   507→      if (def.heavy) {
+   508→        this.sfx.heavy()
+   509→        this.shake = Math.max(this.shake, 0.18)
+   510→      } else {
+   511→        this.sfx.hit()
+   512→      }
+   513→      // spark burst at first victim
+   514→      const victim = this.allEnemies.find((e) => e.alive && e.pos.distanceTo(this.player.pos) < def.range + 1.4)
+   515→      if (victim) this.spawnBurst(victim.pos.clone().add(new THREE.Vector3(0, 1.3, 0)), 0xffe08a, 8, 2.2, 0.4)
+   516→    }
+   517→  }
+   518→
+   519→  onPlayerHit(dmg: number) {
+   520→    this.hurtFlash = Math.min(1, 0.4 + dmg / 90)
+   521→    this.shake = Math.max(this.shake, 0.32)
+   522→    this.sfx.hurt()
+   523→    this.emit(true)
+   524→  }
+   525→
+   526→  onPlayerBlock(dmg: number) {
+   527→    this.shake = Math.max(this.shake, 0.12)
+   528→    this.sfx.block()
+   529→    const fwd = new THREE.Vector3(Math.sin(this.player.yaw), 0, Math.cos(this.player.yaw))
+   530→    const at = this.player.pos
+   531→      .clone()
+   532→      .add(fwd.multiplyScalar(0.75))
+   533→      .add(new THREE.Vector3(0, 1.15, 0))
+   534→    this.spawnBurst(at, 0xffe9a0, 10, 2.6, 0.35, 0.1)
+   535→    this.emit(true)
+   536→  }
+   537→
+   538→  onGuardBreak(chip: number) {
+   539→    this.sfx.guardBreak()
+   540→    this.shake = Math.max(this.shake, 0.3)
+   541→    this.hurtFlash = Math.min(1, 0.35 + chip / 90)
+   542→    this.spawnText('شکستن دفاع!', '#ff7a5c', this.player.pos.clone().add(new THREE.Vector3(0, 2.2, 0)))
+   543→    this.emit(true)
+   544→  }
+   545→
+   546→  onCreeperBoom(pos: THREE.Vector3) {
+   547→    this.shake = Math.max(this.shake, 0.5)
+   548→    this.sfx.boom()
+   549→    const at = pos.clone().add(new THREE.Vector3(0, 1, 0))
+   550→    this.spawnBurst(at, 0xffb347, 30, 6, 0.5, 0.22)
+   551→    this.spawnBurst(at, 0x9fd89f, 20, 3.6, 0.85, 0.3)
+   552→    const light = new THREE.PointLight(0xffa040, 7, 13, 1.8)
+   553→    light.position.copy(pos).add(new THREE.Vector3(0, 1.2, 0))
+   554→    this.engine.scene.add(light)
+   555→    this.boomLights.push({ light, t: 0 })
+   556→  }
+   557→
+   558→  onPlayerHeal(heal: number) {
+   559→    this.sfx.heal()
+   560→    this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xffc44d, 14, 2)
+   561→    this.spawnText(`+${heal}`, '#ffc44d', this.player.pos.clone().add(new THREE.Vector3(0, 2.2, 0)))
+   562→    this.emit(true)
+   563→  }
+   564→
+   565→  onEnemyKilled(e: Enemy) {
+   566→    // soul orb flies to player
+   567→    const orb = new THREE.Mesh(
+   568→      new THREE.BoxGeometry(0.28, 0.28, 0.28),
+   569→      new THREE.MeshBasicMaterial({ color: 0x59ff6a })
+   570→    )
+   571→    orb.position.copy(e.pos).add(new THREE.Vector3(0, 1.2, 0))
+   572→    this.engine.scene.add(orb)
+   573→    this.orbs.push({ mesh: orb, t: 0, amount: e.isBoss ? 3000 : e.soulsValue(), from: orb.position.clone() })
+   574→    if (e.isBoss) this.onBossKilled()
+   575→    this.emit(true)
+   576→  }
+   577→
+   578→  private onBossKilled() {
+   579→    this.bossFell = true
+   580→    this.bossActive = false
+   581→    this.bossActiveBarrier = false
+   582→    this.world.setFogGateVisible(false)
+   583→    this.banner = 'bossfell'
+   584→    this.bannerT = 0
+   585→    if (this.player.lockedTarget) this.player.lockedTarget = null
+   586→    this.sfx.victory()
+   587→    this.save()
+   588→  }
+   589→
+   590→  onBossPhase2() {
+   591→    this.sfx.bossRoar()
+   592→    this.shake = Math.max(this.shake, 0.4)
+   593→    this.spawnBurst(this.boss.pos.clone().add(new THREE.Vector3(0, 3, 0)), 0xff5533, 26, 4)
+   594→  }
+   595→
+   596→  onBossSlam(pos: THREE.Vector3) {
+   597→    this.shake = Math.max(this.shake, 0.45)
+   598→    this.sfx.heavy()
+   599→    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xb0a080, 20, 4, 0.6, 0.2)
+   600→  }
+   601→
+   602→  spawnDamageText(dmg: number, pos: THREE.Vector3, height: number) {
+   603→    this.spawnText(`${dmg}`, '#ffffff', pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, height, (Math.random() - 0.5) * 0.6)))
+   604→  }
+   605→
+   606→  spawnText(text: string, color: string, pos: THREE.Vector3) {
+   607→    this.texts.push(new FloatText(text, color, pos))
+   608→    this.engine.scene.add(this.texts[this.texts.length - 1].sprite)
+   609→  }
+   610→
+   611→  spawnBurst(pos: THREE.Vector3, color: number, count = 14, speed = 3, life = 0.7, size = 0.14) {
+   612→    this.bursts.push(new Burst(this.engine.scene, pos, color, count, speed, life, size))
+   613→  }
+   614→
+   615→  private spawnBloodstain() {
+   616→    if (this.bloodstain) {
+   617→      this.engine.scene.remove(this.bloodstain.mesh)
+   618→      this.bloodstain = null
+   619→    }
+   620→    const amount = this.player.souls
+   621→    if (amount <= 0) return
+   622→    const g = new THREE.Group()
+   623→    const core = new THREE.Mesh(
+   624→      new THREE.BoxGeometry(0.4, 0.4, 0.4),
+   625→      new THREE.MeshBasicMaterial({ color: 0x59ff6a, transparent: true, opacity: 0.9 })
+   626→    )
+   627→    const glow = new THREE.Mesh(
+   628→      new THREE.BoxGeometry(0.62, 0.62, 0.62),
+   629→      new THREE.MeshBasicMaterial({ color: 0x2fbf4a, transparent: true, opacity: 0.35 })
+   630→    )
+   631→    g.add(core, glow)
+   632→    g.position.set(this.player.pos.x, this.world.surfaceAt(this.player.pos.x, this.player.pos.z) + 0.45, this.player.pos.z)
+   633→    this.engine.scene.add(g)
+   634→    this.bloodstain = { mesh: g, amount }
+   635→    this.player.souls = 0
+   636→  }
+   637→
+   638→  private bossActiveBarrier = false
+   639→
+   640→  private respawn() {
+   641→    const p = new THREE.Vector3(BONFIRE.x + 2.5, 0, BONFIRE.z + 2)
+   642→    p.y = this.world.surfaceAt(p.x, p.z)
+   643→    this.player.reset(p, Math.PI * 0.85)
+   644→    this.player.fullRestore()
+   645→    for (const e of this.enemies) e.reset()
+   646→    if (!this.bossFell) {
+   647→      this.boss.reset()
+   648→      this.world.setFogGateVisible(true)
+   649→    }
+   650→    this.bossActive = false
+   651→    this.bossActiveBarrier = false
+   652→    for (const o of this.orbs) this.engine.scene.remove(o.mesh)
+   653→    this.orbs = []
+   654→    this.fogPassT = 0
+   655→    this.phase = 'playing'
+   656→    this.banner = null
+   657→    this.hurtFlash = 0
+   658→    this.emit(true)
+   659→  }
+   660→
+   661→  private clampPlayer() {
+   662→    const p = this.player.pos
+   663→    const lim = 28.4
+   664→    p.x = Math.max(-lim, Math.min(lim, p.x))
+   665→    p.z = Math.max(-lim, Math.min(lim, p.z))
+   666→    // fog gate blocks entry before trigger
+   667→    if (!this.bossActive && !this.bossFell && this.fogPassT <= 0 && !this.player.busy) {
+   668→      if (p.z < GATE_Z + 0.9) p.z = GATE_Z + 0.9
+   669→    }
+   670→    // arena barrier while fighting
+   671→    if (this.bossActiveBarrier && !this.bossFell) {
+   672→      p.x = Math.max(BOSS_CENTER.x - 7.6, Math.min(BOSS_CENTER.x + 7.6, p.x))
+   673→      p.z = Math.max(-23.2, Math.min(GATE_Z - 0.6, p.z))
+   674→    }
+   675→  }
+   676→
+   677→  private detectPrompt(): string | null {
+   678→    if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
+   679→      return 'بازیابی سول‌ها'
+   680→    }
+   681→    const bPos = new THREE.Vector3(BONFIRE.x, this.world.surfaceAt(BONFIRE.x, BONFIRE.z), BONFIRE.z)
+   682→    if (bPos.distanceTo(this.player.pos) < 2.6) return 'استراحت در آتش کمپ'
+   683→    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
+   684→      return 'عبور از دیوار مه'
+   685→    }
+   686→    return null
+   687→  }
+   688→
+   689→  private loop(rawDt: number) {
+   690→    // periodic shadow map refresh (big perf win)
+   691→    this.shadowTimer += rawDt
+   692→    if (this.shadowTimer > 0.15) {
+   693→      this.shadowTimer = 0
+   694→      this.sun.shadow.needsUpdate = true
+   695→    }
+   696→
+   697→    // hitstop slow-mo
+   698→    let dt = rawDt
+   699→    if (this.hitstop > 0) {
+   700→      this.hitstop -= rawDt
+   701→      dt = rawDt * 0.08
+   702→    }
+   703→    this.time += dt
+   704→
+   705→    const input = this.engine.input
+   706→
+   707→    if (this.phase === 'menu') {
+   708→      // slow orbit around bonfire
+   709→      this.camYaw += dt * 0.12
+   710→      this.world.update(dt)
+   711→      this.updateBonfire(dt)
+   712→      this.player.h.group.position.copy(this.player.pos)
+   713→      this.player.h.group.rotation.y = this.player.yaw
+   714→      this.updateCameraMenu(dt)
+   715→      this.emit(false)
+   716→      return
+   717→    }
+   718→
+   719→    if (this.phase === 'dead') {
+   720→      this.deadT += rawDt
+   721→      this.player.update({ input, camYaw: this.camYaw, dt, world: this.world, game: this })
+   722→      this.world.update(dt)
+   723→      this.updateBonfire(dt)
+   724→      this.updateEffects(dt)
+   725→      if (this.deadT > 2.9) {
+   726→        this.deadT = 0
+   727→        this.respawn()
+   728→      }
+   729→      this.updateCameraFollow(dt, true)
+   730→      this.emit(false)
+   731→      return
+   732→    }
+   733→
+   734→    if (this.phase === 'rest') {
+   735→      this.world.update(dt)
+   736→      this.updateBonfire(dt)
+   737→      this.updateEffects(dt)
+   738→      this.updateCameraFollow(dt, false)
+   739→      this.emit(false)
+   740→      return
+   741→    }
+   742→
+   743→    /* ---- playing ---- */
+   744→
+   745→    // camera input
+   746→    const { dx, dy } = input.takeMouse()
+   747→    if (dx !== 0 || dy !== 0) this.lockLastMove = 0
+   748→    else this.lockLastMove += dt
+   749→    const sens = 0.0031
+   750→    this.camYaw -= dx * sens
+   751→    this.camPitch += dy * sens
+   752→    this.camPitch = Math.max(-0.45, Math.min(1.15, this.camPitch))
+   753→    const wheel = input.takeWheel()
+   754→    if (wheel !== 0) this.camDistTarget = Math.max(3.4, Math.min(8.5, this.camDistTarget + wheel * 0.004))
+   755→    this.camDist += (this.camDistTarget - this.camDist) * Math.min(1, 8 * dt)
+   756→
+   757→    // global keys
+   758→    if (input.consume('KeyQ')) this.toggleLock()
+   759→    if (input.consume('KeyF')) this.interact()
+   760→    if (input.consume('Escape')) {
+   761→      this.player.lockedTarget = null
+   762→      input.releaseLock()
+   763→    }
+   764→
+   765→    // fog pass animation
+   766→    if (this.fogPassT > 0) {
+   767→      this.fogPassT -= dt
+   768→      this.player.pos.z -= 5.5 * dt
+   769→      // swing the camera around to face the boss arena cinematically
+   770→      let dYaw = -this.camYaw
+   771→      while (dYaw > Math.PI) dYaw -= Math.PI * 2
+   772→      while (dYaw < -Math.PI) dYaw += Math.PI * 2
+   773→      this.camYaw += dYaw * Math.min(1, 5 * dt)
+   774→      this.camPitch += (0.32 - this.camPitch) * Math.min(1, 4 * dt)
+   775→      if (this.fogPassT <= 0) {
+   776→        this.bossActive = true
+   777→        this.bossActiveBarrier = true
+   778→        this.boss.active = true
+   779→        this.sfx.bossRoar()
+   780→        this.shake = Math.max(this.shake, 0.4)
+   781→      }
+   782→    }
+   783→
+   784→    // lock-on validity + soft camera pull
+   785→    if (this.player.lockedTarget) {
+   786→      const lt = this.player.lockedTarget
+   787→      const e = this.allEnemies.find((en) => en.pos === lt.pos)
+   788→      if (!e || e.dead) {
+   789→        this.player.lockedTarget = null
+   790→      } else if (e.pos.distanceTo(this.player.pos) > 17) {
+   791→        this.player.lockedTarget = null
+   792→      } else if (this.lockLastMove > 0.8) {
+   793→        const desired = e.yaw + Math.PI
+   794→        let d = desired - this.camYaw
+   795→        while (d > Math.PI) d -= Math.PI * 2
+   796→        while (d < -Math.PI) d += Math.PI * 2
+   797→        this.camYaw += d * Math.min(1, 2.2 * dt)
+   798→      }
+   799→    }
+   800→
+   801→    this.clampPlayer()
+   802→    this.player.update({ input, camYaw: this.camYaw, dt, world: this.world, game: this })
+   803→
+   804→    // death transition
+   805→    if (this.player.state === 'dead') {
+   806→      this.phase = 'dead'
+   807→      this.deadT = 0
+   808→      this.spawnBloodstain()
+   809→      this.player.lockedTarget = null
+   810→      input.releaseLock()
+   811→      this.sfx.death()
+   812→      this.emit(true)
+   813→      return
+   814→    }
+   815→
+   816→    for (const e of this.enemies) e.update(dt, this.player, this)
+   817→    if (!this.bossFell) this.boss.update(dt, this.player, this)
+   818→
+   819→    this.world.update(dt)
+   820→    this.updateBonfire(dt)
+   821→    this.updateEffects(dt)
+   822→    this.updateOrbs(dt)
+   823→
+   824→    // prompt
+   825→    this.prompt = this.fogPassT > 0 ? null : this.detectPrompt()
+   826→    if (this.prompt && input.isTouch && input.consume('TouchInteract')) this.interact()
+   827→
+   828→    // banner timer
+   829→    if (this.banner) {
+   830→      this.bannerT += rawDt
+   831→      if (this.banner === 'bossfell' && this.bannerT > 3.4) {
+   832→        this.banner = null
+   833→        this.emit(true)
+   834→      }
+   835→    }
+   836→
+   837→    // hurt vignette decay
+   838→    this.hurtFlash = Math.max(0, this.hurtFlash - rawDt * 1.6)
+   839→    const lowHp = this.player.hp / this.player.maxHp < 0.25 && this.player.alive
+   840→    const vig = Math.max(this.hurtFlash, lowHp ? 0.22 + Math.sin(this.time * 5) * 0.08 : 0)
+   841→    this.vignette.style.opacity = String(vig)
+   842→
+   843→    this.updateCameraFollow(dt, false)
+   844→    this.updateReticle()
+   845→    this.emit(false)
+   846→  }
+   847→
+   848→  private updateBonfire(dt: number) {
+   849→    this.bonfireLight.intensity = 2.6 + Math.sin(this.time * 13) * 0.35 + Math.random() * 0.3
+   850→    const pos = this.bonfireFlame.geometry.getAttribute('position') as THREE.BufferAttribute
+   851→    const bY = this.world.surfaceAt(BONFIRE.x, BONFIRE.z)
+   852→    for (let i = 0; i < pos.count; i++) {
+   853→      const seed = this.flameSeeds[i]
+   854→      const cycle = (this.time * (0.8 + seed * 0.7) + seed * 3) % 1
+   855→      const ang = seed * Math.PI * 2 + this.time * (0.5 + seed)
+   856→      const r = 0.28 * (1 - cycle)
+   857→      pos.setXYZ(
+   858→        i,
+   859→        BONFIRE.x + Math.cos(ang) * r,
+   860→        bY + 0.15 + cycle * 1.7,
+   861→        BONFIRE.z + Math.sin(ang) * r
+   862→      )
+   863→    }
+   864→    pos.needsUpdate = true
+   865→    void dt
+   866→  }
+   867→
+   868→  private updateEffects(dt: number) {
+   869→    this.bursts = this.bursts.filter((b) => b.update(dt, this.engine.scene))
+   870→    this.texts = this.texts.filter((t) => t.update(dt, this.engine.scene))
+   871→    // creeper explosion flash lights
+   872→    this.boomLights = this.boomLights.filter((b) => {
+   873→      b.t += dt
+   874→      b.light.intensity = Math.max(0, 7 * (1 - b.t / 0.4))
+   875→      if (b.t >= 0.4) {
+   876→        this.engine.scene.remove(b.light)
+   877→        b.light.dispose()
+   878→        return false
+   879→      }
+   880→      return true
+   881→    })
+   882→    // bloodstain bob
+   883→    if (this.bloodstain) {
+   884→      this.bloodstain.mesh.rotation.y += dt * 1.5
+   885→      this.bloodstain.mesh.position.y += Math.sin(this.time * 3) * dt * 0.12
+   886→    }
+   887→  }
+   888→
+   889→  private updateOrbs(dt: number) {
+   890→    this.orbs = this.orbs.filter((o) => {
+   891→      o.t += dt / 0.7
+   892→      const target = this.player.pos.clone().add(new THREE.Vector3(0, 1.1, 0))
+   893→      o.mesh.position.lerpVectors(o.from, target, Math.min(1, o.t))
+   894→      o.mesh.rotation.y += dt * 6
+   895→      if (o.t >= 1) {
+   896→        this.engine.scene.remove(o.mesh)
+   897→        this.player.souls += o.amount
+   898→        this.sfx.souls()
+   899→        this.spawnBurst(target, 0x59ff6a, 10, 2)
+   900→        return false
+   901→      }
+   902→      return true
+   903→    })
+   904→  }
+   905→
+   906→  private updateCameraMenu(dt: number) {
+   907→    const bY = this.world.surfaceAt(BONFIRE.x, BONFIRE.z)
+   908→    this.camTarget.set(BONFIRE.x, bY + 1.2, BONFIRE.z)
+   909→    const d = 6.2
+   910→    this.camPos.set(
+   911→      this.camTarget.x + Math.sin(this.camYaw) * d,
+   912→      this.camTarget.y + 2.2,
+   913→      this.camTarget.z + Math.cos(this.camYaw) * d
+   914→    )
+   915→    this.engine.camera.position.lerp(this.camPos, Math.min(1, 3 * dt))
+   916→    this.engine.camera.lookAt(this.camTarget)
+   917→  }
+   918→
+   919→  private updateCameraFollow(dt: number, dead: boolean) {
+   920→    const p = this.player
+   921→    this.camTarget.set(p.pos.x, p.pos.y + 1.5, p.pos.z)
+   922→    const dist = dead ? this.camDist + 2.5 : this.camDist
+   923→    const cp = Math.max(0.12, this.camPitch)
+   924→    let cx = this.camTarget.x + Math.sin(this.camYaw) * Math.cos(cp) * dist
+   925→    let cz = this.camTarget.z + Math.cos(this.camYaw) * Math.cos(cp) * dist
+   926→    let cy = this.camTarget.y + Math.sin(cp) * dist
+   927→    // keep above ground
+   928→    const ground = this.world.surfaceAt(cx, cz) + 0.45
+   929→    if (cy < ground) cy = ground
+   930→    this.camPos.set(cx, cy, cz)
+   931→    this.engine.camera.position.lerp(this.camPos, Math.min(1, 11 * dt))
+   932→    if (this.shake > 0) {
+   933→      this.shake = Math.max(0, this.shake - dt * 1.8)
+   934→      const s = this.shake * 0.25
+   935→      this.engine.camera.position.x += (Math.random() - 0.5) * s
+   936→      this.engine.camera.position.y += (Math.random() - 0.5) * s
+   937→    }
+   938→    this.engine.camera.lookAt(this.camTarget)
+   939→  }
+   940→
+   941→  private updateReticle() {
+   942→    const lt = this.player.lockedTarget
+   943→    if (!lt || !lt.alive || this.phase !== 'playing') {
+   944→      this.reticle.style.display = 'none'
+   945→      return
+   946→    }
+   947→    const v = lt.pos.clone().add(new THREE.Vector3(0, lt.isBoss ? 3.6 : 1.7, 0))
+   948→    v.project(this.engine.camera)
+   949→    if (v.z > 1) {
+   950→      this.reticle.style.display = 'none'
+   951→      return
+   952→    }
+   953→    const w = this.container.clientWidth
+   954→    const h = this.container.clientHeight
+   955→    this.reticle.style.display = 'block'
+   956→    this.reticle.style.left = `${(v.x * 0.5 + 0.5) * w}px`
+   957→    this.reticle.style.top = `${(-v.y * 0.5 + 0.5) * h}px`
+   958→  }
+   959→
+   960→  private emit(force: boolean) {
+   961→    if (!this.onState) return
+   962→    const p = this.player
+   963→    const bossVisible = this.bossActive && !this.bossFell
+   964→    const s: HudState = {
+   965→      phase: this.phase,
+   966→      hp: Math.max(0, Math.round(p.hp)),
+   967→      maxHp: p.maxHp,
+   968→      st: Math.round(p.stamina),
+   969→      maxSt: p.maxStamina,
+   970→      souls: Math.floor(p.souls),
+   971→      level: p.level,
+   972→      estus: p.estus,
+   973→      maxEstus: p.maxEstus,
+   974→      vit: p.vit,
+   975→      end: p.end,
+   976→      str: p.str,
+   977→      nextCost: this.nextCost(),
+   978→      bossName: bossVisible ? this.boss.name : null,
+   979→      bossHp: Math.max(0, Math.round(this.boss.hp)),
+   980→      bossMax: this.boss.maxHp,
+   981→      prompt: this.phase === 'playing' ? this.prompt : null,
+   982→      banner: this.phase === 'dead' ? 'died' : this.banner,
+   983→      blocking: p.state === 'block',
+   984→    }
+   985→    const json = JSON.stringify(s)
+   986→    if (force || json !== this.lastHudJson) {
+   987→      this.lastHudJson = json
+   988→      this.onState(s)
+   989→    }
+   990→  }
+   991→}
+   992→
+   993→/* small helper re-export for player strike definition */
+   994→export type { PlayerStrikeDef }
+   995→

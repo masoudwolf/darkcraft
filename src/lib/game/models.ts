@@ -300,6 +300,180 @@ export function animZombieWalk(h: Humanoid, t: number, f = 1) {
   h.head.rotation.z = Math.sin(t * 3) * 0.08
 }
 
+/* ================= BOSS ANIMATIONS ================= */
+
+/** boss intro / phase-2 roar: arch back, spread arms, head skyward */
+export function animRoar(h: Humanoid, p: number) {
+  resetPose(h)
+  // rise fast (0..0.25), hold, settle at the very end
+  const up = p < 0.25 ? p / 0.25 : 1
+  const settle = p > 0.8 ? 1 - (p - 0.8) / 0.2 : 1
+  const k = up * settle
+  const tremble = Math.sin(p * 46) * 0.03 * up * (1 - settle * 0.6)
+  h.root.rotation.x = -0.32 * k + tremble
+  h.root.position.y = 0.09 * k
+  h.armL.rotation.x = -0.55 * k
+  h.armR.rotation.x = -0.55 * k
+  h.armL.rotation.z = 1.25 * k
+  h.armR.rotation.z = -1.25 * k
+  h.head.rotation.x = -0.6 * k
+  h.head.rotation.z = Math.sin(p * 30) * 0.05 * up
+}
+
+/** two-handed overhead slam: hold high with tremble, violent downswing,
+    ground-impact crouch, slow recovery */
+export function animSlam(h: Humanoid, p: number) {
+  resetPose(h)
+  if (p < 0.38) {
+    // held overhead, quivering with force
+    const tr = Math.sin(p * 42) * 0.035
+    h.armR.rotation.x = -3.0 + tr
+    h.armL.rotation.x = -2.7 - tr
+    h.root.rotation.x = -0.18
+  } else if (p < 0.62) {
+    // the downswing — fast and brutal
+    const q = (p - 0.38) / 0.24
+    const e = 1 - Math.pow(1 - q, 3)
+    h.armR.rotation.x = lerp(-3.0, 0.95, e)
+    h.armL.rotation.x = lerp(-2.7, 0.75, e)
+    h.root.rotation.x = lerp(-0.18, 0.42, e)
+    if (q > 0.55) h.root.position.y = -0.14 * ((q - 0.55) / 0.45)
+  } else {
+    // buried in the ground, dragging back up
+    const q = (p - 0.62) / 0.38
+    h.armR.rotation.x = lerp(0.95, 0.4, q)
+    h.armL.rotation.x = lerp(0.75, 0.32, q)
+    h.root.rotation.x = lerp(0.42, 0.12, q)
+    h.root.position.y = -0.14 * (1 - q)
+  }
+}
+
+/** horizontal greatsword sweep with the RIGHT (sword) arm — windup holds
+    it behind, then a flat arc across the body */
+export function animSweep(h: Humanoid, p: number) {
+  resetPose(h)
+  const a = h.armR
+  if (p < 0.4) {
+    // blade drawn back flat
+    const q = p / 0.4
+    a.rotation.x = lerp(-2.4, -1.4, q)
+    a.rotation.z = lerp(-0.9, -0.5, q)
+    h.root.rotation.y = lerp(0.6, 0.5, q)
+  } else {
+    // whoosh across — body unwinds past center
+    const q = Math.min(1, (p - 0.4) / 0.5)
+    const e = 1 - Math.pow(1 - q, 2)
+    a.rotation.x = -1.4 + 0.25 * e
+    a.rotation.z = lerp(-0.5, 1.1, e)
+    h.root.rotation.y = lerp(0.5, -1.4, e)
+    // settle back
+    const s = Math.max(0, (p - 0.9) / 0.1)
+    h.root.rotation.y = lerp(-1.4, -1.1, s)
+    a.rotation.z = lerp(1.1, 0.85, s)
+  }
+}
+
+/** shoulder-forward charge: deep lean, sword couched ahead, legs pumping */
+export function animCharge(h: Humanoid, p: number) {
+  resetPose(h)
+  const s = Math.sin(p * 30)
+  const c = Math.cos(p * 30)
+  h.root.rotation.x = 0.38
+  h.armR.rotation.x = -1.75 // sword arm couched, blade pointing forward
+  h.armR.rotation.z = -0.12
+  h.armL.rotation.x = 0.7 + s * 0.55
+  h.legL.rotation.x = s * 0.95
+  h.legR.rotation.x = -s * 0.95
+  h.head.rotation.x = -0.2
+  h.root.position.y = Math.abs(c) * 0.06
+}
+
+/** raise leg high (windup handled by caller), then stomp: knee slam,
+    body drop, balance arms flung out */
+export function animStomp(h: Humanoid, p: number) {
+  resetPose(h)
+  if (p < 0.3) {
+    // leg still high, quivering
+    h.legR.rotation.x = -1.35 + Math.sin(p * 40) * 0.05
+    h.armL.rotation.x = -0.8
+    h.armR.rotation.x = -0.8
+    h.armL.rotation.z = 0.5
+    h.armR.rotation.z = -0.5
+  } else if (p < 0.55) {
+    // the stomp
+    const q = (p - 0.3) / 0.25
+    const e = 1 - Math.pow(1 - q, 3)
+    h.legR.rotation.x = lerp(-1.35, 0.55, e)
+    h.root.position.y = -0.12 * e
+    h.root.rotation.x = 0.22 * e
+    h.armL.rotation.x = lerp(-0.8, 0.4, e)
+    h.armR.rotation.x = lerp(-0.8, 0.4, e)
+  } else {
+    // recover
+    const q = (p - 0.55) / 0.45
+    h.legR.rotation.x = lerp(0.55, 0, q)
+    h.root.position.y = -0.12 * (1 - q)
+    h.root.rotation.x = 0.22 * (1 - q)
+    h.armL.rotation.x = lerp(0.4, 0, q)
+    h.armR.rotation.x = lerp(0.4, 0, q)
+  }
+}
+
+/** posture broken: heavy slump forward, wobbling, wide open for a punish */
+export function animStagger(h: Humanoid, p: number) {
+  resetPose(h)
+  const slump = Math.min(1, p * 3.5) * (1 - Math.max(0, (p - 0.7) / 0.3) * 0.5)
+  const wobble = Math.sin(p * 13) * 0.09 * (1 - p)
+  h.root.rotation.x = 0.52 * slump
+  h.root.rotation.z = wobble
+  h.head.rotation.x = 0.55 * slump
+  h.head.rotation.z = wobble * 1.4
+  h.armL.rotation.x = 0.65 * slump
+  h.armR.rotation.x = 0.6 * slump
+  h.armL.rotation.z = 0.35 * slump
+  h.armR.rotation.z = -0.35 * slump
+  h.root.position.y = -0.1 * slump
+}
+
+/** boss death: reels back howling, sinks to its knees, collapses forward */
+export function animBossDead(h: Humanoid, p: number) {
+  resetPose(h)
+  if (p < 0.3) {
+    // reel back
+    const q = p / 0.3
+    h.root.rotation.x = -0.4 * q
+    h.head.rotation.x = -0.5 * q
+    h.armL.rotation.z = 1.0 * q
+    h.armR.rotation.z = -1.0 * q
+    h.armL.rotation.x = -0.4 * q
+    h.armR.rotation.x = -0.4 * q
+  } else if (p < 0.72) {
+    // sink to the knees, sword arm droops
+    const q = (p - 0.3) / 0.42
+    h.root.rotation.x = lerp(-0.4, 0.28, q)
+    h.root.position.y = -0.55 * easeOut(q)
+    h.legL.rotation.x = -1.45 * q
+    h.legR.rotation.x = -1.45 * q
+    h.armL.rotation.z = lerp(1.0, 0.25, q)
+    h.armR.rotation.z = lerp(-1.0, -0.2, q)
+    h.armL.rotation.x = lerp(-0.4, 0.45, q)
+    h.armR.rotation.x = lerp(-0.4, 0.45, q)
+    h.head.rotation.x = lerp(-0.5, 0.3, q)
+  } else {
+    // fall forward, face down
+    const q = (p - 0.72) / 0.28
+    const e = easeOut(q)
+    h.root.rotation.x = lerp(0.28, 1.45, e)
+    h.root.position.y = lerp(-0.55, -0.78, e)
+    h.legL.rotation.x = -1.45
+    h.legR.rotation.x = -1.45
+    h.armL.rotation.z = 0.25
+    h.armR.rotation.z = -0.2
+    h.armL.rotation.x = lerp(0.45, 0.9, e)
+    h.armR.rotation.x = lerp(0.45, 0.9, e)
+  }
+}
+
 export function setOpacity(h: Humanoid, opacity: number) {
   for (const m of h.materials) {
     m.transparent = opacity < 1
