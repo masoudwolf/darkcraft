@@ -1,13 +1,14 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock, animBlockWalk, animCast,
+  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock, animBlockWalk, animCast, animBowDraw, animBowShoot, bowDrawAmount,
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
 import type { World } from './world'
 import type { Game, PlayerStrikeDef } from './game'
+import type { DmgType, RollTier } from './items'
 
-export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead' | 'block' | 'cast'
+export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead' | 'block' | 'cast' | 'aim'
 
 const ROLL_DUR = 0.48
 // i-frames must comfortably cover a react-to-swing dodge AND an anticipatory
@@ -44,6 +45,34 @@ export interface PlayerCtx {
   game: Game
 }
 
+/** everything the equipped gear tells the body how to move and fight —
+    recomputed by Game.refreshLoadout() on every equip change (DS-style:
+    weapon power/speed, shield soak, armor soak, equip-burden tiers) */
+export interface Loadout {
+  weaponMult: number
+  weaponSpd: number
+  block: number
+  def: number
+  fire: number
+  blast: number
+  walkMult: number
+  sprintMult: number
+  rollMult: number
+  rollCostMult: number
+  canRoll: boolean
+  tier: RollTier
+  load: number
+  maxLoad: number
+  aiming: boolean // the active left-hand item is a bow
+}
+
+export const DEFAULT_LOADOUT: Loadout = {
+  weaponMult: 1, weaponSpd: 1, block: 0.85,
+  def: 0, fire: 0, blast: 0,
+  walkMult: 1, sprintMult: 1, rollMult: 1, rollCostMult: 1, canRoll: true,
+  tier: 'fast', load: 5.5, maxLoad: 35, aiming: false,
+}
+
 export class Player {
   h: Humanoid
   pos = new THREE.Vector3(0, 3, 18)
@@ -65,6 +94,13 @@ export class Player {
   str = 0
   /** shop-bought weapon sharpening — flat damage multiplier bonus */
   gearDmg = 0
+
+  /** equipped-gear consequences — set by Game.refreshLoadout() */
+  loadout: Loadout = { ...DEFAULT_LOADOUT }
+  /** bow draw while aiming (0..1); LMB fires once it has nocked enough */
+  aimT = 0
+  private aimRelease = 0
+  private aimDrawPrev = 0
 
   combo = 0
   queued = false
@@ -94,7 +130,7 @@ export class Player {
   }
 
   get damageMult() {
-    return 1 + this.str * 0.08 + this.gearDmg
+    return (1 + this.str * 0.08 + this.gearDmg) * this.loadout.weaponMult
   }
 
   get alive() {
@@ -156,6 +192,7 @@ export class Player {
   }
 
   startRoll(dirX: number, dirZ: number) {
+    if (!this.loadout.canRoll) return // overburdened waddlers cannot roll
     this.state = 'roll'
     this.stateT = 0
     const len = Math.hypot(dirX, dirZ)
@@ -165,7 +202,7 @@ export class Player {
     } else {
       this.rollDir.set(Math.sin(this.yaw), 0, Math.cos(this.yaw))
     }
-    this.stamina = Math.max(0, this.stamina - STAMINA_COST_ROLL)
+    this.stamina = Math.max(0, this.stamina - STAMINA_COST_ROLL * this.loadout.rollCostMult)
     this.staminaDelay = 0.55
     this.invuln = ROLL_IFRAME
   }
@@ -179,8 +216,11 @@ export class Player {
     this.staminaDelay = 0.6
   }
 
-  takeDamage(dmg: number, fromX: number, fromZ: number, game?: Game, guardHeavy = false): boolean {
+  takeDamage(dmg: number, fromX: number, fromZ: number, game?: Game, guardHeavy = false, dmgType: DmgType = 'phys'): boolean {
     if (this.invuln > 0 || this.state === 'dead') return false
+    // ---- armor soaks the blow before anything else (DS defenses) ----
+    const armor = dmgType === 'fire' ? this.loadout.fire : dmgType === 'blast' ? this.loadout.blast : this.loadout.def
+    if (armor > 0) dmg = Math.max(1, Math.round(dmg * (1 - armor)))
     const dx = this.pos.x - fromX
     const dz = this.pos.z - fromZ
     const l = Math.hypot(dx, dz) || 1
@@ -194,7 +234,8 @@ export class Player {
       if (dot > 0.3) {
         // heavy grey blades (wither skeletons) chew through guards:
         // blocking still works but stamina shatters fast
-        const chip = Math.max(1, Math.round(dmg * (guardHeavy ? 0.3 : 0.15)))
+        const soak = this.loadout.block
+        const chip = Math.max(1, Math.round(dmg * (1 - soak) * (guardHeavy ? 2 : 1)))
         const cost = dmg * (guardHeavy ? 1.6 : 0.9)
         this.kbDir.set(aX, 0, aZ)
         if (this.stamina >= cost) {
@@ -276,7 +317,8 @@ export class Player {
     if (this.state === 'roll') {
       this.stateT += dt
       const p = this.stateT / ROLL_DUR
-      const sp = 8.8 * (1 - 0.5 * p)
+      // burden tiers shorten the somersault too
+      const sp = 8.8 * this.loadout.rollMult * (1 - 0.5 * p)
       this.pos.x += this.rollDir.x * sp * dt
       this.pos.z += this.rollDir.z * sp * dt
       animRoll(this.h, Math.min(1, p))
@@ -351,6 +393,59 @@ export class Player {
         this.state = 'idle'
         resetPose(this.h)
       }
+    } else if (this.state === 'aim') {
+      // ---- bow: nock, draw, release — rolls out just like guarding ----
+      if (!this.loadout.aiming) {
+        // the bow left the left hand mid-aim — fall back to guarding
+        this.state = 'block'
+        this.stateT = 0
+        this.aimT = 0
+      } else {
+      this.stateT += dt
+      if (this.aimRelease > 0) {
+        this.aimRelease -= dt
+        animBowShoot(this.h, Math.min(1, 1 - this.aimRelease / 0.22))
+      } else {
+        this.aimT = Math.min(0.55, this.aimT + dt)
+        const draw = this.aimT / 0.55
+        animBowDraw(this.h, bowDrawAmount(draw))
+      }
+      // aiming gait — a slow careful creep; standing, the body squares up
+      // to the camera so the arrow truly flies where the player looks
+      if (moving) {
+        const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw)
+        const rgtX = -fwdZ, rgtZ = fwdX
+        const mx = rgtX * ax.x + fwdX * ax.z
+        const mz = rgtZ * ax.x + fwdZ * ax.z
+        this.pos.x += mx * WALK_SPEED * 0.42 * this.loadout.walkMult * dt
+        this.pos.z += mz * WALK_SPEED * 0.42 * this.loadout.walkMult * dt
+        this.targetYaw = Math.atan2(mx, mz)
+      } else {
+        this.targetYaw = Math.atan2(-Math.sin(camYaw), -Math.cos(camYaw))
+      }
+      // loose the arrow!
+      if (this.aimRelease <= 0 && this.aimT / 0.55 >= 0.35 && input.consume('LMB')) {
+        game.firePlayerArrow(this, this.aimT / 0.55)
+        this.aimRelease = 0.22
+        this.aimT = 0 // re-nock
+      }
+      if (input.consume('Space') && this.stamina >= STAMINA_COST_ROLL) {
+        game.sfx.roll()
+        this.aimT = 0
+        if (moving) {
+          const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw)
+          const rgtX = -fwdZ, rgtZ = fwdX
+          this.startRoll(rgtX * ax.x + fwdX * ax.z, rgtZ * ax.x + fwdZ * ax.z)
+        } else {
+          this.startRoll(0, 0)
+        }
+      } else if (!wantBlock) {
+        this.state = 'idle'
+        this.stateT = 0
+        this.aimT = 0
+        resetPose(this.h)
+      }
+      }
     } else if (this.state === 'block') {
       // ---- guarding: slow shuffle, no actions, roll still allowed ----
       this.stateT += dt
@@ -391,12 +486,16 @@ export class Player {
     } else {
       // idle / run
       if (wantBlock) {
-        this.state = 'block'
+        // a bow in the active left hand aims instead of guarding
+        this.state = this.loadout.aiming ? 'aim' : 'block'
         this.stateT = 0
       } else {
       this.sprinting =
-        moving && (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight')) && this.stamina > 1
-      const speed = this.sprinting ? SPRINT_SPEED : WALK_SPEED
+        moving && this.loadout.sprintMult > 0 &&
+        (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight')) && this.stamina > 1
+      // equip-burden: heavy gear drags the stride (DS movement tiers)
+      const speed =
+        (this.sprinting ? SPRINT_SPEED * this.loadout.sprintMult : WALK_SPEED * this.loadout.walkMult)
       if (moving) {
         const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw)
         const rgtX = -fwdZ, rgtZ = fwdX
@@ -483,6 +582,18 @@ export class Player {
       this.yaw += d * Math.min(1, 14 * dt)
     }
 
+    // ---- cape sway — cloth answers every stride ----
+    if (this.h.capePivot) {
+      const target =
+        this.state === 'run'
+          ? 0.34 + Math.sin(this.animT * 9) * 0.1 + (this.sprinting ? 0.14 : 0)
+          : this.state === 'roll' ? 1.2
+          : this.state === 'attack' || this.state === 'heavy' ? 0.2
+          : 0.08 + Math.sin(this.animT * 1.8) * 0.03
+      const cape = this.h.capePivot
+      cape.rotation.x += (target - cape.rotation.x) * Math.min(1, 8 * dt)
+    }
+
     // ---- stamina regen ----
     this.staminaDelay -= dt
     if (this.staminaDelay <= 0) {
@@ -505,14 +616,16 @@ export class Player {
 
   private lightDef(combo: number): AttackDef {
     const m = this.damageMult
-    if (combo === 0) return { dur: 0.52, impact: 0.32, dmg: Math.round(30 * m), range: 2.4, arc: 1.15, cost: STAMINA_COST_LIGHT, variant: 'light0', heavy: false, knock: 2 }
-    if (combo === 1) return { dur: 0.5, impact: 0.3, dmg: Math.round(32 * m), range: 2.4, arc: 1.15, cost: STAMINA_COST_LIGHT, variant: 'light1', heavy: false, knock: 2 }
-    return { dur: 0.74, impact: 0.42, dmg: Math.round(42 * m), range: 2.7, arc: Math.PI, cost: STAMINA_COST_LIGHT, variant: 'light2', heavy: false, knock: 3.5 }
+    const s = 1 / Math.max(0.4, this.loadout.weaponSpd)
+    if (combo === 0) return { dur: 0.52 * s, impact: 0.32, dmg: Math.round(30 * m), range: 2.4, arc: 1.15, cost: STAMINA_COST_LIGHT, variant: 'light0', heavy: false, knock: 2 }
+    if (combo === 1) return { dur: 0.5 * s, impact: 0.3, dmg: Math.round(32 * m), range: 2.4, arc: 1.15, cost: STAMINA_COST_LIGHT, variant: 'light1', heavy: false, knock: 2 }
+    return { dur: 0.74 * s, impact: 0.42, dmg: Math.round(42 * m), range: 2.7, arc: Math.PI, cost: STAMINA_COST_LIGHT, variant: 'light2', heavy: false, knock: 3.5 }
   }
 
   private heavyDef(): AttackDef {
     const m = this.damageMult
-    return { dur: 0.95, impact: 0.5, dmg: Math.round(58 * m), range: 2.9, arc: 1.4, cost: STAMINA_COST_HEAVY, variant: 'heavy', heavy: true, knock: 5 }
+    const s = 1 / Math.max(0.4, this.loadout.weaponSpd)
+    return { dur: 0.95 * s, impact: 0.5, dmg: Math.round(58 * m), range: 2.9, arc: 1.4, cost: STAMINA_COST_HEAVY, variant: 'heavy', heavy: true, knock: 5 }
   }
 
   private resolveGround(world: World, dt: number, sinking: boolean) {

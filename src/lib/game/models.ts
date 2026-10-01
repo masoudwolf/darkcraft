@@ -21,6 +21,10 @@ export interface Humanoid {
   materials: THREE.MeshLambertMaterial[]
   extras: THREE.Material[] // unlit glow materials (eyes, lava veins) — never flashed/faded
   sword: THREE.Group | null
+  shield?: THREE.Group | null
+  /** armor overlays + cape added by applyPlayerArmor (swappable visuals) */
+  armorParts?: THREE.Object3D[]
+  capePivot?: THREE.Group | null
 }
 
 export type SwordStyle = 'iron' | 'rust' | 'stone' | 'obsidian'
@@ -62,11 +66,11 @@ export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group 
   return g
 }
 
-export function createShield(): THREE.Group {
+export function createShield(style: 'wood' | 'iron' = 'wood'): THREE.Group {
   const g = new THREE.Group()
-  const wood = new THREE.MeshLambertMaterial({ color: 0x8a6437 })
-  const woodDark = new THREE.MeshLambertMaterial({ color: 0x6b4d2a })
-  const iron = new THREE.MeshLambertMaterial({ color: 0x9aa0a8 })
+  const wood = new THREE.MeshLambertMaterial({ color: style === 'iron' ? 0x7c828c : 0x8a6437 })
+  const woodDark = new THREE.MeshLambertMaterial({ color: style === 'iron' ? 0x565a64 : 0x6b4d2a })
+  const iron = new THREE.MeshLambertMaterial({ color: style === 'iron' ? 0xcdd4de : 0x9aa0a8 })
   // iron back plate — slightly larger than the face so it reads as a rim
   const rim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.58, 0.48), iron)
   rim.position.x = -0.026
@@ -374,6 +378,7 @@ export function createHumanoid(
 
   const swordStyle: SwordStyle = opts.swordStyle ?? (kind === 'boss' ? 'rust' : kind === 'wither' ? 'stone' : 'iron')
   let sword: THREE.Group | null = null
+  let shield: THREE.Group | null = null
   if (opts.sword) {
     sword = createSword(opts.swordScale ?? 1, swordStyle)
     sword.position.set(0, -0.72, 0.06)
@@ -388,6 +393,7 @@ export function createHumanoid(
     sh.position.set(0.175, -0.42, 0.02)
     sh.rotation.y = -0.45
     armL.add(sh)
+    shield = sh
   }
 
   /* ---------- per-kind model dressing ---------- */
@@ -466,7 +472,7 @@ export function createHumanoid(
   }
 
   group.scale.setScalar(scale)
-  return { group, root, spin, head, body, armL, armR, legL, legR, legsBack, materials: mats.all, extras, sword }
+  return { group, root, spin, head, body, armL, armR, legL, legR, legsBack, materials: mats.all, extras, sword, shield }
 }
 
 /* ================= ANIMATIONS ================= */
@@ -1192,4 +1198,154 @@ export function animMerchantGreet(h: Humanoid, p: number) {
   h.armL.rotation.z = 0.1
   h.head.rotation.z = 0.08 * raise
   h.head.rotation.x = -0.06 * raise
+}
+
+/* ================= PLAYER EQUIPMENT VISUALS ================= */
+
+interface ArmorPieceVisual {
+  head?: { tint: number; tint2?: number } | null
+  chest?: { tint: number; tint2?: number } | null
+  hands?: { tint: number; tint2?: number } | null
+  legs?: { tint: number; tint2?: number } | null
+  cape?: { tint: number; tint2?: number } | null
+}
+
+const omat = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+
+/** rebuild the player's armor overlays + cape from the equipped pieces.
+    Everything is a Minecraft-style blocky shell layered OVER the body,
+    registered in h.materials so flash/death-fade affects it too. */
+export function applyPlayerArmor(h: Humanoid, v: ArmorPieceVisual) {
+  // wipe the previous overlays
+  if (h.armorParts) {
+    for (const p of h.armorParts) p.parent?.remove(p)
+  }
+  const parts: THREE.Object3D[] = []
+  const mk = (
+    w: number, hh: number, d: number,
+    m: THREE.Material, x: number, y: number, z: number,
+    parent: THREE.Object3D
+  ) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), m)
+    mesh.position.set(x, y, z)
+    mesh.castShadow = true
+    parent.add(mesh)
+    parts.push(mesh)
+    return mesh
+  }
+
+  /* --- helmet: crown + brow band + neck guard, face stays visible --- */
+  if (v.head) {
+    const t = v.head
+    const m1 = omat(t.tint)
+    const m2 = omat(t.tint2 ?? t.tint)
+    h.materials.push(m1, m2)
+    mk(0.56, 0.16, 0.56, m1, 0, 0.2, 0, h.head)        // crown
+    mk(0.56, 0.14, 0.56, m2, 0, 0.08, 0, h.head)       // brow band
+    mk(0.56, 0.18, 0.1, m1, 0, 0.08, -0.23, h.head)    // back neck guard
+  }
+
+  /* --- cuirass: chest shell + center ridge + belt (in torso/model space) --- */
+  if (v.chest) {
+    const t = v.chest
+    const m1 = omat(t.tint)
+    const m2 = omat(t.tint2 ?? t.tint)
+    h.materials.push(m1, m2)
+    const torso = h.body.parent ?? h.spin
+    mk(0.58, 0.52, 0.32, m1, 0, 1.22, 0, torso)       // cuirass
+    mk(0.1, 0.44, 0.34, m2, 0, 1.2, 0, torso)         // center ridge
+    mk(0.58, 0.1, 0.31, m2, 0, 0.85, 0, torso)        // belt
+  }
+
+  /* --- gauntlets: forearm sleeves + cuffs --- */
+  if (v.hands) {
+    const t = v.hands
+    const m1 = omat(t.tint)
+    const m2 = omat(t.tint2 ?? t.tint)
+    h.materials.push(m1, m2)
+    for (const arm of [h.armL, h.armR]) {
+      mk(0.3, 0.42, 0.3, m1, 0, -0.34, 0, arm)
+      mk(0.31, 0.09, 0.31, m2, 0, -0.14, 0, arm)
+    }
+  }
+
+  /* --- greaves: thigh + shin plates --- */
+  if (v.legs) {
+    const t = v.legs
+    const m1 = omat(t.tint)
+    const m2 = omat(t.tint2 ?? t.tint)
+    h.materials.push(m1, m2)
+    for (const leg of [h.legL, h.legR]) {
+      mk(0.3, 0.34, 0.3, m1, 0, -0.2, 0, leg)
+      mk(0.28, 0.3, 0.28, m2, 0, -0.56, 0, leg)
+    }
+  }
+
+  /* --- cape: shoulder pivot, hangs from the back, sways in code --- */
+  if (v.cape) {
+    const t = v.cape
+    const m1 = omat(t.tint)
+    const m2 = omat(t.tint2 ?? t.tint)
+    h.materials.push(m1, m2)
+    const torso = h.body.parent ?? h.spin
+    const pivot = new THREE.Group()
+    pivot.position.set(0, 1.52, -0.145)
+    const cloth = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.82, 0.05), m1)
+    cloth.position.y = -0.42
+    cloth.castShadow = true
+    const hem = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.06), m2)
+    hem.position.y = -0.8
+    pivot.add(cloth, hem)
+    pivot.rotation.x = 0.08
+    torso.add(pivot)
+    parts.push(pivot)
+    h.capePivot = pivot
+  } else {
+    h.capePivot = null
+  }
+
+  h.armorParts = parts
+}
+
+/** swap the player's sword model for a different blade style */
+export function setPlayerSword(h: Humanoid, style: SwordStyle, scale = 1) {
+  if (h.sword) {
+    h.sword.parent?.remove(h.sword)
+    h.sword = null
+  }
+  const s = createSword(scale, style)
+  s.position.set(0, -0.72, 0.06)
+  s.rotation.x = Math.PI / 2 + Math.PI / 12
+  h.armR.add(s)
+  h.sword = s
+}
+
+/** swap the shield model (wood / iron face) */
+export function setPlayerShield(h: Humanoid, style: 'wood' | 'iron') {
+  if (h.shield) {
+    h.shield.parent?.remove(h.shield)
+    h.shield = null
+  }
+  const sh = createShield(style)
+  sh.position.set(0.175, -0.42, 0.02)
+  sh.rotation.y = -0.45
+  h.armL.add(sh)
+  h.shield = sh
+}
+
+/** the bow rides in the left hand like the skeleton archer's */
+export function setPlayerBow(h: Humanoid, bow: THREE.Group | null) {
+  const old = h.armorParts?.find((p) => p.name === 'playerBow')
+  if (old) {
+    old.parent?.remove(old)
+    h.armorParts = h.armorParts?.filter((p) => p !== old)
+  }
+  if (bow) {
+    bow.name = 'playerBow'
+    bow.position.set(0, -0.68, 0.05)
+    bow.rotation.y = Math.PI / 2
+    h.armL.add(bow)
+    if (!h.armorParts) h.armorParts = []
+    h.armorParts.push(bow)
+  }
 }

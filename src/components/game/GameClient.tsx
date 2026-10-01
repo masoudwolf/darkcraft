@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Game, SHOP_ITEMS, type HudState, type GameSettings } from '@/lib/game/game'
+import { Game, SHOP_ITEMS, type HudState, type GameSettings, type InvHud, type InvItemView } from '@/lib/game/game'
 import ModelViewer from '@/components/game/ModelViewer'
 
 /* ================= small pixel icons (inline SVG) ================= */
@@ -115,6 +115,21 @@ function Hud({ hud }: { hud: HudState }) {
           <span>{hud.prompt}</span>
         </div>
       )}
+
+      {/* arrows chip — visible when a bow is equipped */}
+      {hud.arrows > 0 && (
+        <div className="absolute right-4 bottom-20 flex items-center gap-1.5 border border-black/80 bg-black/60 px-2.5 py-1" dir="rtl">
+          <span aria-hidden>🏹</span>
+          <span className="font-pixel text-xs text-amber-200" dir="ltr">×{hud.arrows}</span>
+        </div>
+      )}
+
+      {/* item pickup / switch toast — the DS "Item Attained" moment */}
+      {hud.toast && (
+        <div key={hud.toast} className="toast-anim absolute left-1/2 top-16 -translate-x-1/2 border-2 border-black bg-black/85 px-5 py-2.5 text-center shadow-[4px_4px_0_rgba(0,0,0,0.5)]" dir="rtl">
+          <span className="text-sm font-bold text-amber-200">{hud.toast}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -133,6 +148,8 @@ function HintBar() {
     ['E', 'شربت'],
     ['R', 'جادو'],
     ['F', 'تعامل'],
+    ['I', 'کوله‌پشتی'],
+    ['1/2', 'سلاح / کمان'],
     ['Esc', 'توقف'],
   ]
   return (
@@ -321,6 +338,195 @@ function ShopModal({
   )
 }
 
+/* ================= inventory & equipment (Dark-Souls style) ================= */
+
+const TIER_STYLE: Record<string, string> = {
+  common: 'text-white/75',
+  rare: 'text-emerald-300',
+  boss: 'text-amber-300',
+}
+
+function ItemStatLine({ it }: { it: InvItemView }) {
+  const bits: string[] = []
+  if (it.dmg) bits.push(`آسیب ${it.dmg}`)
+  if (it.spd && it.spd !== 1) bits.push(`سرعت ${Math.round(it.spd * 100)}٪`)
+  if (it.block) bits.push(`دفاع سپر ${Math.round(it.block * 100)}٪`)
+  if (it.cat === 'bow') bits.push(`آسیب تیر ${it.bowDmg ?? 0}`)
+  if (it.cat !== 'bow' && it.bowDmg) bits.push(`آسیب تیر +${it.bowDmg}`)
+  if (it.def) bits.push(`جسم‌ساز +${Math.round(it.def * 100)}٪`)
+  if (it.fire) bits.push(`آتش‌بند +${Math.round(it.fire * 100)}٪`)
+  if (it.blast) bits.push(`انفجارگریز +${Math.round(it.blast * 100)}٪`)
+  bits.push(`وزن ${it.weight}`)
+  return <span className="text-[10px] text-white/45" dir="rtl">{bits.join(' · ')}</span>
+}
+
+function InventoryModal({
+  inv,
+  onEquip,
+  onUnequip,
+  onClose,
+}: {
+  inv: InvHud
+  onEquip: (id: string) => void
+  onUnequip: (slot: string) => void
+  onClose: () => void
+}) {
+  const [sel, setSel] = useState<InvItemView | null>(null)
+  const loadPct = Math.min(120, (inv.load / inv.maxLoad) * 100)
+  const handSlots = inv.slots.filter((s) => s.slot.startsWith('rh') || s.slot.startsWith('lh'))
+  const armorSlots = inv.slots.filter((s) => !s.slot.startsWith('rh') && !s.slot.startsWith('lh'))
+
+  const SlotCell = ({ slot, label, item, active }: { slot: string; label: string; item: InvItemView | null; active?: boolean }) => (
+    <button
+      onClick={() => (item ? onUnequip(slot) : undefined)}
+      title={item ? 'برداشتن' : 'خالی'}
+      className={`flex items-center gap-2 border px-2.5 py-2 text-right transition-colors ${
+        active
+          ? 'border-amber-400/80 bg-amber-950/40'
+          : item
+            ? 'border-white/20 bg-white/5 hover:bg-white/10'
+            : 'border-dashed border-white/15 bg-transparent'
+      }`}
+    >
+      <span className="w-6 text-center text-lg" aria-hidden>{item?.icon ?? '·'}</span>
+      <span className="min-w-0 flex-1">
+        <span className={`block truncate text-xs font-bold ${item ? TIER_STYLE[item.tier] : 'text-white/30'}`}>
+          {item?.name ?? '— خالی —'}
+        </span>
+        <span className="block text-[9px] text-white/40">
+          {label}{item ? ` · ${item.weight}` : ''}
+        </span>
+      </span>
+    </button>
+  )
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 px-3 py-6" dir="rtl">
+      <div className="fadein-anim flex max-h-[94vh] w-[min(96vw,880px)] flex-col overflow-hidden rounded-none border-2 border-black bg-zinc-950/95 shadow-[6px_6px_0_rgba(0,0,0,0.6)]">
+        {/* header */}
+        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-3.5">
+          <span className="text-2xl" aria-hidden>🎒</span>
+          <div>
+            <h3 className="text-lg font-black text-white">تجهیزات و کوله‌پشتی</h3>
+            <p className="text-[11px] text-white/50">روی اسلات بزن تا برداری — روی آیتم کوله بزن تا تجهیزش کنی</p>
+          </div>
+          <span className="mr-auto flex items-center gap-1.5 text-sm font-bold text-emerald-300">
+            <EmeraldIcon size={16} /> {inv.souls.toLocaleString('en-US')}
+          </span>
+        </div>
+
+        <div className="grid flex-1 overflow-y-auto md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          {/* ---- right: slots + load ---- */}
+          <div className="border-b border-white/10 p-4 md:border-b-0 md:border-l">
+            <div className="mb-2 text-xs font-bold text-white/70">دست‌ها</div>
+            <div className="grid grid-cols-2 gap-2">
+              {handSlots.map((s) => (
+                <SlotCell
+                  key={s.slot}
+                  slot={s.slot}
+                  label={s.label}
+                  item={s.item}
+                  active={(s.slot === 'rh1' && inv.rhActive === 1) || (s.slot === 'rh2' && inv.rhActive === 2) ||
+                    (s.slot === 'lh1' && inv.lhActive === 1) || (s.slot === 'lh2' && inv.lhActive === 2)}
+                />
+              ))}
+            </div>
+            <div className="mb-2 mt-4 text-xs font-bold text-white/70">زره — سر، سینه، دست، پا، شنل</div>
+            <div className="grid grid-cols-2 gap-2">
+              {armorSlots.map((s) => (
+                <SlotCell key={s.slot} slot={s.slot} label={s.label} item={s.item} />
+              ))}
+            </div>
+
+            {/* equip burden — DS thresholds */}
+            <div className="mt-5">
+              <div className="mb-1.5 flex items-center justify-between text-xs">
+                <span className="font-bold text-white/75">بارِ تجهیزات</span>
+                <span className="font-pixel text-[10px]" style={{ color: inv.tierColor }} dir="ltr">
+                  {inv.load} / {inv.maxLoad}
+                </span>
+              </div>
+              <div className="relative h-4 border-2 border-black/80 bg-black/60 p-[2px]">
+                <div
+                  className="h-full transition-[width] duration-300"
+                  style={{ width: `${Math.min(100, loadPct)}%`, background: `linear-gradient(180deg, ${inv.tierColor}cc, ${inv.tierColor}55)` }}
+                />
+                {/* DS breakpoints 25 / 50 / 100 */}
+                {[25, 50, 100].map((m) => (
+                  <span
+                    key={m}
+                    className="absolute top-0 h-full w-px bg-white/45"
+                    style={{ left: `${m / 1.2}%` }}
+                    aria-hidden
+                  />
+                ))}
+              </div>
+              <div className="mt-1 text-[10px]" style={{ color: inv.tierColor }}>{inv.tierLabel}</div>
+              <div className="mt-2 flex gap-3 text-[10px] text-white/55">
+                <span>جسم‌ساز <b className="text-emerald-300">{inv.def}٪</b></span>
+                <span>آتش‌بند <b className="text-orange-300">{inv.fire}٪</b></span>
+                <span>انفجارگریز <b className="text-amber-300">{inv.blast}٪</b></span>
+              </div>
+            </div>
+          </div>
+
+          {/* ---- left: the bag ---- */}
+          <div className="flex flex-col p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold text-white/70">کوله‌پشتی</span>
+              <span className="text-[10px] text-white/40">{inv.bag.length} قلم</span>
+            </div>
+            <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1 md:max-h-[52vh]">
+              {inv.bag.length === 0 && (
+                <div className="border border-dashed border-white/15 px-3 py-6 text-center text-xs text-white/35">
+                  کوله‌ات خالی است — دشمنان گاهی زره و سلاحشان را جا می‌گذارند
+                </div>
+              )}
+              {inv.bag.map((it) => (
+                <button
+                  key={it.id}
+                  onMouseEnter={() => setSel(it)}
+                  onClick={() => onEquip(it.id)}
+                  className={`w-full border px-3 py-2 text-right transition-colors ${
+                    it.equipped
+                      ? 'border-amber-400/60 bg-amber-950/30'
+                      : 'border-white/12 bg-white/5 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg" aria-hidden>{it.icon}</span>
+                    <span className={`text-xs font-bold ${TIER_STYLE[it.tier]}`}>{it.name}</span>
+                    {it.n > 1 && <span className="font-pixel text-[9px] text-white/60">×{it.n}</span>}
+                    {it.equipped && <span className="mr-auto font-pixel text-[9px] text-amber-300/90">تجهیز شده</span>}
+                  </div>
+                  <div className="mt-0.5 pr-7"><ItemStatLine it={it} /></div>
+                </button>
+              ))}
+            </div>
+            {/* description of the hovered item */}
+            <div className="mt-3 min-h-[52px] border border-white/10 bg-black/40 px-3 py-2">
+              {sel ? (
+                <>
+                  <div className={`text-xs font-bold ${TIER_STYLE[sel.tier]}`}>{sel.icon} {sel.name}</div>
+                  <p className="mt-0.5 text-[10px] leading-4 text-white/55">{sel.desc}</p>
+                </>
+              ) : (
+                <p className="text-[10px] text-white/35">نشانه‌گذر روی آیتم‌ها توضیحشان را نشان می‌دهد — لود داس: زیر ۲۵٪ غلتک سریع، ۵۰٪ کند، ۱۰۰٪ بی‌غلتک</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-white/10 px-5 py-3.5">
+          <Button onClick={onClose} className="h-10 w-full rounded-none border-2 border-black/70 bg-zinc-800 font-bold text-white shadow-[3px_3px_0_rgba(0,0,0,0.55)] hover:bg-zinc-700">
+            بستن کوله (Esc / I)
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ================= main menu ================= */
 
 type MenuPage = 'root' | 'settings' | 'exit'
@@ -408,8 +614,8 @@ function MainMenu({
         <span><b className="font-pixel text-[10px] text-emerald-300">Esc</b> توقف / منو</span>
       </div>
       <p className="mt-6 text-center text-[11px] leading-5 text-white/35">
-        نسخه ۰.۷ — جدید: بازرگان خاکستری و فروشگاه کنار آتش کمپ، مه‌درازه‌ی شیدری یکدست،
-        <br />گیج‌شدن باس بازطراحی شد و کریپر حالا دشمن‌های اطرافش را هم می‌ترکاند
+        نسخه ۰.۸ — جدید: سیستم لوت و تجهیزات به سبک دارک سولز — زره، سلاح، کمان و بارِ تجهیزات
+        <br />بازرگان پشت آتش کمپ نشسته؛ دشمن‌ها گاهی زره و سلاحشان را جا می‌گذارند
       </p>
     </div>
   )
@@ -716,6 +922,7 @@ function TouchControls({
             ['KeyQ', '🎯', 'قفل'],
             ['Space', '💨', 'غلتک'],
             ['KeyF', '🔥', 'تعامل'],
+            ['KeyI', '🎒', 'کوله'],
           ] as const
         ).map(([code, icon, label]) => {
           if (code === 'Block') {
@@ -926,6 +1133,14 @@ export default function GameClient() {
           hud={hud}
           onBuy={(id) => gameRef.current?.buyShopItem(id)}
           onClose={() => gameRef.current?.closeShop()}
+        />
+      )}
+      {phase === 'inventory' && hud?.inv && (
+        <InventoryModal
+          inv={hud.inv}
+          onEquip={(id) => gameRef.current?.equipItem(id)}
+          onUnequip={(slot) => gameRef.current?.unequipSlot(slot as never)}
+          onClose={() => gameRef.current?.closeInventory()}
         />
       )}
       {!isTouch && phase === 'playing' && <HintBar />}

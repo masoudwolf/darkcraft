@@ -3,13 +3,18 @@ import { Engine } from './engine'
 import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS, MERCHANT } from './world'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
-import { createSword, createMerchant, animMerchantIdle, animMerchantGreet, type Humanoid } from './models'
+import { createSword, createShield, createMerchant, animMerchantIdle, animMerchantGreet, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, type SwordStyle } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
+import {
+  ITEMS, ALL_SLOTS, SLOT_LABEL, equipLoad, maxLoadFor, rollTier, TIER_INFO, armorTotals,
+  rollLoot, bossLoot, defaultEquip,
+  type ItemId, type EquipSlot, type EquippedMap, type ItemDef, type DmgType, type LootRoll,
+} from './items'
 
 /* ================= HUD STATE ================= */
 
-export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop'
+export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop' | 'inventory'
 
 export interface HudState {
   phase: Phase
@@ -36,6 +41,47 @@ export interface HudState {
   pyroUnlocked: boolean
   /** shop snapshot — null unless the shop panel is open */
   shop: ShopHud | null
+  /** equipment/inventory snapshot — null unless the panel is open */
+  inv: InvHud | null
+  /** transient pickup/switch toast */
+  toast: string | null
+  /** arrows remaining for the equipped quiver */
+  arrows: number
+}
+
+export interface InvHud {
+  slots: { slot: EquipSlot; label: string; item: InvItemView | null }[]
+  rhActive: 1 | 2
+  lhActive: 1 | 2
+  bag: InvItemView[]
+  load: number
+  maxLoad: number
+  tier: string
+  tierColor: string
+  tierLabel: string
+  def: number
+  fire: number
+  blast: number
+  souls: number
+}
+
+export interface InvItemView {
+  id: string
+  name: string
+  icon: string
+  cat: string
+  weight: number
+  n: number
+  equipped: boolean
+  tier: string
+  desc: string
+  dmg?: number
+  spd?: number
+  block?: number
+  bowDmg?: number
+  def?: number
+  fire?: number
+  blast?: number
 }
 
 export interface ShopHud {
@@ -97,6 +143,10 @@ export interface SaveData {
   shopEstus?: number
   shopWhet?: number
   shopCoal?: number
+  inv?: { id: ItemId; n: number }[]
+  eq?: EquippedMap
+  rhA?: 1 | 2
+  lhA?: 1 | 2
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -687,26 +737,37 @@ class Arrow {
     private game: Game,
     private pos: THREE.Vector3,
     target: THREE.Vector3,
-    private dmg: number
+    private dmg: number,
+    private fromPlayer = false,
+    fire = false
   ) {
     const g = new THREE.Group()
     const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
-    const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.6), lam(0x9a7a4a))
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.14), lam(0xb8bec8))
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.6), lam(fire ? 0x6a4020 : 0x9a7a4a))
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.14), lam(fire ? 0xff8a3a : 0xb8bec8))
     tip.position.z = 0.34
-    const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.17, 0.13), lam(0xe8e4d8))
+    const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.17, 0.13), lam(fire ? 0xffc23d : 0xe8e4d8))
     fl1.position.z = -0.25
     const fl2 = fl1.clone()
     fl2.rotation.z = Math.PI / 2
     g.add(shaft, tip, fl1, fl2)
+    if (fire) {
+      // a small burning head glow so fire arrows read at night
+      const glow = new THREE.Mesh(
+        new THREE.BoxGeometry(0.16, 0.16, 0.16),
+        new THREE.MeshBasicMaterial({ color: 0xff7a1e, transparent: true, opacity: 0.4, depthWrite: false })
+      )
+      glow.position.z = 0.34
+      g.add(glow)
+    }
     g.position.copy(pos)
     game.engine.scene.add(g)
     this.mesh = g
     // flat-ish shot with a loft so it arcs gently over small bumps
     this.vel.subVectors(target, pos)
     const dist = this.vel.length()
-    this.vel.normalize().multiplyScalar(15.5)
-    this.vel.y += dist * 0.42
+    this.vel.normalize().multiplyScalar(fromPlayer ? 19 : 15.5)
+    this.vel.y += dist * (fromPlayer ? 0.18 : 0.42)
   }
 
   update(dt: number): boolean {
@@ -734,6 +795,29 @@ class Arrow {
       return true
     }
     if (this.t > 3.2 || Math.abs(this.pos.x) > 29 || Math.abs(this.pos.z) > 29) return false
+
+    /* ---- player-fired arrows hunt MOBS ---- */
+    if (this.fromPlayer) {
+      for (const e of this.game.allEnemies) {
+        if (!e.alive) continue
+        const isBoss = e.isBoss
+        const rad = isBoss ? 1.5 : 0.75
+        const top = e.pos.y + (isBoss ? 4.2 : 2.0)
+        const hy = Math.max(e.pos.y + 0.3, Math.min(top, this.pos.y))
+        const d2 =
+          (this.pos.x - e.pos.x) ** 2 + (this.pos.z - e.pos.z) ** 2 + (this.pos.y - hy) ** 2
+        if (d2 < rad * rad) {
+          const vl = Math.hypot(this.vel.x, this.vel.z) || 1
+          e.takeDamage(Math.max(1, Math.round(this.dmg * (0.92 + Math.random() * 0.16))), this.game,
+            this.pos.x - (this.vel.x / vl) * 1.5, this.pos.z - (this.vel.z / vl) * 1.5)
+          this.game.sfx.arrowHit()
+          this.game.spawnBurst(this.pos.clone(), 0xffe9a0, 8, 2.2, 0.4, 0.1)
+          this.stuck = true
+          return true
+        }
+      }
+      return true
+    }
 
     // player hit — torso capsule approx
     const p = this.game.player
@@ -854,7 +938,7 @@ class Fireball {
       if (d2 < 0.6 * 0.6) {
         const vl = Math.hypot(this.vel.x, this.vel.z) || 1
         const wasBlocking = p.state === 'block'
-        if (p.takeDamage(this.dmg, this.pos.x - (this.vel.x / vl) * 1.2, this.pos.z - (this.vel.z / vl) * 1.2, this.game)) {
+        if (p.takeDamage(this.dmg, this.pos.x - (this.vel.x / vl) * 1.2, this.pos.z - (this.vel.z / vl) * 1.2, this.game, false, 'fire')) {
           this.game.onPlayerHit(this.dmg)
         } else if (wasBlocking) {
           this.game.onArrowBlocked()
@@ -882,6 +966,85 @@ class Fireball {
   dispose(scene: THREE.Scene) {
     scene.remove(this.mesh)
     this.mesh.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.geometry) m.geometry.dispose()
+    })
+  }
+}
+
+/* ================= LOOT DROPS ================= */
+
+/* A fallen foe's gear, lying in the world the Minecraft way: a spinning,
+   bobbing item with a Dark-Souls loot beam. Walk close and press F. */
+class LootDrop {
+  group = new THREE.Group()
+  light: THREE.PointLight
+  private t = Math.random() * 10
+  private baseY: number
+
+  constructor(
+    private game: Game,
+    public id: ItemId,
+    public n: number,
+    pos: THREE.Vector3
+  ) {
+    const def = ITEMS[id]
+    const y = game.world.surfaceAt(pos.x, pos.z)
+    this.baseY = y + 0.55
+
+    /* ---- the item itself ---- */
+    const inner = new THREE.Group()
+    if (def.cat === 'sword') {
+      const s = createSword(0.85, def.style ?? 'iron')
+      s.rotation.z = 0.7
+      inner.add(s)
+    } else if (def.cat === 'shield') {
+      const sh = createShield(def.id === 'iron_shield' ? 'iron' : 'wood')
+      sh.rotation.y = Math.PI / 2
+      inner.add(sh)
+    } else if (def.cat === 'bow') {
+      const b = createBow()
+      b.rotation.z = 0.5
+      inner.add(b)
+    } else {
+      // armor pieces drop as a small tinted block — the Minecraft way
+      const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), lam(def.tint ?? 0x9a8b70))
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.09, 0.37), lam(def.tint2 ?? 0x6a5a48))
+      inner.add(box, band)
+    }
+    inner.castShadow = true
+    this.group.add(inner)
+
+    /* ---- the loot beam (Dark-Souls beacon, blocky style) ---- */
+    const beamColor = def.tier === 'boss' ? 0xffb347 : def.tier === 'rare' ? 0x59ff6a : 0xd8e8ff
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.2, 3.4, 6, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: beamColor, transparent: true, opacity: 0.24,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      })
+    )
+    beam.position.y = 1.7
+    this.group.add(beam)
+
+    this.group.position.set(pos.x, this.baseY, pos.z)
+    game.engine.scene.add(this.group)
+    this.light = new THREE.PointLight(beamColor, 1.1, 4.5, 1.6)
+    this.light.position.y = 0.4
+    this.group.add(this.light)
+  }
+
+  update(dt: number) {
+    this.t += dt
+    this.group.rotation.y += dt * 1.4
+    this.group.position.y = this.baseY + Math.sin(this.t * 2.2) * 0.09
+    this.light.intensity = 0.9 + Math.sin(this.t * 3.1) * 0.25
+  }
+
+  dispose(scene: THREE.Scene) {
+    scene.remove(this.group)
+    this.group.traverse((o) => {
       const m = o as THREE.Mesh
       if (m.geometry) m.geometry.dispose()
     })
@@ -950,6 +1113,17 @@ export class Game {
   private emberTaken = false
   private castFailT = -9
   private tmpColor = new THREE.Color()
+
+  /* ---- Dark-Souls inventory & equipment ---- */
+  /** the bag owns EVERYTHING (DS rule: equipping marks, it never destroys) */
+  inv: { id: ItemId; n: number }[] = [{ id: 'worn_sword', n: 1 }, { id: 'wooden_shield', n: 1 }]
+  eq: EquippedMap = defaultEquip()
+  rhActive: 1 | 2 = 1
+  lhActive: 1 | 2 = 1
+  private loots: LootDrop[] = []
+  private toastMsg: string | null = null
+  private toastT = 0
+  private playerBow: THREE.Group | null = null
 
   private reticle: HTMLDivElement
   private vignette: HTMLDivElement
@@ -1244,6 +1418,7 @@ export class Game {
     this.sfx.resume()
     this.loadSave()
     this.player.fullRestore()
+    this.refreshLoadout()
     this.phase = 'playing'
     if (!this.engine.input.isTouch) this.engine.input.requestLock()
     this.emit(true)
@@ -1404,14 +1579,304 @@ export class Game {
     // resting heals — a fresh level-up tops up the new maximum too
     this.player.hp = this.player.maxHp
     this.player.stamina = this.player.maxStamina
+    this.refreshLoadout()
     this.save()
     this.sfx.levelUp()
     this.emit(true)
   }
 
+  /* ================= INVENTORY & EQUIPMENT (Dark-Souls style) ================= */
+
+  openInventory() {
+    if (this.phase !== 'playing') return
+    this.phase = 'inventory'
+    this.engine.input.releaseLock()
+    this.wasLocked = false
+    this.sfx.souls()
+    this.emit(true)
+  }
+
+  closeInventory() {
+    if (this.phase !== 'inventory') return
+    this.phase = 'playing'
+    if (!this.engine.input.isTouch) this.engine.input.requestLock()
+    this.wasLocked = false
+    this.emit(true)
+  }
+
+  countOf(id: ItemId): number {
+    return this.inv.find((s) => s.id === id)?.n ?? 0
+  }
+
+  private addItem(id: ItemId, n = 1) {
+    const slot = this.inv.find((s) => s.id === id)
+    if (slot) slot.n += n
+    else this.inv.push({ id, n })
+  }
+
+  private removeItem(id: ItemId, n = 1): boolean {
+    const i = this.inv.findIndex((s) => s.id === id)
+    if (i < 0 || this.inv[i].n < n) return false
+    this.inv[i].n -= n
+    if (this.inv[i].n <= 0) this.inv.splice(i, 1)
+    return true
+  }
+
+  /** spawn a loot drop at (near) a position, with a tiny scatter for multi-drops */
+  private spawnLoot(rolls: LootRoll[], pos: THREE.Vector3) {
+    let k = 0
+    for (const r of rolls) {
+      if (!ITEMS[r.id]) continue
+      const off = k === 0 ? new THREE.Vector3(0, 0, 0) : new THREE.Vector3(Math.cos(k * 2.4) * 0.9, 0, Math.sin(k * 2.4) * 0.9)
+      this.loots.push(new LootDrop(this, r.id, r.n, pos.clone().add(off)))
+      k++
+    }
+    if (k > 0) this.save()
+  }
+
+  /** recompute everything the equipped gear does to the body + its looks */
+  refreshLoadout() {
+    const rhId = this.eq[this.rhActive === 1 ? 'rh1' : 'rh2']
+    const lhId = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
+    const rh = rhId ? ITEMS[rhId] : null
+    const lh = lhId ? ITEMS[lhId] : null
+    const load = equipLoad(this.eq)
+    const max = maxLoadFor(this.player.level)
+    const tier = rollTier(load, max)
+    const info = TIER_INFO[tier]
+    const armor = armorTotals(this.eq)
+    this.player.loadout = {
+      weaponMult: rh?.dmg ? rh.dmg / 30 : 1,
+      weaponSpd: rh?.spd ?? 1,
+      block: lh?.block ?? 0,
+      def: armor.def,
+      fire: armor.fire,
+      blast: armor.blast,
+      walkMult: info.walk,
+      sprintMult: info.sprint,
+      rollMult: info.roll,
+      rollCostMult: info.rollCost,
+      canRoll: tier !== 'over',
+      tier,
+      load,
+      maxLoad: max,
+      aiming: lh?.cat === 'bow',
+    }
+    this.refreshEquipmentVisuals()
+  }
+
+  private refreshEquipmentVisuals() {
+    const h = this.player.h
+    // right-hand sword style follows the active blade
+    const rhId = this.eq[this.rhActive === 1 ? 'rh1' : 'rh2']
+    const rh = rhId ? ITEMS[rhId] : null
+    setPlayerSword(h, (rh?.style ?? 'iron') as SwordStyle, rh?.scale ?? 1)
+    h.sword!.visible = rh?.cat === 'sword'
+    // left hand: shield OR bow, whichever is active
+    const lhId = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
+    const lh = lhId ? ITEMS[lhId] : null
+    if (lh?.cat === 'bow') {
+      if (!this.playerBow) this.playerBow = createBow()
+      setNocked(this.playerBow, false)
+      setBowDraw(this.playerBow, 0)
+      setPlayerBow(h, this.playerBow)
+      if (h.shield) h.shield.visible = false
+    } else {
+      setPlayerBow(h, null)
+      this.playerBow = null
+      if (lh?.cat === 'shield') {
+        setPlayerShield(h, lh.id === 'iron_shield' ? 'iron' : 'wood')
+        h.shield!.visible = true
+      } else if (h.shield) {
+        h.shield.visible = false
+      }
+    }
+    // armor overlays + cape
+    const piece = (s: 'head' | 'chest' | 'hands' | 'legs' | 'cape') => {
+      const id = this.eq[s]
+      const it = id ? ITEMS[id] : null
+      return it && it.def !== undefined ? { tint: it.tint ?? 0x888888, tint2: it.tint2 } : null
+    }
+    applyPlayerArmor(h, {
+      head: piece('head'),
+      chest: piece('chest'),
+      hands: piece('hands'),
+      legs: piece('legs'),
+      cape: piece('cape'),
+    })
+  }
+
+  /** equip a bag item into its canonical slot (RH/LH → first empty, else
+      the active hand — DS-style swap: the displaced piece stays owned) */
+  equipItem(id: ItemId) {
+    const def = ITEMS[id]
+    if (!def) return
+    // must own it — in the bag, or already worn somewhere (move semantics)
+    const worn = ALL_SLOTS.some((s) => this.eq[s] === id)
+    if (this.countOf(id) <= 0 && !worn) return
+    let slot: EquipSlot
+    if (def.slot === 'rh') {
+      slot = !this.eq.rh1 ? 'rh1' : !this.eq.rh2 ? 'rh2' : this.rhActive === 1 ? 'rh1' : 'rh2'
+    } else if (def.slot === 'lh') {
+      slot = !this.eq.lh1 ? 'lh1' : !this.eq.lh2 ? 'lh2' : this.lhActive === 1 ? 'lh1' : 'lh2'
+    } else {
+      slot = def.slot
+    }
+    // an item lives in exactly one slot — clear its previous post first
+    for (const s of ALL_SLOTS) if (this.eq[s] === id && s !== slot) this.eq[s] = null
+    this.eq[slot] = id
+    this.sfx.shard()
+    this.showToast(`${def.name} تجهیز شد`)
+    this.refreshLoadout()
+    this.save()
+    this.emit(true)
+  }
+
+  unequipSlot(slot: EquipSlot) {
+    const id = this.eq[slot]
+    if (!id) return
+    const def = ITEMS[id]
+    // never unequip the last usable weapon or shield — the unkindled goes unarmed
+    if (def.slot === 'rh' && this.eq.rh1 === id && this.eq.rh2 === id) return
+    this.eq[slot] = null
+    this.sfx.levelUp()
+    this.showToast(`${def.name} برداشته شد`)
+    this.refreshLoadout()
+    this.save()
+    this.emit(true)
+  }
+
+  /** Digit1 — swap which right-hand weapon is live */
+  switchRight() {
+    this.rhActive = this.rhActive === 1 ? 2 : 1
+    const id = this.eq[this.rhActive === 1 ? 'rh1' : 'rh2']
+    this.showToast(id ? `${ITEMS[id].name} به دست گرفتید` : 'دست راست خالی')
+    this.refreshLoadout()
+    this.emit(true)
+  }
+
+  /** Digit2 — swap the left hand (shield ⇄ bow) */
+  switchLeft() {
+    this.lhActive = this.lhActive === 1 ? 2 : 1
+    const id = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
+    this.showToast(id ? `${ITEMS[id].name} آماده شد` : 'دست چپ خالی')
+    this.refreshLoadout()
+    this.emit(true)
+  }
+
+  private showToast(msg: string) {
+    this.toastMsg = msg
+    this.toastT = 2.4
+  }
+
+  /** arrows the equipped bow would use — prefers the fire quiver when present */
+  private arrowState(): { id: ItemId; n: number } | null {
+    const fire = this.countOf('arrow_fire')
+    const wood = this.countOf('arrow_wood')
+    if (fire > 0) return { id: 'arrow_fire', n: fire }
+    if (wood > 0) return { id: 'arrow_wood', n: wood }
+    return null
+  }
+
+  /** the archer moment — called by the player's aim state on release */
+  firePlayerArrow(p: Player, draw: number) {
+    const lhId = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
+    const bow = lhId ? ITEMS[lhId] : null
+    if (!bow || bow.cat !== 'bow') return
+    const ammo = this.arrowState()
+    if (!ammo) {
+      this.showToast('تیر تمام شد!')
+      return
+    }
+    this.removeItem(ammo.id, 1)
+    const arrowDef = ITEMS[ammo.id]
+    const from = p.pos.clone().add(new THREE.Vector3(Math.sin(p.yaw) * 0.4, 1.45, Math.cos(p.yaw) * 0.4))
+    // aim along the camera's forward — what you see is what you shoot
+    const target = p.pos
+      .clone()
+      .add(new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw)).multiplyScalar(13))
+      .add(new THREE.Vector3(0, 1.35, 0))
+    const dmg = Math.round((bow.bowDmg ?? 20) + (arrowDef.bowDmg ?? 0))
+    this.arrows.push(new Arrow(this, from, target, dmg, true, ammo.id === 'arrow_fire'))
+    this.sfx.arrowShoot()
+    // the bow string snaps on the model too
+    if (this.playerBow) {
+      setBowDraw(this.playerBow, draw)
+      setNocked(this.playerBow, false)
+      setTimeout(() => {
+        if (this.playerBow) {
+          setBowDraw(this.playerBow, 0)
+          setNocked(this.playerBow, true)
+        }
+      }, 240)
+    }
+    this.emit(true)
+  }
+
+  /** DS-style item-attained banner, fired on pickup */
+  private collectLoot(l: LootDrop) {
+    const def = ITEMS[l.id]
+    if (!def) return
+    this.addItem(l.id, l.n)
+    l.dispose(this.engine.scene)
+    this.loots = this.loots.filter((x) => x !== l)
+    this.sfx.shard()
+    this.showToast(`به دست آمد: ${def.name}${l.n > 1 ? ` ×${l.n}` : ''}`)
+    this.spawnBurst(l.group.position.clone(), 0xffe9a0, 14, 2.6, 0.5)
+    this.save()
+    this.emit(true)
+  }
+
+  /** build the React-side snapshot of slots + bag */
+  private invHud(): InvHud {
+    const view = (id: ItemId | null | undefined, slot?: EquipSlot): InvItemView | null => {
+      if (!id || !ITEMS[id]) return null
+      const it = ITEMS[id]
+      return {
+        id: it.id, name: it.name, icon: it.icon, cat: it.cat,
+        weight: it.weight, n: slot ? 1 : Math.max(1, this.countOf(id)),
+        equipped: slot ? this.eq[slot] === id : ALL_SLOTS.some((s) => this.eq[s] === id),
+        tier: it.tier, desc: it.desc,
+        dmg: it.dmg, spd: it.spd, block: it.block, bowDmg: it.bowDmg,
+        def: it.def, fire: it.fire, blast: it.blast,
+      }
+    }
+    const slots = ALL_SLOTS.map((s) => ({ slot: s, label: SLOT_LABEL[s], item: view(this.eq[s] ?? null, s) }))
+    const equippedIds = new Set(ALL_SLOTS.map((s) => this.eq[s]).filter(Boolean) as ItemId[])
+    const bag = this.inv
+      .filter((e) => ITEMS[e.id])
+      .map((e) => ({ ...view(e.id)!, n: e.n, equipped: equippedIds.has(e.id) }))
+    const load = equipLoad(this.eq)
+    const max = maxLoadFor(this.player.level)
+    const tier = rollTier(load, max)
+    const info = TIER_INFO[tier]
+    const armor = armorTotals(this.eq)
+    return {
+      slots, rhActive: this.rhActive, lhActive: this.lhActive, bag,
+      load: Math.round(load * 10) / 10, maxLoad: max,
+      tier, tierColor: info.color, tierLabel: info.label,
+      def: Math.round(armor.def * 100), fire: Math.round(armor.fire * 100), blast: Math.round(armor.blast * 100),
+      souls: Math.floor(this.player.souls),
+    }
+  }
+
   /** the F key — world interactions */
   interact() {
     if (this.phase !== 'playing') return
+    // fallen foes' gear — the nearest loot drop first
+    let bestLoot: LootDrop | null = null
+    let bestD = 1.9
+    for (const l of this.loots) {
+      const d = Math.hypot(this.player.pos.x - l.group.position.x, this.player.pos.z - l.group.position.z)
+      if (d < bestD) {
+        bestD = d
+        bestLoot = l
+      }
+    }
+    if (bestLoot) {
+      this.collectLoot(bestLoot)
+      return
+    }
     // the grey merchant
     if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 2.7) {
       this.openShop()
@@ -1541,6 +2006,10 @@ export class Game {
         shopEstus: this.shopLv.estus,
         shopWhet: this.shopLv.whet,
         shopCoal: this.shopLv.coal,
+        inv: this.inv,
+        eq: this.eq,
+        rhA: this.rhActive,
+        lhA: this.lhActive,
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -1583,6 +2052,33 @@ export class Game {
         this.player.maxPyro = Math.min(8, this.player.maxPyro + this.shopLv.coal)
         this.player.pyro = this.player.maxPyro
       }
+      // ---- inventory & equipment ----
+      const savedInv = Array.isArray(d.inv)
+        ? d.inv.filter((e) => e && ITEMS[e.id] && e.n > 0)
+        : null
+      this.inv = savedInv ?? [{ id: 'worn_sword', n: 1 }, { id: 'wooden_shield', n: 1 }]
+      this.eq = { ...defaultEquip(), ...(d.eq ?? {}) }
+      for (const s of ALL_SLOTS) {
+        const id = this.eq[s]
+        if (id && !ITEMS[id]) this.eq[s] = null
+      }
+      // an item occupies at most one slot — drop stale duplicates
+      const seen = new Set<ItemId>()
+      for (const s of ALL_SLOTS) {
+        const id = this.eq[s]
+        if (id) {
+          if (seen.has(id)) this.eq[s] = null
+          else seen.add(id)
+        }
+      }
+      // every equipped piece must exist in the bag too (DS: nothing is lost)
+      for (const s of ALL_SLOTS) {
+        const id = this.eq[s]
+        if (id && this.countOf(id) <= 0) this.addItem(id, 1)
+      }
+      this.rhActive = d.rhA === 2 ? 2 : 1
+      this.lhActive = d.lhA === 2 ? 2 : 1
+      this.refreshLoadout()
     } catch { /* ignore */ }
   }
 
@@ -1695,6 +2191,10 @@ export class Game {
     orb.position.copy(e.pos).add(new THREE.Vector3(0, 1.2, 0))
     this.engine.scene.add(orb)
     this.orbs.push({ mesh: orb, t: 0, amount: e.soulsValue(), from: orb.position.clone() })
+    // their gear may hit the ground — a little inheritance from the dead
+    // (lords skip the common table — their signature rig is guaranteed)
+    const drops = e.isBoss ? [] : rollLoot(e.lootKind)
+    if (drops.length > 0) this.spawnLoot(drops, e.pos)
     if (e === this.boss) this.onBossKilled()
     else if (e === this.boss2) this.onBoss2Killed()
     this.emit(true)
@@ -1709,6 +2209,8 @@ export class Game {
     this.bannerT = 0
     if (this.player.lockedTarget) this.player.lockedTarget = null
     this.sfx.victory()
+    // the lord's inheritance: his great blade + a piece of his armor
+    this.spawnLoot(bossLoot(1), this.boss.pos)
     this.spawnEstusShard()
     this.save()
   }
@@ -1723,6 +2225,8 @@ export class Game {
     this.bannerT = 0
     if (this.player.lockedTarget) this.player.lockedTarget = null
     this.sfx.victory()
+    // the Flame King's own obsidian rig: blade + crown/plate/cape
+    this.spawnLoot(bossLoot(2), this.boss2.pos)
     this.spawnEmber()
     this.save()
   }
@@ -2239,6 +2743,21 @@ export class Game {
   }
 
   private detectPrompt(): string | null {
+    // nearest loot drop — the item's own name invites the pickup
+    let bestLoot: LootDrop | null = null
+    let bestD = 1.9
+    for (const l of this.loots) {
+      const d = Math.hypot(this.player.pos.x - l.group.position.x, this.player.pos.z - l.group.position.z)
+      if (d < bestD) {
+        bestD = d
+        bestLoot = l
+      }
+    }
+    if (bestLoot) {
+      const def = ITEMS[bestLoot.id]
+      const qty = bestLoot.n > 1 ? ` ×${bestLoot.n}` : ''
+      return def ? `برداشتن ${def.name}${qty}` : 'برداشتن غنیمت'
+    }
     if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
       return 'بازیابی سول‌ها'
     }
@@ -2354,6 +2873,24 @@ export class Game {
       this.updateBonfire(dt)
       this.updateMerchant(dt)
       this.updateEffects(dt)
+      this.updateLoot(dt)
+      this.updateCameraFollow(dt, false)
+      this.drawMinimap()
+      this.emit(false)
+      return
+    }
+
+    if (this.phase === 'inventory') {
+      // Escape / I / Tab closes the satchel
+      if (input.consume('Escape') || input.consume('KeyI') || input.consume('Tab')) {
+        this.closeInventory()
+        return
+      }
+      this.world.update(dt)
+      this.updateBonfire(dt)
+      this.updateMerchant(dt)
+      this.updateEffects(dt)
+      this.updateLoot(dt)
       this.updateCameraFollow(dt, false)
       this.drawMinimap()
       this.emit(false)
@@ -2393,6 +2930,13 @@ export class Game {
     // global keys
     if (input.consume('KeyQ')) this.toggleLock()
     if (input.consume('KeyF')) this.interact()
+    // equipment: I/Tab opens the satchel, 1/2 swap hands
+    if (input.consume('KeyI') || input.consume('Tab')) {
+      this.openInventory()
+      return
+    }
+    if (input.consume('Digit1')) this.switchRight()
+    if (input.consume('Digit2')) this.switchLeft()
     // ESC opens the pause menu (pointer-lock keys fall through to the game)
     if (input.consume('Escape')) {
       this.player.lockedTarget = null
@@ -2472,7 +3016,9 @@ export class Game {
             dmg,
             this.player.pos.x + (Math.random() - 0.5),
             this.player.pos.z + (Math.random() - 0.5),
-            this
+            this,
+            false,
+            'fire'
           )
         ) {
           this.onPlayerHit(dmg)
@@ -2520,6 +3066,7 @@ export class Game {
 
     this.world.update(dt)
     this.updateBonfire(dt)
+    this.updateLoot(dt)
     this.updateEffects(dt)
     this.updateOrbs(dt)
 
@@ -2600,12 +3147,24 @@ export class Game {
     this.merchantLamp.intensity = 1.5 + Math.sin(this.time * 11) * 0.2 + Math.random() * 0.12
   }
 
+  /** loot drops bob & spin; the toast countdown rides the same clock */
+  private updateLoot(dt: number) {
+    for (const l of this.loots) l.update(dt)
+    if (this.toastT > 0) {
+      this.toastT -= dt
+      if (this.toastT <= 0) {
+        this.toastMsg = null
+        this.emit(true)
+      }
+    }
+  }
+
   private updateEffects(dt: number) {
     this.bursts = this.bursts.filter((b) => b.update(dt, this.engine.scene))
     this.texts = this.texts.filter((t) => t.update(dt, this.engine.scene))
     // boss slam/stomp shockwave rings
     this.waves = this.waves.filter((w) => w.update(dt))
-    // skeleton arrows
+    // skeleton arrows (and the player's own loosed arrows)
     this.arrows = this.arrows.filter((a) => {
       const alive = a.update(dt)
       if (!alive) a.dispose(this.engine.scene)
@@ -2776,6 +3335,9 @@ export class Game {
               pyroUnlocked: this.pyroUnlocked,
             }
           : null,
+      inv: this.phase === 'inventory' ? this.invHud() : null,
+      toast: this.toastMsg,
+      arrows: this.countOf('arrow_fire') > 0 ? this.countOf('arrow_fire') : this.countOf('arrow_wood'),
     }
     const json = JSON.stringify(s)
     if (force || json !== this.lastHudJson) {

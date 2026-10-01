@@ -84,6 +84,11 @@ export class Enemy {
     return this.opts.souls
   }
 
+  /** which loot table this breed rolls from on death */
+  get lootKind(): string {
+    return 'zombie'
+  }
+
   reset() {
     this.pos.copy(this.home)
     this.hp = this.maxHp
@@ -885,6 +890,9 @@ export class BossEnemy extends Enemy {
 /* ================= CREEPER ================= */
 
 export class CreeperEnemy extends Enemy {
+  get lootKind(): string {
+    return 'creeper'
+  }
   constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
     super(scene, 'creeper', spawn, {
       hp: 48,
@@ -950,7 +958,7 @@ export class CreeperEnemy extends Enemy {
     // explosion — blockable from the front, leaves a crater of particles
     if (dist < 3.4) {
       const dmg = Math.round(this.opts.dmg * (0.9 + Math.random() * 0.2))
-      if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      if (player.takeDamage(dmg, this.pos.x, this.pos.z, game, false, 'blast')) game.onPlayerHit(dmg)
     }
     // the blast is indiscriminate — every hollow caught inside it burns too
     // (falloff by distance, bosses shrug most of it off, chains can cascade)
@@ -979,6 +987,10 @@ export class CreeperEnemy extends Enemy {
 /** Ranged enemy — keeps its distance, draws and looses arrows.
     Rush it to force a panicky melee smack, or block/roll the arrows. */
 export class SkeletonEnemy extends Enemy {
+  get lootKind(): string {
+    return 'skeleton'
+  }
+
   private mode: 'shoot' | 'poke' = 'shoot'
   private bow: THREE.Group
 
@@ -1158,6 +1170,9 @@ export class SkeletonEnemy extends Enemy {
 /** Fast charcoal swordsman of the Ash Wastes. Its heavy grey blade chews
     through guards — blocking works, but stamina shatters fast. Roll instead. */
 export class WitherSkeletonEnemy extends Enemy {
+  get lootKind(): string {
+    return 'wither'
+  }
   constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
     super(scene, 'wither', spawn, {
       hp: 95,
@@ -1225,6 +1240,9 @@ export class WitherSkeletonEnemy extends Enemy {
 /** Floating molten sentry — hovers over the ash, keeps its distance and
     spits fireballs. Rush it, block the bolts, or snipe it with pyromancy. */
 export class BlazeEnemy extends Enemy {
+  get lootKind(): string {
+    return 'blaze'
+  }
   private rods: THREE.Group
   private trailT = 0
 
