@@ -59,3 +59,11 @@ tool-results/
 upload/
 download/
 *.tsbuildinfo
+
+# AI sound pipeline artifacts (regenerable)
+ai-sounds/raw/
+ai-sounds/tts_raw/
+ai-sounds/out/
+ai-sounds/*.log
+ai-sounds/*.png
+ai-sounds/*.wav

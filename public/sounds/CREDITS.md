@@ -1,25 +1,30 @@
 # Sound Credits
 
-All sounds are CC0 / OGA-BY (free for commercial use, no attribution strictly required, but credited here as good practice).
+**All audio in DarkCraft is 100% AI-generated in-house** — no external samples, no third-party recordings.
 
-## Sources (OpenGameArt.org)
+## How it was made
 
-- **Swishes Sound Pack** — CC0 — opengameart.org/content/swishes-sound-pack
-- **20 Sword Sound Effects (Attacks and Clashes)** by StarNinjas — CC0 — opengameart.org/content/20-sword-sound-effects-attacks-and-clashes
-- **Monster Sound Pack Volume 1/2** — CC0 — opengameart.org/content/monster-sound-pack-volume-1
-- **Big scary troll sounds** — CC0 — opengameart.org/content/big-scary-troll-sounds
-- **CC0 Deep Monster Roar** — CC0 — opengameart.org/content/cc0-deep-monster-roar
-- **80 CC0 RPG SFX** — CC0 — opengameart.org/content/80-cc0-rpg-sfx
-- **RPG Sound Pack** by Lithas — CC0 — opengameart.org/content/rpg-sound-pack
-- **Bones rattle** — CC0 — opengameart.org/content/bones-rattle
-- **Footsteps Leather, Cloth, Armor** — CC0 / OGA-BY 3.0 — opengameart.org/content/footsteps-leather-cloth-armor
-- **Fireplace Sound loop** — CC0 — opengameart.org/content/fireplace-sound-loop
-- **Boss Battle Music** by Juhani Junkala (Epic Boss Battle, seamlessly looping) — CC0 — opengameart.org/content/boss-battle-music
-- **Cathedral in the forest (ambient loop)** — CC0 — opengameart.org/content/cathedral-in-the-forest-ambient-loop
-- **Ambient Horror Track 01** — CC0 — opengameart.org/content/ambient-horror-track-01
-- **Loopable Dungeon Ambience** — CC0 — opengameart.org/content/loopable-dungeon-ambience
-- **wind whoosh loop** — CC0 — opengameart.org/content/wind-whoosh-loop
+Every sound was produced by the DarkCraft AI sound-design pipeline
+(`ai-sounds/` in the repository):
 
-## Processing
+1. **Neural TTS voices** — monster roars, growls, giant bellows, hurt grunts
+   and ghostly wails start as AI neural-vocal takes, then are DSP-processed
+   (pitch transposition, tube-style distortion, growl modulation, sub-octave
+   layering, convolution-style reverb) into creature voices.
+2. **AI-designed physical modeling synthesis** — swords, clashes, armor,
+   chains, bones, wood, UI, coins, gems, fire, explosions, footsteps and every
+   other effect are rendered from AI-designed recipes:
+   modal synthesis (inharmonic metal partials), filtered-noise whooshes,
+   Karplus-Strong strings, FM bells, membrane drums, granular fire crackle.
+3. **AI-composed adaptive music** — three seamless loops (explore / dread /
+   boss) written in a somber Minecraft × Dark Souls musical language and
+   rendered with the same synthesis engine.
+4. **Zone ambience** — wind, bonfire crackle and dungeon drone loops, all
+   synthesized and loop-crossfaded for seamless playback.
 
-Files were trimmed of silence, compressed, peak-limited and converted to Ogg Vorbis with ffmpeg.
+## Pipeline
+
+- Synthesis renderer: TypeScript DSP engine (44.1 kHz)
+- Vocal generation: neural text-to-speech
+- Encoding: ffmpeg → Ogg Vorbis
+- Files live under `public/sounds/{sfx,music,amb}`.
