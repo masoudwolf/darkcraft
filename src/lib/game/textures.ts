@@ -828,3 +828,228 @@ export function createFogMaterial(opts: FogMatOptions = {}): THREE.ShaderMateria
     fragmentShader: FOG_FRAG,
   })
 }
+
+/* ================= GEAR TEXTURES =================
+   Pixel-painted materials for everything the unkindled can
+   wear or wield — Minecraft-nearest, Dark-Souls soul. Each
+   family gets its own painted pattern so a knight's plate,
+   a hollow's ragged leather and a bone cuirass read apart
+   even before the shape says anything. */
+
+export type GearKind =
+  | 'plate' // forged steel — seams, rivets, scratches
+  | 'dark' // charcoal plate — ash grain, ember flecks
+  | 'bone' // pale bone — cracks and pores
+  | 'leather' // ragged leather — patches and stitching
+  | 'cloth' // woven cloth — bands and fray
+  | 'ember' // smoldering cloth — weave with burning flecks
+  | 'hide' // creeper hide — mottled camo
+  | 'obsidian' // black glass plate — faint ember veins
+
+const gearTexCache = new Map<string, THREE.CanvasTexture>()
+const gearMatCache = new Map<string, THREE.MeshLambertMaterial>()
+
+type RGB = [number, number, number]
+
+const rgbOf = (hex: number): RGB => {
+  const c = new THREE.Color(hex)
+  return [Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255)]
+}
+const cssOf = (c: RGB, f = 1) => `rgb(${clamp255(c[0] * f)},${clamp255(c[1] * f)},${clamp255(c[2] * f)})`
+const mixOf = (a: RGB, b: RGB, t: number): RGB => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+]
+
+function paintGear(ctx: CanvasRenderingContext2D, rng: Rng, s: number, kind: GearKind, B: RGB, A: RGB) {
+  const vary = kind === 'obsidian' ? 8 : kind === 'bone' ? 12 : kind === 'dark' ? 10 : 15
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) {
+      const v = (rng() - 0.5) * vary
+      ctx.fillStyle = `rgb(${clamp255(B[0] + v)},${clamp255(B[1] + v)},${clamp255(B[2] + v)})`
+      ctx.fillRect(x, y, 1, 1)
+    }
+  }
+  const fpx = (x: number, y: number, f: number, w = 1, h = 1) => px(ctx, x, y, cssOf(B, f), w, h)
+
+  if (kind === 'plate' || kind === 'dark') {
+    // two plate seams with rivets below them
+    for (const y of [10, 22]) {
+      for (let x = 0; x < s; x++) fpx(x, y, kind === 'dark' ? 0.55 : 0.62)
+      for (const x of [3, 11, 19, 27]) {
+        fpx(x, y + 2, 1.5)
+        fpx(x, y + 3, 1.25)
+      }
+    }
+    // battle scratches
+    for (let i = 0; i < 7; i++) {
+      const x = Math.floor(rng() * s)
+      const y = Math.floor(rng() * s)
+      const l = 2 + Math.floor(rng() * 4)
+      for (let k = 0; k < l; k++) fpx((x + k) % s, y, 1.3)
+    }
+    if (kind === 'dark') {
+      // ash settling on the charcoal
+      for (let i = 0; i < 26; i++) px(ctx, Math.floor(rng() * s), Math.floor(rng() * s), cssOf(mixOf(B, [125, 125, 130], 0.55)))
+      // a few dying embers
+      for (let i = 0; i < 4; i++) px(ctx, Math.floor(rng() * s), Math.floor(rng() * s), cssOf([255, 122, 30], 1))
+    }
+    for (let x = 0; x < s; x++) {
+      fpx(x, 0, 0.85)
+      fpx(x, s - 1, 0.72)
+    }
+  } else if (kind === 'bone') {
+    // wiggly vertical cracks
+    for (let c = 0; c < 3; c++) {
+      let x = 4 + Math.floor(rng() * (s - 8))
+      for (let y = 0; y < s; y++) {
+        px(ctx, x, y, cssOf(A, 0.5))
+        if (rng() < 0.3) x = Math.max(1, Math.min(s - 2, x + (rng() < 0.5 ? 1 : -1)))
+        if (rng() < 0.06) break // the crack dies out
+      }
+    }
+    // pores
+    for (let i = 0; i < 22; i++) fpx(Math.floor(rng() * s), Math.floor(rng() * s), 0.68)
+    // faint growth bands
+    for (const y of [7, 15, 23]) for (let x = 0; x < s; x++) if (rng() < 0.6) fpx(x, y, 0.88)
+  } else if (kind === 'leather') {
+    // worn patches
+    for (let i = 0; i < 5; i++) {
+      const x = Math.floor(rng() * (s - 6))
+      const y = Math.floor(rng() * (s - 5))
+      px(ctx, x, y, cssOf(A, 0.9), 4 + Math.floor(rng() * 4), 3 + Math.floor(rng() * 3))
+    }
+    // stitching dashes
+    for (const y of [8, 20]) {
+      for (let x = 0; x < s; x += 3) px(ctx, x, y, cssOf(A, 1.45))
+    }
+    for (let i = 0; i < 14; i++) fpx(Math.floor(rng() * s), Math.floor(rng() * s), 0.7)
+  } else if (kind === 'cloth' || kind === 'ember') {
+    // the weave — alternating bands + thread hints
+    for (let y = 0; y < s; y++) {
+      const band = (y >> 1) % 2 === 0 ? 1.04 : 0.92
+      for (let x = 0; x < s; x++) if (x % 4 === 0) fpx(x, y, band * 0.96)
+    }
+    // frayed specks
+    for (let i = 0; i < 16; i++) fpx(Math.floor(rng() * s), Math.floor(rng() * s), 0.62)
+    if (kind === 'ember') {
+      // smoldering flecks burning through the weave
+      for (let i = 0; i < 15; i++) {
+        const x = Math.floor(rng() * s)
+        const y = Math.floor(rng() * s)
+        px(ctx, x, y, cssOf([255, 122, 30]))
+        if (rng() < 0.4) px(ctx, x + 1, y, cssOf([255, 194, 61]))
+      }
+    }
+  } else if (kind === 'hide') {
+    // mottled camo blobs
+    for (let i = 0; i < 9; i++) {
+      const x = Math.floor(rng() * (s - 3))
+      const y = Math.floor(rng() * (s - 3))
+      px(ctx, x, y, cssOf(A, rng() < 0.5 ? 0.85 : 1.18), 2 + Math.floor(rng() * 3), 2 + Math.floor(rng() * 2))
+    }
+    for (let i = 0; i < 12; i++) fpx(Math.floor(rng() * s), Math.floor(rng() * s), 0.7)
+  } else {
+    // obsidian — glassy streaks over the dark, rare ember veins
+    for (let i = 0; i < 3; i++) {
+      let x = Math.floor(rng() * s)
+      for (let y = 0; y < s; y++) {
+        px(ctx, x, y, cssOf(mixOf(B, [120, 110, 118], 0.5)))
+        x = (x + 1) % s
+      }
+    }
+    for (let i = 0; i < 6; i++) px(ctx, Math.floor(rng() * s), Math.floor(rng() * s), cssOf([255, 122, 30], 1))
+  }
+}
+
+/** a shared, texture-painted material for a gear family — the cached
+    original is safe for ground drops; humanoids clone before flashing */
+export function gearMaterial(kind: GearKind, tint: number, tint2?: number): THREE.MeshLambertMaterial {
+  const key = `${kind}|${tint}|${tint2 ?? tint}`
+  const hit = gearMatCache.get(key)
+  if (hit) return hit
+  const B = rgbOf(tint)
+  const A = rgbOf(tint2 ?? tint)
+  const seed = ((tint * 2654435761) ^ ((tint2 ?? tint) * 40503) ^ (kind.charCodeAt(0) * 2246822519)) >>> 0
+  const tex = makeTex(32, seed, (ctx, rng, s) => paintGear(ctx, rng, s, kind, B, A))
+  const mat = new THREE.MeshLambertMaterial({ map: tex })
+  gearMatCache.set(key, mat)
+  return mat
+}
+
+/* ---------- weapon materials ---------- */
+
+const bladeMatCache = new Map<string, THREE.MeshLambertMaterial>()
+
+/** painted blade faces per sword style — fuller, glints, rust, granite */
+export function bladeMaterial(style: 'iron' | 'rust' | 'stone' | 'obsidian'): THREE.MeshLambertMaterial {
+  const hit = bladeMatCache.get(style)
+  if (hit) return hit
+  const base: Record<string, RGB> = {
+    iron: [205, 212, 222],
+    rust: [154, 163, 154],
+    stone: [154, 159, 164],
+    obsidian: [42, 34, 38],
+  }
+  const B = base[style]
+  const tex = makeTex(16, style.length * 977 + 13, (c, r, s) => {
+    for (let y = 0; y < s; y++) {
+      for (let x = 0; x < s; x++) {
+        const v = (r() - 0.5) * 14
+        c.fillStyle = `rgb(${clamp255(B[0] + v)},${clamp255(B[1] + v)},${clamp255(B[2] + v)})`
+        c.fillRect(x, y, 1, 1)
+      }
+    }
+    // the fuller — a darker column down the middle
+    for (let y = 0; y < s; y++) {
+      px(c, 7, y, cssOf(B, 0.68))
+      px(c, 8, y, cssOf(B, 0.74))
+    }
+    // edge glints
+    for (const y of [2, 9]) for (let x = 0; x < s; x++) if (r() < 0.4) px(c, x, y, cssOf(B, 1.22))
+    if (style === 'rust') {
+      for (let i = 0; i < 14; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(122,90,60)', 1 + Math.floor(r() * 2), 1)
+      for (let i = 0; i < 3; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(70,54,40)', 2, 1) // nicks
+    } else if (style === 'stone') {
+      for (let i = 0; i < 18; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 0.6))
+      for (let i = 0; i < 10; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 1.3))
+    } else if (style === 'obsidian') {
+      for (let i = 0; i < 5; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,122,30)')
+      for (let i = 0; i < 8; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 2.2))
+    }
+  })
+  const mat = new THREE.MeshLambertMaterial({ map: tex })
+  bladeMatCache.set(style, mat)
+  return mat
+}
+
+const woodMatCache = new Map<string, THREE.MeshLambertMaterial>()
+
+/** painted plank/limb wood — vertical seams and grain streaks */
+export function woodMaterial(tint: number, tint2: number): THREE.MeshLambertMaterial {
+  const key = `${tint}|${tint2}`
+  const hit = woodMatCache.get(key)
+  if (hit) return hit
+  const B = rgbOf(tint)
+  const D = rgbOf(tint2)
+  const tex = makeTex(16, (tint ^ 0xb04) >>> 0, (c, r, s) => {
+    for (let y = 0; y < s; y++) {
+      for (let x = 0; x < s; x++) {
+        const v = (r() - 0.5) * 16
+        c.fillStyle = `rgb(${clamp255(B[0] + v)},${clamp255(B[1] + v)},${clamp255(B[2] + v)})`
+        c.fillRect(x, y, 1, 1)
+      }
+    }
+    for (const x of [5, 11]) for (let y = 0; y < s; y++) px(c, x, y, cssOf(D, 0.9))
+    for (let i = 0; i < 9; i++) {
+      const y = Math.floor(r() * s)
+      const x = Math.floor(r() * s)
+      const l = 2 + Math.floor(r() * 3)
+      for (let k = 0; k < l; k++) px(c, (x + k) % s, y, cssOf(D, 1.1))
+    }
+  })
+  const mat = new THREE.MeshLambertMaterial({ map: tex })
+  woodMatCache.set(key, mat)
+  return mat
+}

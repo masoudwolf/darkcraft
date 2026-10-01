@@ -95,7 +95,7 @@ export const BESTIARY: BestiaryEntry[] = [
     scale: 0.97,
     build: () => createHumanoid('skeleton', 0.97),
     refs: (h) => {
-      const bow = createBow()
+      const bow = createBow('bone')
       bow.position.set(0, -0.68, 0.05)
       bow.rotation.y = Math.PI / 2
       h.armL.add(bow)

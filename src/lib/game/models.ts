@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { characterMaterials, type CharKind } from './textures'
+import { characterMaterials, gearMaterial, bladeMaterial, woodMaterial, type CharKind, type GearKind } from './textures'
 
 /* Minecraft-style blocky humanoid built from boxes.
    Proportions follow the classic 8px/12px model (1px = 1/16 unit). */
@@ -24,6 +24,8 @@ export interface Humanoid {
   shield?: THREE.Group | null
   /** armor overlays + cape added by applyPlayerArmor (swappable visuals) */
   armorParts?: THREE.Object3D[]
+  /** private material clones applyPlayerArmor made for this body (flash/fade-safe) */
+  armorMats?: THREE.MeshLambertMaterial[]
   capePivot?: THREE.Group | null
 }
 
@@ -33,7 +35,7 @@ export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group 
   const g = new THREE.Group()
   const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
   const glow = (c: number) => new THREE.MeshBasicMaterial({ color: c })
-  const bladeC = style === 'rust' ? 0x9aa39a : style === 'stone' ? 0x9a9fa4 : style === 'obsidian' ? 0x2a2226 : 0xcdd4de
+  const blade = bladeMaterial(style) // painted steel — fuller, glints, rust
   const guardC = style === 'stone' ? 0x6a6458 : style === 'obsidian' ? 0x171114 : 0x4a3620
   const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
@@ -44,8 +46,8 @@ export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group 
   }
   mk(0.07, 0.2, 0.07, lam(0x6e4f30), 0, 0) // handle
   mk(0.26, 0.06, 0.09, lam(guardC), 0, 0.13) // guard
-  mk(0.11, 0.62, 0.06, lam(bladeC), 0, 0.47) // blade
-  mk(0.07, 0.12, 0.05, lam(bladeC), 0, 0.82) // tip
+  mk(0.11, 0.62, 0.06, blade, 0, 0.47) // blade
+  mk(0.07, 0.12, 0.05, blade, 0, 0.82) // tip
   if (style === 'obsidian') {
     // a molten edge burning along the whole blade
     mk(0.13, 0.6, 0.02, glow(0xff7a1e), 0, 0.47, 0.035)
@@ -68,7 +70,8 @@ export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group 
 
 export function createShield(style: 'wood' | 'iron' = 'wood'): THREE.Group {
   const g = new THREE.Group()
-  const wood = new THREE.MeshLambertMaterial({ color: style === 'iron' ? 0x7c828c : 0x8a6437 })
+  // painted faces — plank grain for wood, plate seams for iron
+  const wood = style === 'iron' ? gearMaterial('plate', 0x7c828c, 0x565a64) : woodMaterial(0x8a6437, 0x6b4d2a)
   const woodDark = new THREE.MeshLambertMaterial({ color: style === 'iron' ? 0x565a64 : 0x6b4d2a })
   const iron = new THREE.MeshLambertMaterial({ color: style === 'iron' ? 0xcdd4de : 0x9aa0a8 })
   // iron back plate — slightly larger than the face so it reads as a rim
@@ -94,7 +97,8 @@ export function createShield(style: 'wood' | 'iron' = 'wood'): THREE.Group {
     reversed), and the string rides at local z = -0.1 (the draw-hand side).
     The string is a real two-segment cord meeting at a nock node — call
     setBowDraw() to bend it and slide the nocked arrow for a proper archery
-    draw/release. */
+    draw/release. `style` picks the limb material: seasoned wood, or the
+    pale cracked bone the skeleton archers carve theirs from. */
 interface BowParts {
   nock: THREE.Group
   strUp: THREE.Mesh
@@ -105,12 +109,14 @@ interface BowParts {
   arrow: THREE.Group
 }
 
-export function createBow(): THREE.Group {
+export function createBow(style: 'wood' | 'bone' = 'wood'): THREE.Group {
   const g = new THREE.Group()
   const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
-  const wood = lam(0x7a5a34)
-  const woodDark = lam(0x5a4022)
-  const wrap = lam(0x4a3418)
+  const bone = style === 'bone'
+  // limbs — painted wood grain, or cracked bone with pores
+  const wood = bone ? gearMaterial('bone', 0xd8d2c2, 0xb0aa9a) : woodMaterial(0x7a5a34, 0x5a4022)
+  const woodDark = bone ? gearMaterial('bone', 0xb8b2a2, 0x989284) : lam(0x5a4022)
+  const wrap = lam(bone ? 0x6a6255 : 0x4a3418)
   const stringMat = lam(0xd8d4c8)
   const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rz = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
@@ -144,7 +150,7 @@ export function createBow(): THREE.Group {
 
   // the nocked arrow — slides back with the draw, vanishes on release
   const arrow = new THREE.Group()
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.6, 0.026), lam(0xc9b083))
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.6, 0.026), lam(bone ? 0xd8c9a2 : 0xc9b083))
   shaft.position.y = -0.22
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.05), lam(0xb8bcc4))
   head.position.y = -0.55
@@ -1202,25 +1208,86 @@ export function animMerchantGreet(h: Humanoid, p: number) {
 
 /* ================= PLAYER EQUIPMENT VISUALS ================= */
 
-interface ArmorPieceVisual {
-  head?: { tint: number; tint2?: number } | null
-  chest?: { tint: number; tint2?: number } | null
-  hands?: { tint: number; tint2?: number } | null
-  legs?: { tint: number; tint2?: number } | null
-  cape?: { tint: number; tint2?: number } | null
+export interface ArmorPieceVisual {
+  /** the item's id — picks the texture family + unique ornaments */
+  id?: string
+  tint: number
+  tint2?: number
 }
 
-const omat = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+export interface ArmorVisualSet {
+  head?: ArmorPieceVisual | null
+  chest?: ArmorPieceVisual | null
+  hands?: ArmorPieceVisual | null
+  legs?: ArmorPieceVisual | null
+  cape?: ArmorPieceVisual | null
+}
+
+/** which painted texture family each armor item belongs to */
+const GEAR_KIND: Record<string, GearKind> = {
+  hollow_hood: 'leather', hollow_tunic: 'leather', hollow_wraps: 'leather', hollow_trousers: 'leather',
+  bone_helm: 'bone', bone_chest: 'bone', bone_gloves: 'bone', bone_greaves: 'bone',
+  wither_helm: 'dark', wither_plate: 'dark', wither_gauntlets: 'dark', wither_greaves: 'dark',
+  knight_helm: 'plate', knight_chest: 'plate',
+  flame_crown: 'obsidian', flame_chest: 'obsidian',
+  creeper_hide: 'hide',
+  tattered_cape: 'cloth', ashen_cape: 'cloth', blaze_cape: 'ember', flame_cape: 'ember',
+}
+const gearKindOf = (id?: string): GearKind => (id && GEAR_KIND[id]) || 'plate'
 
 /** rebuild the player's armor overlays + cape from the equipped pieces.
-    Everything is a Minecraft-style blocky shell layered OVER the body,
-    registered in h.materials so flash/death-fade affects it too. */
-export function applyPlayerArmor(h: Humanoid, v: ArmorPieceVisual) {
-  // wipe the previous overlays
-  if (h.armorParts) {
-    for (const p of h.armorParts) p.parent?.remove(p)
-  }
+    Every piece is a textured, layered blocky shell OVER the body — seams,
+    rivets, cracks and weave painted per gear family, with signature
+    ornaments for the boss regalia (knight plume, flame crown tongues…).
+    Materials are private clones registered in h.materials so hit-flash and
+    the death fade reach the armor too, and released on the next re-dress. */
+export function applyPlayerArmor(h: Humanoid, v: ArmorVisualSet) {
+  // release the previous dress: overlays off the body, private materials gone
   const parts: THREE.Object3D[] = []
+  if (h.armorParts) {
+    for (const p of h.armorParts) {
+      // the bow rides through armor swaps — it is dressed by setPlayerBow
+      if (p.name === 'playerBow') {
+        parts.push(p)
+        continue
+      }
+      p.parent?.remove(p)
+      p.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+      })
+    }
+  }
+  if (h.armorMats) {
+    for (const m of h.armorMats) {
+      const i = h.materials.indexOf(m)
+      if (i >= 0) h.materials.splice(i, 1)
+      m.dispose()
+    }
+  }
+  const myMats: THREE.MeshLambertMaterial[] = []
+  h.armorMats = myMats
+  // a textured gear material, cloned for this body so flash/fade never
+  // bleeds into ground drops that share the cached original
+  const gmat = (t: ArmorPieceVisual, shade: 'main' | 'accent') => {
+    const kind = gearKindOf(t.id)
+    const m = gearMaterial(kind, shade === 'main' ? t.tint : t.tint2 ?? t.tint, shade === 'main' ? t.tint2 : t.tint).clone()
+    myMats.push(m)
+    h.materials.push(m)
+    return m
+  }
+  // unlit glow ornaments (flame crown tongues, ember capes) — never flashed
+  const glowMat = (c: number) => {
+    const m = new THREE.MeshBasicMaterial({ color: c })
+    myMats.push(m as unknown as THREE.MeshLambertMaterial)
+    return m
+  }
+  const flatMat = (c: number) => {
+    const m = new THREE.MeshLambertMaterial({ color: c })
+    myMats.push(m)
+    h.materials.push(m)
+    return m
+  }
   const mk = (
     w: number, hh: number, d: number,
     m: THREE.Material, x: number, y: number, z: number,
@@ -1234,71 +1301,138 @@ export function applyPlayerArmor(h: Humanoid, v: ArmorPieceVisual) {
     return mesh
   }
 
-  /* --- helmet: crown + brow band + neck guard, face stays visible --- */
+  /* --- helmet: crown + brow + nose guard + cheeks + neck plate --- */
   if (v.head) {
     const t = v.head
-    const m1 = omat(t.tint)
-    const m2 = omat(t.tint2 ?? t.tint)
-    h.materials.push(m1, m2)
+    const m1 = gmat(t, 'main')
+    const m2 = gmat(t, 'accent')
     mk(0.56, 0.16, 0.56, m1, 0, 0.2, 0, h.head)        // crown
     mk(0.56, 0.14, 0.56, m2, 0, 0.08, 0, h.head)       // brow band
     mk(0.56, 0.18, 0.1, m1, 0, 0.08, -0.23, h.head)    // back neck guard
+    mk(0.08, 0.2, 0.06, m2, 0, 0.04, 0.285, h.head)    // nose guard
+    mk(0.07, 0.13, 0.14, m2, 0.25, 0.02, 0.16, h.head) // cheek plate R
+    mk(0.07, 0.13, 0.14, m2, -0.25, 0.02, 0.16, h.head) // cheek plate L
+    mk(0.08, 0.05, 0.44, m2, 0, 0.3, 0, h.head)        // top ridge
+    // signature regalia
+    if (t.id === 'knight_helm') {
+      // the knight's battle-scarred crimson plume
+      const plume = flatMat(0x7c1f2c)
+      mk(0.06, 0.11, 0.13, plume, 0, 0.37, -0.14, h.head)
+      mk(0.06, 0.14, 0.13, plume, 0, 0.39, 0, h.head)
+      mk(0.06, 0.1, 0.13, plume, 0, 0.36, 0.14, h.head)
+    } else if (t.id === 'flame_crown') {
+      // five unlit-but-burning tongues, the center one hottest
+      const fm = glowMat(0xff7a1e)
+      const fh = glowMat(0xffc23d)
+      mk(0.08, 0.16, 0.08, fm, -0.2, 0.38, 0, h.head)
+      mk(0.07, 0.22, 0.07, fh, -0.1, 0.41, 0, h.head)
+      mk(0.09, 0.3, 0.09, fh, 0, 0.45, 0, h.head)
+      mk(0.07, 0.22, 0.07, fm, 0.1, 0.41, 0, h.head)
+      mk(0.08, 0.16, 0.08, fm, 0.2, 0.38, 0, h.head)
+    } else if (t.id === 'hollow_hood') {
+      // a drooping hood brim
+      mk(0.62, 0.05, 0.62, m2, 0, 0.0, 0, h.head)
+      mk(0.5, 0.16, 0.06, m1, 0, -0.02, -0.29, h.head)
+    } else if (t.id === 'bone_helm') {
+      // horn nubs of the skullcap
+      mk(0.07, 0.12, 0.07, m2, 0.29, 0.3, 0, h.head)
+      mk(0.07, 0.12, 0.07, m2, -0.29, 0.3, 0, h.head)
+    }
   }
 
-  /* --- cuirass: chest shell + center ridge + belt (in torso/model space) --- */
+  /* --- cuirass: shell + ridge + buckle + back plate + fauld + pauldrons --- */
   if (v.chest) {
     const t = v.chest
-    const m1 = omat(t.tint)
-    const m2 = omat(t.tint2 ?? t.tint)
-    h.materials.push(m1, m2)
+    const m1 = gmat(t, 'main')
+    const m2 = gmat(t, 'accent')
     const torso = h.body.parent ?? h.spin
     mk(0.58, 0.52, 0.32, m1, 0, 1.22, 0, torso)       // cuirass
     mk(0.1, 0.44, 0.34, m2, 0, 1.2, 0, torso)         // center ridge
     mk(0.58, 0.1, 0.31, m2, 0, 0.85, 0, torso)        // belt
+    mk(0.12, 0.11, 0.03, m1, 0, 0.85, 0.165, torso)   // belt buckle
+    mk(0.5, 0.4, 0.08, m2, 0, 1.22, -0.16, torso)     // back plate
+    mk(0.54, 0.14, 0.08, m2, 0, 0.72, 0.14, torso)    // fauld, front
+    mk(0.54, 0.14, 0.08, m2, 0, 0.72, -0.14, torso)   // fauld, back
+    // shoulder pauldrons ride the arms so they swing with every stride
+    for (const arm of [h.armL, h.armR]) {
+      mk(0.34, 0.13, 0.34, m1, 0, -0.02, 0, arm)
+      mk(0.36, 0.04, 0.36, m2, 0, -0.085, 0, arm)
+    }
+    // signature regalia
+    if (t.id === 'knight_chest') {
+      // gilded collar trim
+      mk(0.62, 0.03, 0.34, flatMat(0xc9a44a), 0, 1.44, 0, torso)
+    } else if (t.id === 'flame_chest') {
+      // lava veins splitting the obsidian plate
+      const fm = glowMat(0xff7a1e)
+      const fh = glowMat(0xffc23d)
+      mk(0.05, 0.26, 0.02, fm, -0.12, 1.26, 0.165, torso)
+      mk(0.05, 0.18, 0.02, fm, 0.14, 1.3, 0.165, torso)
+      mk(0.03, 0.1, 0.025, fh, 0, 1.24, 0.17, torso)
+    }
   }
 
-  /* --- gauntlets: forearm sleeves + cuffs --- */
+  /* --- gauntlets: sleeves + cuffs + straps + knuckle plates --- */
   if (v.hands) {
     const t = v.hands
-    const m1 = omat(t.tint)
-    const m2 = omat(t.tint2 ?? t.tint)
-    h.materials.push(m1, m2)
+    const m1 = gmat(t, 'main')
+    const m2 = gmat(t, 'accent')
     for (const arm of [h.armL, h.armR]) {
       mk(0.3, 0.42, 0.3, m1, 0, -0.34, 0, arm)
       mk(0.31, 0.09, 0.31, m2, 0, -0.14, 0, arm)
+      mk(0.315, 0.05, 0.315, m2, 0, -0.5, 0, arm)     // strap
+      mk(0.24, 0.09, 0.1, m1, 0, -0.62, 0.09, arm)    // knuckle plate
     }
   }
 
-  /* --- greaves: thigh + shin plates --- */
+  /* --- greaves: thigh + knee cop + shin + boots --- */
   if (v.legs) {
     const t = v.legs
-    const m1 = omat(t.tint)
-    const m2 = omat(t.tint2 ?? t.tint)
-    h.materials.push(m1, m2)
+    const m1 = gmat(t, 'main')
+    const m2 = gmat(t, 'accent')
     for (const leg of [h.legL, h.legR]) {
       mk(0.3, 0.34, 0.3, m1, 0, -0.2, 0, leg)
+      mk(0.31, 0.1, 0.31, m2, 0, -0.395, 0, leg)      // knee cop
       mk(0.28, 0.3, 0.28, m2, 0, -0.56, 0, leg)
+      mk(0.3, 0.1, 0.34, m1, 0, -0.7, 0.03, leg)      // boot
     }
   }
 
-  /* --- cape: shoulder pivot, hangs from the back, sways in code --- */
+  /* --- cape: clasp + layered cloth + hem, sways in code --- */
   if (v.cape) {
     const t = v.cape
-    const m1 = omat(t.tint)
-    const m2 = omat(t.tint2 ?? t.tint)
-    h.materials.push(m1, m2)
+    const m1 = gmat(t, 'main')
+    const m2 = gmat(t, 'accent')
     const torso = h.body.parent ?? h.spin
     const pivot = new THREE.Group()
     pivot.position.set(0, 1.52, -0.145)
     const cloth = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.82, 0.05), m1)
     cloth.position.y = -0.42
     cloth.castShadow = true
+    // an inner fold panel — the cloth hangs in two layers
+    const fold = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.68, 0.04), m2)
+    fold.position.set(0, -0.38, -0.05)
     const hem = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.06), m2)
     hem.position.y = -0.8
-    pivot.add(cloth, hem)
+    const clasp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.06), m2)
+    clasp.position.set(0, 0.02, 0.05)
+    pivot.add(cloth, fold, hem, clasp)
     pivot.rotation.x = 0.08
     torso.add(pivot)
     parts.push(pivot)
+    // smoldering capes shed embers that never go out
+    if (t.id === 'blaze_cape' || t.id === 'flame_cape') {
+      const em = glowMat(0xff7a1e)
+      const emh = glowMat(0xffc23d)
+      const spark = (x: number, y: number, m: THREE.Material) => {
+        const s = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.02), m)
+        s.position.set(x, y, 0.035)
+        pivot.add(s)
+      }
+      spark(-0.13, -0.5, em)
+      spark(0.11, -0.62, emh)
+      spark(0.02, -0.28, em)
+    }
     h.capePivot = pivot
   } else {
     h.capePivot = null
@@ -1401,12 +1535,13 @@ export function createArrowBundle(n: number, fire = false): THREE.Group {
   return g
 }
 
-/** real miniatures for every armor slot — no more anonymous tinted cube */
-export function createArmorDrop(slot: 'head' | 'chest' | 'hands' | 'legs' | 'cape', tint: number, tint2?: number): THREE.Group {
+/** real miniatures for every armor slot — textured with the same painted
+    gear materials the worn pieces use, so what drops is what you wear */
+export function createArmorDrop(slot: 'head' | 'chest' | 'hands' | 'legs' | 'cape', tint: number, tint2?: number, id?: string): THREE.Group {
   const g = new THREE.Group()
-  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
-  const m1 = lam(tint)
-  const m2 = lam(tint2 ?? tint)
+  const kind = gearKindOf(id)
+  const m1 = gearMaterial(kind, tint, tint2)
+  const m2 = gearMaterial(kind, tint2 ?? tint, tint)
   const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rz = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
     mesh.position.set(x, y, z)

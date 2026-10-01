@@ -274,10 +274,12 @@ function SettingsModal({
 function ShopModal({
   hud,
   onBuy,
+  onSell,
   onClose,
 }: {
   hud: HudState
   onBuy: (id: 'estus' | 'whet' | 'coal') => void
+  onSell: (id: string) => void
   onClose: () => void
 }) {
   const shop = hud.shop
@@ -289,7 +291,7 @@ function ShopModal({
   }
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 px-4" dir="rtl">
-      <div className="fadein-anim w-[min(94vw,470px)] rounded-none border-2 border-black bg-zinc-950/95 shadow-[6px_6px_0_rgba(0,0,0,0.6)]">
+      <div className="fadein-anim flex max-h-[94vh] w-[min(94vw,540px)] flex-col overflow-hidden rounded-none border-2 border-black bg-zinc-950/95 shadow-[6px_6px_0_rgba(0,0,0,0.6)]">
         <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4">
           <span className="text-2xl" aria-hidden>🧺</span>
           <div>
@@ -298,7 +300,7 @@ function ShopModal({
           </div>
         </div>
 
-        <div className="px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="mb-3 flex items-center justify-between text-sm">
             <span className="text-white/70">سول‌های تو</span>
             <span className="flex items-center gap-1.5 font-bold text-emerald-300">
@@ -353,6 +355,37 @@ function ShopModal({
           <p className="mt-3 text-center text-[11px] leading-4 text-white/40">
             خریدها همیشگی‌اند و ذخیره می‌شوند — فروشنده جایی نمی‌رود؛ مثل تو، به آتش کمپ پابند است.
           </p>
+
+          {/* ---- selling loot — the merchant buys at his lowball rates ---- */}
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold text-white/75">فروش غنایم</span>
+              <span className="text-[10px] text-white/40">با هر کلیک یک عدد فروخته می‌شود</span>
+            </div>
+            {shop.sellables.length === 0 ? (
+              <div className="border border-dashed border-white/15 px-3 py-4 text-center text-xs text-white/35">
+                کوله‌ات خالی است — چیزی برای فروش نداری
+              </div>
+            ) : (
+              <div className="max-h-44 space-y-1.5 overflow-y-auto pl-1">
+                {shop.sellables.map((s) => (
+                  <div key={s.id} className="flex items-center gap-2 border border-white/10 bg-white/5 px-2.5 py-1.5">
+                    <span aria-hidden>{s.icon}</span>
+                    <span className={`truncate text-xs font-bold ${TIER_STYLE[s.tier]}`}>{s.name}</span>
+                    {s.n > 1 && <span className="font-pixel text-[9px] text-white/50">×{s.n}</span>}
+                    {s.equipped && <span className="font-pixel text-[8px] text-amber-300/80">تجهیز شده</span>}
+                    <Button
+                      size="sm"
+                      onClick={() => onSell(s.id)}
+                      className="mr-auto h-7 shrink-0 rounded-none border border-black/60 bg-emerald-900/70 px-2 font-pixel text-[10px] text-emerald-200 hover:bg-emerald-800"
+                    >
+                      +{s.sell} سول
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="border-t border-white/10 px-5 py-4">
@@ -391,11 +424,15 @@ function InventoryModal({
   inv,
   onEquip,
   onUnequip,
+  onDrop,
+  onSell,
   onClose,
 }: {
   inv: InvHud
   onEquip: (id: string) => void
   onUnequip: (slot: string) => void
+  onDrop: (id: string) => void
+  onSell: (id: string) => void
   onClose: () => void
 }) {
   const [sel, setSel] = useState<InvItemView | null>(null)
@@ -435,7 +472,7 @@ function InventoryModal({
           <span className="text-2xl" aria-hidden>🎒</span>
           <div>
             <h3 className="text-lg font-black text-white">تجهیزات و کوله‌پشتی</h3>
-            <p className="text-[11px] text-white/50">روی اسلات بزن تا برداری — روی آیتم کوله بزن تا تجهیزش کنی</p>
+            <p className="text-[11px] text-white/50">روی آیتم بزن تا تجهیزش کنی — 💰 فروش به بازرگان (نزدیک او) · ⬇ انداختن روی زمین</p>
           </div>
           <span className="mr-auto flex items-center gap-1.5 text-sm font-bold text-emerald-300">
             <EmeraldIcon size={16} /> {inv.souls.toLocaleString('en-US')}
@@ -510,26 +547,45 @@ function InventoryModal({
                 </div>
               )}
               {inv.bag.map((it) => (
-                <button
+                <div
                   key={it.id}
                   onMouseEnter={() => setSel(it)}
-                  onClick={() => (it.ammo ? setSel(it) : onEquip(it.id))}
-                  title={it.ammo ? 'مهمات — هنگام شلیک خودکار مصرف می‌شود' : 'تجهیز کردن'}
-                  className={`w-full border px-3 py-2 text-right transition-colors ${
+                  className={`w-full border px-3 py-2 transition-colors ${
                     it.equipped
                       ? 'border-amber-400/60 bg-amber-950/30'
                       : 'border-white/12 bg-white/5 hover:bg-white/10'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-lg" aria-hidden>{it.icon}</span>
-                    <span className={`text-xs font-bold ${TIER_STYLE[it.tier]}`}>{it.name}</span>
-                    {it.n > 1 && <span className="font-pixel text-[9px] text-white/60">×{it.n}</span>}
-                    {it.ammo && <span className="rounded-sm border border-sky-700/60 bg-sky-950/50 px-1 py-px font-pixel text-[8px] text-sky-300">مهمات</span>}
-                    {it.equipped && <span className="mr-auto font-pixel text-[9px] text-amber-300/90">تجهیز شده</span>}
+                    <button
+                      onClick={() => (it.ammo ? setSel(it) : onEquip(it.id))}
+                      title={it.ammo ? 'مهمات — هنگام شلیک خودکار مصرف می‌شود' : 'تجهیز کردن'}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-right"
+                    >
+                      <span className="text-lg" aria-hidden>{it.icon}</span>
+                      <span className={`truncate text-xs font-bold ${TIER_STYLE[it.tier]}`}>{it.name}</span>
+                      {it.n > 1 && <span className="font-pixel text-[9px] text-white/60">×{it.n}</span>}
+                      {it.ammo && <span className="rounded-sm border border-sky-700/60 bg-sky-950/50 px-1 py-px font-pixel text-[8px] text-sky-300">مهمات</span>}
+                      {it.equipped && <span className="mr-auto font-pixel text-[9px] text-amber-300/90">تجهیز شده</span>}
+                    </button>
+                    <button
+                      onClick={() => onSell(it.id)}
+                      disabled={!inv.nearMerchant}
+                      title={inv.nearMerchant ? `فروش به بازرگان — +${it.sell} سول` : 'برای فروش باید کنار بازرگان بایستی'}
+                      className="h-7 shrink-0 rounded-none border border-black/60 bg-emerald-900/70 px-2 font-pixel text-[10px] text-emerald-200 hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      💰{it.sell}
+                    </button>
+                    <button
+                      onClick={() => onDrop(it.id)}
+                      title="انداختن روی زمین — ۲۰ ثانیه بعد نابود می‌شود"
+                      className="h-7 shrink-0 rounded-none border border-black/60 bg-zinc-800 px-2 font-pixel text-[10px] text-white/80 hover:bg-zinc-700"
+                    >
+                      ⬇
+                    </button>
                   </div>
                   <div className="mt-0.5 pr-7"><ItemStatLine it={it} /></div>
-                </button>
+                </div>
               ))}
             </div>
             {/* description of the hovered item */}
@@ -540,7 +596,7 @@ function InventoryModal({
                   <p className="mt-0.5 text-[10px] leading-4 text-white/55">{sel.desc}</p>
                 </>
               ) : (
-                <p className="text-[10px] text-white/35">نشانه‌گذر روی آیتم‌ها توضیحشان را نشان می‌دهد — لود داس: زیر ۲۵٪ غلتک سریع، ۵۰٪ کند، ۱۰۰٪ بی‌غلتک</p>
+                <p className="text-[10px] text-white/35">نشانه‌گذر روی آیتم‌ها توضیحشان را نشان می‌دهد — 💰 فروش فقط کنار بازرگان · ⬇ آیتم انداخته‌شده بعد از ۲۰ ثانیه نابود می‌شود (غنایم دشمنان همیشه می‌مانند)</p>
               )}
             </div>
           </div>
@@ -1161,6 +1217,7 @@ export default function GameClient() {
         <ShopModal
           hud={hud}
           onBuy={(id) => gameRef.current?.buyShopItem(id)}
+          onSell={(id) => gameRef.current?.sellItem(id)}
           onClose={() => gameRef.current?.closeShop()}
         />
       )}
@@ -1169,6 +1226,8 @@ export default function GameClient() {
           inv={hud.inv}
           onEquip={(id) => gameRef.current?.equipItem(id)}
           onUnequip={(slot) => gameRef.current?.unequipSlot(slot as never)}
+          onDrop={(id) => gameRef.current?.dropItem(id)}
+          onSell={(id) => gameRef.current?.sellItem(id)}
           onClose={() => gameRef.current?.closeInventory()}
         />
       )}

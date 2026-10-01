@@ -8,7 +8,7 @@ import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
 import {
   ITEMS, ALL_SLOTS, SLOT_LABEL, equipLoad, maxLoadFor, rollTier, TIER_INFO, armorTotals,
-  rollLoot, bossLoot, defaultEquip,
+  rollLoot, bossLoot, defaultEquip, sellValueOf,
   type ItemId, type EquipSlot, type EquippedMap, type ItemDef, type DmgType, type LootRoll,
 } from './items'
 
@@ -69,6 +69,8 @@ export interface InvHud {
   fire: number
   blast: number
   souls: number
+  /** standing close enough to the merchant to trade */
+  nearMerchant: boolean
 }
 
 export interface InvItemView {
@@ -81,6 +83,8 @@ export interface InvItemView {
   equipped: boolean
   tier: string
   desc: string
+  /** what the grey merchant pays for one unit */
+  sell: number
   ammo?: boolean
   dmg?: number
   spd?: number
@@ -97,6 +101,8 @@ export interface ShopHud {
   whetLv: number
   coalLv: number
   pyroUnlocked: boolean
+  /** what the merchant will buy off you right now */
+  sellables: { id: ItemId; name: string; icon: string; n: number; equipped: boolean; sell: number; tier: string }[]
 }
 
 /* ================= SHOP ECONOMY ================= */
@@ -1048,21 +1054,30 @@ class Fireball {
 /* ================= LOOT DROPS ================= */
 
 /* A fallen foe's gear, lying in the world the Minecraft way: a spinning,
-   bobbing item with a Dark-Souls loot beam. Walk close and press F. */
+   bobbing item with a Dark-Souls loot beam. Walk close and press F.
+   Gear the PLAYER drops is different: the world does not keep your litter,
+   so it blinks a warning and crumbles to dust after 20 seconds. */
 class LootDrop {
   group = new THREE.Group()
   light: THREE.PointLight
+  private inner: THREE.Group
   private t = Math.random() * 10
   private baseY: number
   private sparkT = 0
+  /** seconds until self-destruction — null = a foe's drop, kept forever */
+  private decay: number | null
+  /** set once the decay timer runs out — the game loop disposes it */
+  expired = false
 
   constructor(
     private game: Game,
     public id: ItemId,
     public n: number,
     pos: THREE.Vector3,
-    quiet = false
+    quiet = false,
+    decay: number | null = null
   ) {
+    this.decay = decay
     const def = ITEMS[id]
     const y = game.world.surfaceAt(pos.x, pos.z)
     this.baseY = y + 0.5
@@ -1083,14 +1098,15 @@ class LootDrop {
       sh.rotation.x = -0.18
       inner.add(sh)
     } else if (def.cat === 'bow') {
-      const b = createBow()
+      const b = createBow(def.id === 'bone_bow' ? 'bone' : 'wood')
       b.rotation.z = 0.5
       inner.add(b)
     } else {
       const slot = def.slot as 'head' | 'chest' | 'hands' | 'legs' | 'cape'
-      inner.add(createArmorDrop(slot, def.tint ?? 0x9a8b70, def.tint2))
+      inner.add(createArmorDrop(slot, def.tint ?? 0x9a8b70, def.tint2, def.id))
     }
     inner.castShadow = true
+    this.inner = inner
     this.group.add(inner)
 
     /* ---- the loot beam (Dark-Souls beacon, blocky style) ---- */
@@ -1117,6 +1133,21 @@ class LootDrop {
     this.group.rotation.y += dt * 1.4
     this.group.position.y = this.baseY + Math.sin(this.t * 2.2) * 0.09
     this.light.intensity = (this.light.distance > 3 ? 0.9 : 0.35) + Math.sin(this.t * 3.1) * 0.25
+    /* ---- player-dropped litter: blink, then crumble ---- */
+    if (this.decay !== null) {
+      this.decay -= dt
+      if (this.decay <= 0) {
+        this.expired = true
+        this.game.spawnBurst(this.group.position.clone().add(new THREE.Vector3(0, 0.25, 0)), 0x9a8b70, 14, 2.2, 0.5, 0.22)
+        return
+      }
+      if (this.decay < 5) {
+        // a warning blink that quickens as the end nears
+        const on = Math.sin(this.t * (7 + (5 - this.decay) * 5)) > -0.25
+        this.inner.visible = on
+        if (!on) this.light.intensity = 0.12
+      }
+    }
     // rare & boss gear occasionally sheds a drifting spark — attention bait
     const def = ITEMS[this.id]
     if (def && (def.tier === 'boss' || def.tier === 'rare')) {
@@ -1765,7 +1796,7 @@ export class Game {
     const lhId = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
     const lh = lhId ? ITEMS[lhId] : null
     if (lh?.cat === 'bow') {
-      if (!this.playerBow) this.playerBow = createBow()
+      if (!this.playerBow) this.playerBow = createBow(lh.id === 'bone_bow' ? 'bone' : 'wood')
       setNocked(this.playerBow, false)
       setBowDraw(this.playerBow, 0)
       setPlayerBow(h, this.playerBow)
@@ -1780,11 +1811,13 @@ export class Game {
         h.shield.visible = false
       }
     }
-    // armor overlays + cape
+    // armor overlays + cape — ids ride along to pick texture family + regalia
     const piece = (s: 'head' | 'chest' | 'hands' | 'legs' | 'cape') => {
       const id = this.eq[s]
       const it = id ? ITEMS[id] : null
-      return it && it.def !== undefined ? { tint: it.tint ?? 0x888888, tint2: it.tint2 } : null
+      return it && it.def !== undefined
+        ? { id: it.id, tint: it.tint ?? 0x888888, tint2: it.tint2 }
+        : null
     }
     applyPlayerArmor(h, {
       head: piece('head'),
@@ -1945,6 +1978,83 @@ export class Game {
     this.emit(true)
   }
 
+  /** remove one unit from the bag, taking the equipped last copy off first —
+      and never leave the unkindled unarmed (the DS rule for the right hand).
+      Shared by drop & sell. Returns false (with a toast) when refused. */
+  private takeFromBag(id: ItemId): boolean {
+    const def = ITEMS[id]
+    if (!def) return false
+    const wornSlot = ALL_SLOTS.find((s) => this.eq[s] === id)
+    const bagCount = this.countOf(id)
+    if (bagCount <= 0) {
+      this.showToast('در کوله‌ات نیست')
+      return false
+    }
+    // dropping/selling the very copy you are wearing → take it off first
+    if (wornSlot && bagCount <= 1) {
+      if (def.slot === 'rh') {
+        const other = ALL_SLOTS.some(
+          (s) => s !== wornSlot && this.eq[s] && ITEMS[this.eq[s]!].slot === 'rh'
+        )
+        if (!other) {
+          this.showToast('نمی‌توانی بی‌سلاح بمانی')
+          return false
+        }
+      }
+      this.eq[wornSlot] = null
+      // if the active hand just emptied, it grabs the sibling weapon —
+      // the unkindled is never caught holding air
+      const side: 'rh' | 'lh' | null = wornSlot.startsWith('rh') ? 'rh' : wornSlot.startsWith('lh') ? 'lh' : null
+      if (side) {
+        const sib = (wornSlot === `${side}1` ? `${side}2` : `${side}1`) as EquipSlot
+        const active = side === 'rh' ? this.rhActive : this.lhActive
+        if (wornSlot === (active === 1 ? `${side}1` : `${side}2`) && this.eq[sib]) {
+          if (side === 'rh') this.rhActive = this.rhActive === 1 ? 2 : 1
+          else this.lhActive = this.lhActive === 1 ? 2 : 1
+        }
+      }
+      this.refreshLoadout()
+    }
+    return this.removeItem(id, 1)
+  }
+
+  /** drop one unit from the bag onto the ground ahead. Player-dropped
+      goods crumble to dust after 20 seconds if nobody claims them —
+      the world does not keep your litter. */
+  dropItem(id: ItemId) {
+    const def = ITEMS[id]
+    if (!def || this.phase !== 'inventory') return
+    if (!this.takeFromBag(id)) return
+    const pos = this.player.pos
+      .clone()
+      .add(new THREE.Vector3(Math.sin(this.player.yaw) * 1.4, 0, Math.cos(this.player.yaw) * 1.4))
+    this.loots.push(new LootDrop(this, id, 1, pos, false, 20))
+    this.sfx.roll()
+    this.showToast(`${def.name} افتاد — اگر برنداری، تا ۲۰ ثانیه دیگر در خاک فرو می‌رود`)
+    this.save()
+    this.emit(true)
+  }
+
+  /** sell one unit to the grey merchant — only standing beside his stall.
+      Equipped last copies come off first; the right hand never goes bare. */
+  sellItem(id: ItemId) {
+    const def = ITEMS[id]
+    if (!def) return
+    if (this.phase !== 'inventory' && this.phase !== 'shop') return
+    if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) >= 3.4) {
+      this.showToast('برای فروش باید کنار بازرگان بایستی')
+      return
+    }
+    if (!this.takeFromBag(id)) return
+    const v = sellValueOf(id)
+    this.player.souls += v
+    this.spawnText(`+${v}`, '#8fd97a', this.player.pos.clone().add(new THREE.Vector3(0, 2.2, 0)))
+    this.sfx.souls()
+    this.showToast(`${def.name} فروخته شد — +${v} سول`)
+    this.save()
+    this.emit(true)
+  }
+
   /** build the React-side snapshot of slots + bag */
   private invHud(): InvHud {
     const view = (id: ItemId | null | undefined, slot?: EquipSlot): InvItemView | null => {
@@ -1954,7 +2064,7 @@ export class Game {
         id: it.id, name: it.name, icon: it.icon, cat: it.cat,
         weight: it.weight, n: slot ? 1 : Math.max(1, this.countOf(id)),
         equipped: slot ? this.eq[slot] === id : ALL_SLOTS.some((s) => this.eq[s] === id),
-        tier: it.tier, desc: it.desc, ammo: !!it.ammo,
+        tier: it.tier, desc: it.desc, ammo: !!it.ammo, sell: sellValueOf(it.id),
         dmg: it.dmg, spd: it.spd, block: it.block, bowDmg: it.bowDmg,
         def: it.def, fire: it.fire, blast: it.blast,
       }
@@ -1975,6 +2085,7 @@ export class Game {
       tier, tierColor: info.color, tierLabel: info.label,
       def: Math.round(armor.def * 100), fire: Math.round(armor.fire * 100), blast: Math.round(armor.blast * 100),
       souls: Math.floor(this.player.souls),
+      nearMerchant: Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 3.4,
     }
   }
 
@@ -3270,9 +3381,13 @@ export class Game {
     this.merchantLamp.intensity = 1.5 + Math.sin(this.time * 11) * 0.2 + Math.random() * 0.12
   }
 
-  /** loot drops bob & spin; the toast countdown rides the same clock */
+  /** loot drops bob & spin; player-dropped litter crumbles when expired */
   private updateLoot(dt: number) {
-    for (const l of this.loots) l.update(dt)
+    for (const l of this.loots) {
+      l.update(dt)
+      if (l.expired) l.dispose(this.engine.scene)
+    }
+    this.loots = this.loots.filter((l) => !l.expired)
     if (this.toastT > 0) {
       this.toastT -= dt
       if (this.toastT <= 0) {
@@ -3456,6 +3571,17 @@ export class Game {
               whetLv: this.shopLv.whet,
               coalLv: this.shopLv.coal,
               pyroUnlocked: this.pyroUnlocked,
+              sellables: this.inv
+                .filter((e) => ITEMS[e.id])
+                .map((e) => ({
+                  id: e.id,
+                  name: ITEMS[e.id].name,
+                  icon: ITEMS[e.id].icon,
+                  n: e.n,
+                  equipped: ALL_SLOTS.some((s) => this.eq[s] === e.id),
+                  sell: sellValueOf(e.id),
+                  tier: ITEMS[e.id].tier,
+                })),
             }
           : null,
       inv: this.phase === 'inventory' ? this.invHud() : null,

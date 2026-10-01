@@ -368,3 +368,14 @@ export function slotGroupOf(it: ItemDef): 'rh' | 'lh' | ArmorSlot {
 
 /** the quiver order — fire arrows are loosed first while present */
 export const QUIVER_ORDER: ItemId[] = ['arrow_fire', 'arrow_wood']
+
+/* ---------------- selling to the grey merchant ---------------- */
+
+/** what the merchant pays for ONE unit — a lowball fraction of real worth
+    (DS rule: merchants never pay what a thing is truly worth) */
+export function sellValueOf(id: ItemId): number {
+  const it = ITEMS[id]
+  if (!it) return 0
+  const base = it.ammo ? 2 : it.tier === 'boss' ? 160 : it.tier === 'rare' ? 45 : 12
+  return Math.max(1, Math.round(base + it.weight * (it.ammo ? 1 : 4)))
+}

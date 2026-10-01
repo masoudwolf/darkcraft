@@ -1008,7 +1008,8 @@ export class SkeletonEnemy extends Enemy {
       name: 'تیرانداز استخوانی',
     })
     // bow strapped into the LEFT hand (limb axis = local X → upright when aiming)
-    this.bow = createBow()
+    // the archers carve theirs from femurs — a pale cracked bone bow
+    this.bow = createBow('bone')
     this.bow.position.set(0, -0.68, 0.05)
     this.bow.rotation.y = Math.PI / 2
     this.h.armL.add(this.bow)
