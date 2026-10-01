@@ -84,13 +84,30 @@ export function createShield(): THREE.Group {
   return g
 }
 
-/** Minecraft-style blocky bow. Limb axis runs along local X so that when
-    the holding arm points forward (rotation.x ≈ -90°) the bow stands upright. */
+/** Minecraft-style blocky recurve bow. Limb axis runs along local X so that
+    when the holding arm points forward (rotation.x ≈ -90°) the bow stands
+    upright; local +Y runs back toward the archer (the arrow's flight axis
+    reversed), and the string rides at local z = -0.1 (the draw-hand side).
+    The string is a real two-segment cord meeting at a nock node — call
+    setBowDraw() to bend it and slide the nocked arrow for a proper archery
+    draw/release. */
+interface BowParts {
+  nock: THREE.Group
+  strUp: THREE.Mesh
+  strDown: THREE.Mesh
+  tipA: THREE.Vector3
+  tipB: THREE.Vector3
+  nockRestY: number
+  arrow: THREE.Group
+}
+
 export function createBow(): THREE.Group {
   const g = new THREE.Group()
-  const mat = (c: number) => new THREE.MeshLambertMaterial({ color: c })
-  const wood = 0x7a5a34
-  const woodDark = 0x5a4022
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const wood = lam(0x7a5a34)
+  const woodDark = lam(0x5a4022)
+  const wrap = lam(0x4a3418)
+  const stringMat = lam(0xd8d4c8)
   const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rz = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
     mesh.position.set(x, y, z)
@@ -99,12 +116,92 @@ export function createBow(): THREE.Group {
     g.add(mesh)
     return mesh
   }
-  mk(0.09, 0.11, 0.09, mat(woodDark), 0, 0, 0.02) // grip
-  mk(0.3, 0.06, 0.06, mat(wood), 0.21, 0.02, 0.02, 0.32) // upper limb
-  mk(0.3, 0.06, 0.06, mat(wood), -0.21, 0.02, 0.02, -0.32) // lower limb
-  mk(0.72, 0.016, 0.016, mat(0xd8d4c8), 0, 0.03, -0.1) // string
+
+  // grip with leather wraps
+  mk(0.1, 0.2, 0.1, woodDark, 0, 0.03, 0.02)
+  mk(0.11, 0.035, 0.11, wrap, 0, 0.09, 0.02)
+  mk(0.11, 0.035, 0.11, wrap, 0, -0.02, 0.02)
+
+  // recurve limbs — two segments per side, tips curving back toward the string
+  // (segment geometry is mirrored; tip rest points are computed to match)
+  for (const side of [1, -1] as const) {
+    mk(0.2, 0.055, 0.055, wood, side * 0.15, 0.05, 0.02, side * 0.4)
+    mk(0.17, 0.05, 0.05, woodDark, side * 0.3, 0.06, 0.02, side * -0.3)
+    mk(0.05, 0.042, 0.042, wrap, side * 0.383, 0.038, 0.02) // nock tip cap
+  }
+
+  // dynamic string — two segments meeting at a moving nock node
+  const nock = new THREE.Group()
+  nock.position.set(0, 0.03, -0.1)
+  g.add(nock)
+  const strUp = new THREE.Mesh(new THREE.BoxGeometry(0.016, 1, 0.016), stringMat)
+  const strDown = new THREE.Mesh(new THREE.BoxGeometry(0.016, 1, 0.016), stringMat)
+  nock.add(strUp, strDown)
+
+  // the nocked arrow — slides back with the draw, vanishes on release
+  const arrow = new THREE.Group()
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.6, 0.026), lam(0xc9b083))
+  shaft.position.y = -0.22
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.05), lam(0xb8bcc4))
+  head.position.y = -0.55
+  const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.1, 0.07), lam(0xe8e4d8))
+  fl1.position.y = 0.03
+  const fl2 = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.012), lam(0xe8e4d8))
+  fl2.position.y = 0.03
+  arrow.add(shaft, head, fl1, fl2)
+  arrow.position.set(0, 0.03, -0.1)
+  arrow.visible = false
+  g.add(arrow)
+
+  const parts: BowParts = {
+    nock,
+    strUp,
+    strDown,
+    tipA: new THREE.Vector3(0.383, 0.03, -0.1),
+    tipB: new THREE.Vector3(-0.383, 0.03, -0.1),
+    nockRestY: 0.03,
+    arrow,
+  }
+  g.userData.bowParts = parts
   g.scale.setScalar(1.05)
   return g
+}
+
+/** bend the bow: d = 0 (rest) .. 1 (full draw). Slides the nock back along
+    the arrow axis and re-aims both string segments at the limb tips. */
+export function setBowDraw(bow: THREE.Group, d: number) {
+  const u = bow.userData.bowParts as BowParts | undefined
+  if (!u) return
+  const draw = Math.max(0, Math.min(1, d))
+  const y = u.nockRestY + draw * 0.34
+  u.nock.position.y = y
+  u.arrow.position.y = y
+  aimString(u.strUp, u.tipA, u.nock.position)
+  aimString(u.strDown, u.tipB, u.nock.position)
+}
+
+/** show / hide the arrow sitting on the string */
+export function setNocked(bow: THREE.Group, visible: boolean) {
+  const u = bow.userData.bowParts as BowParts | undefined
+  if (!u) return
+  u.arrow.visible = visible
+}
+
+/** stretch a unit-height box between two points (bow-local space) */
+function aimString(seg: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len = Math.hypot(dx, dy) || 0.001
+  seg.scale.set(1, len, 1)
+  seg.position.set((a.x + b.x) / 2 - b.x, (a.y + b.y) / 2 - b.y, 0)
+  seg.rotation.z = Math.atan2(-dx, dy)
+}
+
+/** the string's pull curve — matches the timing of animBowDraw so the
+    cord and the body move as one */
+export function bowDrawAmount(p: number) {
+  const pull = p <= 0.24 ? 0 : Math.min(1, (p - 0.24) / 0.52)
+  return 1 - Math.pow(1 - pull, 2.2)
 }
 
 /** the Blaze's orbiting smoke rods — attached to the body root, spun in code.
@@ -577,32 +674,41 @@ export function animCreeperIdle(h: Humanoid, t: number) {
 
 /* ================= SKELETON ARCHER ANIMATIONS ================= */
 
-/** rattle-step march with the bow carried low and ready */
+/** rattle-step march with the bow carried low across the body, ready to
+    snap up into a shot */
 export function animSkeletonWalk(h: Humanoid, t: number, f = 1) {
   resetPose(h)
   const s = Math.sin(t * 10)
   const c = Math.cos(t * 10)
   h.legL.rotation.x = s * 0.62 * f
   h.legR.rotation.x = -s * 0.62 * f
-  h.armL.rotation.x = -0.5 // bow arm half-raised, ready to snap up
-  h.armL.rotation.z = 0.1
-  h.armR.rotation.x = s * 0.5
-  h.root.rotation.y = c * 0.05
-  h.head.rotation.y = Math.sin(t * 2.2) * 0.12
+  // bow arm swings with the gait but rides high enough to clear the hips
+  h.armL.rotation.x = -0.95 - s * 0.16 * f
+  h.armL.rotation.z = 0.24
+  h.armR.rotation.x = -0.45 + s * 0.3 * f
+  h.armR.rotation.z = -0.28
+  h.root.rotation.y = c * 0.06
+  h.head.rotation.y = Math.sin(t * 2.1) * 0.1
   h.root.position.y = Math.abs(c) * 0.04 * f
 }
 
-/** holding ground at firing range: bow up, draw hand loose, scanning */
+/** alias kept for readability — the archer's walk IS the bow walk */
+export const animBowWalk = animSkeletonWalk
+
+/** holding ground at firing range: bow low-diagonal, draw hand loose near
+    the chest, skull scanning for movement */
 export function animBowIdle(h: Humanoid, t: number) {
   resetPose(h)
-  const w = Math.sin(t * 1.8)
-  h.armL.rotation.x = -1.35 + w * 0.05
-  h.armL.rotation.z = 0.08
-  h.armR.rotation.x = -1.05 + Math.sin(t * 1.8 + 0.6) * 0.05
-  h.armR.rotation.z = -0.25
-  h.root.rotation.y = Math.sin(t * 0.9) * 0.08
-  h.head.rotation.y = Math.sin(t * 0.7) * 0.18
-  h.head.rotation.x = 0.03
+  const b = Math.sin(t * 1.9)
+  h.armL.rotation.x = -0.78 + b * 0.045
+  h.armL.rotation.z = 0.22
+  h.armL.rotation.y = 0.08
+  h.armR.rotation.x = -0.42 + Math.sin(t * 1.9 + 0.7) * 0.05
+  h.armR.rotation.z = -0.3
+  h.root.rotation.y = Math.sin(t * 0.8) * 0.06
+  h.head.rotation.y = Math.sin(t * 0.6) * 0.22
+  h.head.rotation.x = 0.04 + b * 0.02
+  h.root.position.y = b * 0.01
 }
 
 /* ================= WITHER SKELETON ANIMATIONS ================= */
@@ -801,40 +907,81 @@ export function animBossDead(h: Humanoid, p: number) {
 
 /* ================= BOW (SKELETON ARCHER) ANIMATIONS ================= */
 
-/** draw the string back: bow arm steady forward, draw arm pulls to the cheek,
-    a fine tremble near full draw sells the tension */
+/** a real archery shot in three beats —
+    1. reach (0..0.24): the bow arm swings up to full extension while the
+       draw hand drops onto the string,
+    2. pull (0.24..0.76): the cord drags back to the cheek as the whole body
+       coils — yaw, braced legs, chin sinking onto the arrow line,
+    3. hold (0.76..1): full draw with a rising tremble that sells the tension.
+       Pair with bowDrawAmount() to bend the bow's string in sync. */
 export function animBowDraw(h: Humanoid, p: number) {
   resetPose(h)
-  const e = 1 - Math.pow(1 - p, 2)
-  h.armL.rotation.x = -1.5 + 0.05 * Math.sin(p * 9)
-  h.armL.rotation.z = 0.08
-  h.armR.rotation.x = -1.5 + 1.02 * e // pulls back toward the cheek
-  h.armR.rotation.z = -0.3 * e
-  h.root.rotation.y = 0.14 * e
-  h.head.rotation.x = 0.04
-  h.legL.rotation.x = 0.1 * e
-  h.legR.rotation.x = -0.14 * e
-  if (p > 0.72) {
-    const tr = Math.sin(p * 52) * 0.022 * (p - 0.72) / 0.28
+  const reach = Math.min(1, p / 0.24)
+  const eReach = 1 - Math.pow(1 - reach, 2)
+  const pull = p <= 0.24 ? 0 : Math.min(1, (p - 0.24) / 0.52)
+  const ePull = 1 - Math.pow(1 - pull, 2.2)
+  // bow arm: extends and stays glued, with a whisper of sway
+  h.armL.rotation.x = lerp(-0.9, -1.62, eReach) + Math.sin(p * 20) * 0.008 * ePull
+  h.armL.rotation.z = lerp(0.2, 0.06, eReach)
+  // draw hand: drops to the string, then drags it home to the cheek
+  if (p <= 0.24) {
+    h.armR.rotation.x = lerp(-0.35, -1.5, eReach)
+    h.armR.rotation.z = lerp(-0.2, -0.12, eReach)
+  } else {
+    h.armR.rotation.x = lerp(-1.5, -0.38, ePull)
+    h.armR.rotation.z = lerp(-0.12, -0.42, ePull)
+  }
+  // body coils into the shot
+  h.root.rotation.y = 0.2 * ePull
+  h.root.rotation.x = -0.04 * ePull
+  h.legL.rotation.x = 0.16 * ePull
+  h.legR.rotation.x = -0.22 * ePull
+  h.legL.rotation.z = 0.05 * ePull
+  h.legR.rotation.z = -0.05 * ePull
+  h.head.rotation.y = -0.1 * ePull
+  h.head.rotation.x = 0.05 * ePull
+  // full-draw tremble — the last fifth quivers with tension
+  if (p > 0.8) {
+    const k = (p - 0.8) / 0.2
+    const tr = Math.sin(p * 95) * 0.026 * k
     h.armR.rotation.x += tr
-    h.armL.rotation.x -= tr
+    h.armL.rotation.x -= tr * 0.5
+    h.head.rotation.z = Math.sin(p * 70) * 0.02 * k
   }
 }
 
-/** the release: draw arm snaps forward, bow arm kicks with recoil, then settles */
+/** the release: the draw hand snaps BACK past the cheek (not forward —
+    that's how real archery works), the bow arm kicks with recoil, then a
+    disciplined follow-through hold before relaxing to the carry */
 export function animBowShoot(h: Humanoid, p: number) {
   resetPose(h)
-  if (p < 0.3) {
-    const q = p / 0.3
-    h.armR.rotation.x = -0.48 - 0.62 * q // spring forward
+  if (p < 0.22) {
+    // the snap
+    const q = p / 0.22
+    const e = 1 - Math.pow(1 - q, 3)
+    h.armR.rotation.x = lerp(-0.38, -0.02, e)
+    h.armR.rotation.z = lerp(-0.42, -0.55, e)
+    h.armL.rotation.x = -1.62 + 0.09 * Math.sin(q * Math.PI) // recoil kick
+    h.root.rotation.y = lerp(0.2, 0.05, e)
+    h.root.rotation.x = -0.02 * Math.sin(q * Math.PI)
+  } else if (p < 0.62) {
+    // follow-through — the shot holds while the arrow flies
+    h.armR.rotation.x = -0.02 + (p - 0.22) * 0.08
+    h.armR.rotation.z = -0.5
+    h.armL.rotation.x = -1.53
+    h.armL.rotation.z = 0.06
+    h.root.rotation.y = 0.05
+    h.head.rotation.x = 0.03
   } else {
-    const q = (p - 0.3) / 0.7
-    h.armR.rotation.x = -1.1 + 0.25 * q
+    // relax back into the carry
+    const q = (p - 0.62) / 0.38
+    const e = 1 - Math.pow(1 - q, 2)
+    h.armR.rotation.x = lerp(0.01, -0.42, e)
+    h.armR.rotation.z = lerp(-0.5, -0.3, e)
+    h.armL.rotation.x = lerp(-1.53, -0.78, e)
+    h.armL.rotation.z = lerp(0.06, 0.22, e)
+    h.root.rotation.y = lerp(0.05, 0, e)
   }
-  h.armL.rotation.x = -1.5 + Math.sin(p * Math.PI) * 0.16 // recoil kick
-  h.armL.rotation.z = 0.08 - Math.sin(p * Math.PI) * 0.06
-  h.root.rotation.y = 0.14 - 0.14 * Math.min(1, p * 2.4)
-  h.head.rotation.x = 0.04 * (1 - p)
 }
 
 /** close-range smack with the bow-holding arm — quick jab, quick recover */

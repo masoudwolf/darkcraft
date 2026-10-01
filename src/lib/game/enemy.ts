@@ -4,10 +4,10 @@ import {
   animCreeperWalk, animCreeperIdle, animSkeletonWalk, animBowIdle, animWitherWalk,
   animAttack, animHit, animDead,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
-  animBowDraw, animBowShoot, animPoke, lerp,
+  animBowDraw, animBowShoot, animPoke, lerp, setBowDraw, setNocked, bowDrawAmount,
   resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
 } from './models'
-import { ASH_WALL_X, BONFIRE, LAVA_POOLS, type World } from './world'
+import { ASH_WALL_X, BONFIRE, GATE_Z, GATE2, BOSS_CENTER, BOSS2_CENTER, LAVA_POOLS, type World } from './world'
 import type { Game } from './game'
 import type { Player } from './player'
 
@@ -54,6 +54,8 @@ export class Enemy {
   private strikeDone = false
   private stunDur = 0.38
   world?: World
+  /** the owning game — gives mobs knowledge of closed gates & arena walls */
+  game?: import('./game').Game
 
   constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame', spawn: THREE.Vector3, opts: EnemyOpts) {
     this.opts = opts
@@ -462,6 +464,20 @@ export class Enemy {
     if (Math.abs(this.pos.x - ASH_WALL_X) < 0.6 && !(this.pos.z > 15.8 && this.pos.z < 20.2)) {
       this.pos.x = this.pos.x < ASH_WALL_X ? ASH_WALL_X - 0.6 : ASH_WALL_X + 0.6
     }
+    // closed fog gates are walls for the undead too — nothing walks through
+    // the mist until its lord has fallen (this.game is set by the Game)
+    if (this.game) {
+      if (!this.game.bossFell && Math.abs(this.pos.x) < 4.6 &&
+        this.pos.z > GATE_Z - 0.55 && this.pos.z < GATE_Z + 0.65
+      ) {
+        this.pos.z = GATE_Z + 0.65
+      }
+      if (!this.game.boss2Fell && Math.abs(this.pos.z - GATE2.z) < 2.6 &&
+        Math.abs(this.pos.x - GATE2.x) < 0.95
+      ) {
+        this.pos.x = this.pos.x < GATE2.x ? GATE2.x - 0.95 : GATE2.x + 0.95
+      }
+    }
     // the molten pools repel the undead — they skirt the edges, never wade in
     for (const p of LAVA_POOLS) {
       const cx = (p.x0 + p.x1) / 2 + 0.5
@@ -809,6 +825,15 @@ export class BossEnemy extends Enemy {
     }
     // charge damage is handled contact-style in strikeMove
   }
+
+  /** the knight never leaves his arena — even a full charge stops at the fog */
+  protected clamp() {
+    super.clamp()
+    if (this.alive) {
+      this.pos.x = Math.max(BOSS_CENTER.x - 7.4, Math.min(BOSS_CENTER.x + 7.4, this.pos.x))
+      this.pos.z = Math.max(-23.2, Math.min(GATE_Z - 1.0, this.pos.z))
+    }
+  }
 }
 
 /* ================= CREEPER ================= */
@@ -924,6 +949,8 @@ export class SkeletonEnemy extends Enemy {
     super.reset()
     this.mode = 'shoot'
     resetPose(this.h)
+    setNocked(this.bow, false)
+    setBowDraw(this.bow, 0)
   }
 
   protected attackCooldown() {
@@ -988,8 +1015,13 @@ export class SkeletonEnemy extends Enemy {
   protected windupAnim(p: number) {
     resetPose(this.h)
     if (this.mode === 'shoot') {
+      // the arrow appears on the string and slides back with the body's pull
+      setNocked(this.bow, true)
       animBowDraw(this.h, p)
+      setBowDraw(this.bow, bowDrawAmount(p))
     } else {
+      setNocked(this.bow, false)
+      setBowDraw(this.bow, 0)
       // panicked raised fist before the poke
       this.h.armR.rotation.x = -2.3 * p
       this.h.armR.rotation.z = -0.3 * p
@@ -998,8 +1030,14 @@ export class SkeletonEnemy extends Enemy {
   }
 
   protected strikeAnim(p: number) {
-    if (this.mode === 'shoot') animBowShoot(this.h, p)
-    else animPoke(this.h, p)
+    if (this.mode === 'shoot') {
+      animBowShoot(this.h, p)
+      // the cord snaps home within the first frames of the release
+      setBowDraw(this.bow, Math.max(0, 1 - p * 7))
+      if (p > 0.06) setNocked(this.bow, false)
+    } else {
+      animPoke(this.h, p)
+    }
   }
 
   protected onStrikeStart(player: Player, game: Game) {
@@ -1029,8 +1067,12 @@ export class SkeletonEnemy extends Enemy {
   protected recoverAnim(p: number) {
     resetPose(this.h)
     if (this.mode === 'shoot') {
-      this.h.armL.rotation.x = -1.5 + 1.5 * p
-      this.h.armR.rotation.x = -0.85 * (1 - p)
+      // settle from the follow-through back into the ready carry
+      const e = 1 - Math.pow(1 - p, 2)
+      this.h.armL.rotation.x = lerp(-1.2, -0.78, e)
+      this.h.armL.rotation.z = lerp(0.1, 0.22, e)
+      this.h.armR.rotation.x = lerp(-0.2, -0.42, e)
+      this.h.armR.rotation.z = lerp(-0.4, -0.3, e)
     } else {
       this.h.armL.rotation.x = -0.25 * (1 - p)
     }
@@ -1042,6 +1084,8 @@ export class SkeletonEnemy extends Enemy {
   }
 
   protected deathAnim(p: number) {
+    setNocked(this.bow, false)
+    setBowDraw(this.bow, 0)
     animDead(this.h, p)
     // bones clatter sideways as it collapses
     this.h.head.rotation.z = 0.4 * p
@@ -1556,5 +1600,14 @@ export class BossFlameEnemy extends Enemy {
       }
     }
     // dash damage is contact-based in strikeMove
+  }
+
+  /** the Flame King burns inside his own arena — no dashing through the fog */
+  protected clamp() {
+    super.clamp()
+    if (this.alive) {
+      this.pos.x = Math.max(BOSS2_CENTER.x - 6.4, Math.min(BOSS2_CENTER.x + 6.4, this.pos.x))
+      this.pos.z = Math.max(BOSS2_CENTER.z - 6.4, Math.min(BOSS2_CENTER.z + 6.4, this.pos.z))
+    }
   }
 }

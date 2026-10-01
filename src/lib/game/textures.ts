@@ -144,14 +144,56 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
       px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,232,150)', 2, 2)
     }
   })
-  const fogTex = makeTex(32, 22, (c, r, s) => {
+  /* fog-gate mist — layered blue-grey wisps with a soft vignette so the
+     wall reads as living fog instead of a flat white poster */
+  const fogTexA = makeTex(32, 22, (c, r, s) => {
     const img = c.createImageData(s, s)
-    for (let i = 0; i < s * s; i++) {
-      const a = 90 + Math.floor(r() * 130)
-      img.data[i * 4] = 235
-      img.data[i * 4 + 1] = 238
-      img.data[i * 4 + 2] = 240
-      img.data[i * 4 + 3] = a
+    for (let y = 0; y < s; y++) {
+      for (let x = 0; x < s; x++) {
+        const i = (y * s + x) * 4
+        // soft oval vignette — edges dissolve to nothing
+        const dx = (x / s - 0.5) * 2
+        const dy = (y / s - 0.5) * 2
+        const d = Math.sqrt(dx * dx + dy * dy)
+        let vig = 1 - Math.max(0, Math.min(1, (d - 0.45) / 0.55))
+        vig = vig * vig * (3 - 2 * vig)
+        // billowing wisp bands
+        const wisp =
+          Math.sin(x * 0.55 + Math.sin(y * 0.4) * 2.2) * 0.5 +
+          Math.sin(y * 0.7 + x * 0.2) * 0.3
+        const n = r()
+        const shade = 128 + wisp * 26 + (n - 0.5) * 34
+        const a = (95 + wisp * 26 + n * 60) * vig
+        img.data[i] = clamp255(shade - 18)
+        img.data[i + 1] = clamp255(shade + 4)
+        img.data[i + 2] = clamp255(shade + 18)
+        img.data[i + 3] = clamp255(a)
+      }
+    }
+    c.putImageData(img, 0, 0)
+  })
+  // second layer — bigger, slower clumps for depth
+  const fogTexB = makeTex(32, 77, (c, r, s) => {
+    const img = c.createImageData(s, s)
+    for (let y = 0; y < s; y++) {
+      for (let x = 0; x < s; x++) {
+        const i = (y * s + x) * 4
+        const dx = (x / s - 0.5) * 2
+        const dy = (y / s - 0.5) * 2
+        const d = Math.sqrt(dx * dx + dy * dy)
+        let vig = 1 - Math.max(0, Math.min(1, (d - 0.3) / 0.7))
+        vig = vig * vig * (3 - 2 * vig)
+        const clump =
+          Math.sin(x * 0.28 + Math.sin(y * 0.22) * 2.6) *
+          Math.cos(y * 0.31 + Math.sin(x * 0.17) * 1.8)
+        const n = r()
+        const shade = 96 + clump * 22 + (n - 0.5) * 22
+        const a = (70 + clump * 30 + n * 40) * vig
+        img.data[i] = clamp255(shade - 12)
+        img.data[i + 1] = clamp255(shade + 2)
+        img.data[i + 2] = clamp255(shade + 14)
+        img.data[i + 3] = clamp255(a)
+      }
     }
     c.putImageData(img, 0, 0)
   })
@@ -183,7 +225,14 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     nether: lam(netherTex),
     lava: new THREE.MeshBasicMaterial({ map: lavaTex }),
     fog: new THREE.MeshBasicMaterial({
-      map: fogTex,
+      map: fogTexA,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+    fog2: new THREE.MeshBasicMaterial({
+      map: fogTexB,
       transparent: true,
       opacity: 0.55,
       depthWrite: false,

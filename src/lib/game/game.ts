@@ -9,7 +9,7 @@ import type { PlayerStrikeDef } from './player'
 
 /* ================= HUD STATE ================= */
 
-export type Phase = 'menu' | 'playing' | 'dead' | 'rest'
+export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused'
 
 export interface HudState {
   phase: Phase
@@ -48,6 +48,21 @@ export interface SaveData {
 }
 
 const SAVE_KEY = 'minesouls_v1'
+const SETTINGS_KEY = 'minesouls_settings_v1'
+
+export interface GameSettings {
+  sens: number // mouse sensitivity multiplier (0.3..2.2)
+  volume: number // master volume (0..1)
+  invertY: boolean
+  shadows: boolean
+}
+
+export const DEFAULT_SETTINGS: GameSettings = {
+  sens: 1,
+  volume: 0.8,
+  invertY: false,
+  shadows: true,
+}
 
 /* ================= PARTICLES / EFFECTS ================= */
 
@@ -851,9 +866,10 @@ export class Game {
   private fogPassT = 0
   private fogPass2T = 0
   private bossActive = false
-  private bossFell = false
+  /** gate state — read by enemies so closed fog seals both sides */
+  bossFell = false
   private boss2Active = false
-  private boss2Fell = false
+  boss2Fell = false
   private lockLastMove = 0
 
   private bursts: Burst[] = []
@@ -887,6 +903,10 @@ export class Game {
   private time = 0
   private sun: THREE.DirectionalLight
   private shadowTimer = 0
+  /** render freeze — the 3D viewer owns the screen */
+  frozen = false
+  private wasLocked = false
+  settings: GameSettings = { ...DEFAULT_SETTINGS }
 
   private lastHudJson = ''
 
@@ -894,6 +914,7 @@ export class Game {
     this.engine = new Engine(container)
     this.engine.onFrame = (dt) => this.loop(dt)
     ;(window as unknown as { __minesouls?: Game }).__minesouls = this
+    this.loadSettings()
 
     // scene setup
     const scene = this.engine.scene
@@ -973,6 +994,7 @@ export class Game {
         windup: 0.62, recover: 0.85, souls: 35, scale: 0.98,
       })
       e.world = this.world
+      e.game = this
       this.enemies.push(e)
     }
 
@@ -985,6 +1007,7 @@ export class Game {
       p.y = this.world.surfaceAt(x, z)
       const c = new CreeperEnemy(scene, p)
       c.world = this.world
+      c.game = this
       this.enemies.push(c)
     }
 
@@ -998,6 +1021,7 @@ export class Game {
       p.y = this.world.surfaceAt(x, z)
       const s = new SkeletonEnemy(scene, p)
       s.world = this.world
+      s.game = this
       this.enemies.push(s)
     }
 
@@ -1011,6 +1035,7 @@ export class Game {
       p.y = this.world.surfaceAt(x, z)
       const w = new WitherSkeletonEnemy(scene, p)
       w.world = this.world
+      w.game = this
       this.enemies.push(w)
     }
 
@@ -1023,6 +1048,7 @@ export class Game {
       p.y = this.world.surfaceAt(x, z)
       const b = new BlazeEnemy(scene, p)
       b.world = this.world
+      b.game = this
       this.enemies.push(b)
     }
 
@@ -1031,12 +1057,14 @@ export class Game {
     bossSpawn.y = this.world.surfaceAt(BOSS_CENTER.x, BOSS_CENTER.z)
     this.boss = new BossEnemy(scene, bossSpawn)
     this.boss.world = this.world
+    this.boss.game = this
 
     // boss 2 — the Flame King of the Ash Wastes, behind the east fog
     const boss2Spawn = new THREE.Vector3(BOSS2_CENTER.x, 0, BOSS2_CENTER.z)
     boss2Spawn.y = this.world.surfaceAt(BOSS2_CENTER.x, BOSS2_CENTER.z)
     this.boss2 = new BossFlameEnemy(scene, boss2Spawn)
     this.boss2.world = this.world
+    this.boss2.game = this
 
     // the pyromancy flame, waiting in the wastes' entrance ruins
     this.buildPyroItem()
@@ -1080,6 +1108,56 @@ export class Game {
     this.phase = 'playing'
     if (!this.engine.input.isTouch) this.engine.input.requestLock()
     this.emit(true)
+  }
+
+  /* ---------- pause / menus / settings ---------- */
+
+  pause() {
+    if (this.phase !== 'playing') return
+    this.phase = 'paused'
+    this.wasLocked = false
+    this.engine.input.releaseLock()
+    this.emit(true)
+  }
+
+  resume() {
+    if (this.phase !== 'paused') return
+    this.phase = 'playing'
+    if (!this.engine.input.isTouch) this.engine.input.requestLock()
+    this.emit(true)
+  }
+
+  /** quit the fight and return to the title screen (world softly resets) */
+  exitToMenu() {
+    if (this.phase === 'menu') return
+    this.engine.input.releaseLock()
+    this.respawn()
+    this.phase = 'menu'
+    this.engine.input.releaseLock()
+    this.emit(true)
+  }
+
+  applySettings(patch: Partial<GameSettings>) {
+    this.settings = { ...this.settings, ...patch }
+    this.sfx.setVolume(this.settings.volume)
+    this.sun.castShadow = this.settings.shadows
+    this.sun.shadow.needsUpdate = true
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings))
+    } catch { /* ignore */ }
+    this.emit(false)
+  }
+
+  private loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY)
+      if (raw) this.settings = { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<GameSettings>) }
+    } catch { /* ignore */ }
+    // deferred apply — sun/sfx exist after construction
+    queueMicrotask(() => {
+      this.sfx.setVolume(this.settings.volume)
+      this.sun.castShadow = this.settings.shadows
+    })
   }
 
   hasSave(): boolean {
@@ -1902,6 +1980,8 @@ export class Game {
     this.orbs = []
     this.fogPassT = 0
     this.fogPass2T = 0
+    // death released the pointer lock — never read that as "player pressed ESC"
+    this.wasLocked = false
     this.phase = 'playing'
     this.banner = null
     this.hurtFlash = 0
@@ -1913,9 +1993,10 @@ export class Game {
     const lim = 28.4
     p.x = Math.max(-lim, Math.min(lim, p.x))
     p.z = Math.max(-lim, Math.min(lim, p.z))
-    // fog gate 1 blocks entry before trigger
+    // fog gate 1 blocks entry before trigger — the WHOLE north side is
+    // sealed, no slipping around the mist's soft edges
     if (!this.bossActive && !this.bossFell && this.fogPassT <= 0 && !this.player.busy) {
-      if (p.z < GATE_Z + 0.9) p.z = GATE_Z + 0.9
+      if (p.z < GATE_Z + 0.55) p.z = GATE_Z + 0.55
     }
     // fog gate 2 corridor blocks entry before trigger
     if (!this.boss2Active && !this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
@@ -1925,10 +2006,11 @@ export class Game {
     if (Math.abs(p.x - ASH_WALL_X) < 0.55 && !(p.z > 16.1 && p.z < 19.9)) {
       p.x = p.x < ASH_WALL_X ? ASH_WALL_X - 0.55 : ASH_WALL_X + 0.55
     }
-    // arena barriers while fighting
+    // arena barriers while fighting — held just short of the fog so the
+    // player can never stand inside the mist
     if (this.bossActiveBarrier && !this.bossFell) {
       p.x = Math.max(BOSS_CENTER.x - 7.6, Math.min(BOSS_CENTER.x + 7.6, p.x))
-      p.z = Math.max(-23.2, Math.min(GATE_Z - 0.6, p.z))
+      p.z = Math.max(-23.2, Math.min(GATE_Z - 0.8, p.z))
     }
     if (this.boss2Barrier && !this.boss2Fell) {
       p.x = Math.max(BOSS2_CENTER.x - 7.2, Math.min(BOSS2_CENTER.x + 7.2, p.x))
@@ -1974,6 +2056,7 @@ export class Game {
   }
 
   private loop(rawDt: number) {
+    if (this.frozen) return
     // periodic shadow map refresh (big perf win)
     this.shadowTimer += rawDt
     if (this.shadowTimer > 0.15) {
@@ -2035,15 +2118,30 @@ export class Game {
       return
     }
 
+    if (this.phase === 'paused') {
+      // Escape / P returns to the fight
+      if (input.consume('Escape') || input.consume('KeyP')) {
+        this.resume()
+        return
+      }
+      this.world.update(dt)
+      this.updateBonfire(dt)
+      this.updateEffects(dt)
+      this.updateCameraFollow(dt, false)
+      this.drawMinimap()
+      this.emit(false)
+      return
+    }
+
     /* ---- playing ---- */
 
     // camera input
     const { dx, dy } = input.takeMouse()
     if (dx !== 0 || dy !== 0) this.lockLastMove = 0
     else this.lockLastMove += dt
-    const sens = 0.0031
+    const sens = 0.0031 * this.settings.sens
     this.camYaw -= dx * sens
-    this.camPitch += dy * sens
+    this.camPitch += dy * sens * (this.settings.invertY ? -1 : 1)
     this.camPitch = Math.max(-0.45, Math.min(1.15, this.camPitch))
     const wheel = input.takeWheel()
     if (wheel !== 0) this.camDistTarget = Math.max(3.4, Math.min(8.5, this.camDistTarget + wheel * 0.004))
@@ -2052,10 +2150,21 @@ export class Game {
     // global keys
     if (input.consume('KeyQ')) this.toggleLock()
     if (input.consume('KeyF')) this.interact()
+    // ESC opens the pause menu (pointer-lock keys fall through to the game)
     if (input.consume('Escape')) {
       this.player.lockedTarget = null
-      input.releaseLock()
+      this.pause()
+      this.emit(true)
+      return
     }
+    // losing the pointer lock (browser ate the ESC) also pauses
+    if (this.wasLocked && !input.pointerLocked && !input.isTouch) {
+      this.pause()
+      this.wasLocked = false
+      this.emit(true)
+      return
+    }
+    this.wasLocked = input.pointerLocked && !input.isTouch
 
     // fog pass 1 animation — north gate
     if (this.fogPassT > 0) {

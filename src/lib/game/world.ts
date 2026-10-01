@@ -26,8 +26,8 @@ export class World {
   private heights = new Int8Array(WORLD_HALF * 2 * WORLD_HALF * 2)
   private clouds: { mesh: THREE.Mesh; speed: number }[] = []
   private rng = mulberry32(1337)
-  fogGate: THREE.Mesh | null = null
-  fogGate2: THREE.Mesh | null = null
+  /** every mist plane, tagged with which gate it belongs to + scroll speed */
+  private fogLayers: { mesh: THREE.Mesh; gate: 1 | 2; sx: number; sy: number }[] = []
 
   constructor() {
     this.genHeightmap()
@@ -330,21 +330,42 @@ export class World {
 
   private buildFogGate() {
     const h = this.heights[this.idx(0, GATE_Z)]
-    const geo = new THREE.PlaneGeometry(5.6, 4.4)
-    const mesh = new THREE.Mesh(geo, this.mats.fog)
-    mesh.position.set(0, h + 3.2, GATE_Z)
-    this.group.add(mesh)
-    this.fogGate = mesh
+    const addLayer = (base: THREE.Material, w: number, hh: number, z: number, gate: 1 | 2, sx: number, sy: number) => {
+      // per-layer clones so each plane scrolls with its own offset (parallax)
+      const mat = base.clone()
+      if ((mat as THREE.MeshBasicMaterial).map) {
+        ;(mat as THREE.MeshBasicMaterial).map = (mat as THREE.MeshBasicMaterial).map!.clone()
+        ;(mat as THREE.MeshBasicMaterial).map!.needsUpdate = true
+      }
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, hh), mat)
+      mesh.position.set(0, h + 2.7, z)
+      this.group.add(mesh)
+      this.fogLayers.push({ mesh, gate, sx, sy })
+    }
+    // main body + slower echo layers just behind/next to it for real depth
+    addLayer(this.mats.fog, 5.4, 4.2, GATE_Z, 1, 0.05, -0.032)
+    addLayer(this.mats.fog2, 5.9, 4.6, GATE_Z + 0.12, 1, -0.022, 0.05)
+    addLayer(this.mats.fog2, 5.9, 4.6, GATE_Z - 0.12, 1, 0.03, -0.024)
   }
 
   /** second fog wall — faces east/west across the corridor in the great wall */
   private buildGate2() {
     const h = this.heights[this.idx(GATE2.x, GATE2.z)]
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.4), this.mats.fog)
-    mesh.position.set(GATE2.x, h + 3.2, GATE2.z)
-    mesh.rotation.y = Math.PI / 2
-    this.group.add(mesh)
-    this.fogGate2 = mesh
+    const addLayer = (base: THREE.Material, w: number, hh: number, x: number, gate: 1 | 2, sx: number, sy: number) => {
+      const mat = base.clone()
+      if ((mat as THREE.MeshBasicMaterial).map) {
+        ;(mat as THREE.MeshBasicMaterial).map = (mat as THREE.MeshBasicMaterial).map!.clone()
+        ;(mat as THREE.MeshBasicMaterial).map!.needsUpdate = true
+      }
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, hh), mat)
+      mesh.position.set(x, h + 2.7, GATE2.z)
+      mesh.rotation.y = Math.PI / 2
+      this.group.add(mesh)
+      this.fogLayers.push({ mesh, gate, sx, sy })
+    }
+    addLayer(this.mats.fog, 5.4, 4.2, GATE2.x, 2, 0.05, -0.032)
+    addLayer(this.mats.fog2, 5.9, 4.6, GATE2.x - 0.12, 2, -0.022, 0.05)
+    addLayer(this.mats.fog2, 5.9, 4.6, GATE2.x + 0.12, 2, 0.03, -0.024)
   }
 
   /* ---------- sky ---------- */
@@ -397,22 +418,19 @@ export class World {
       c.mesh.position.x += c.speed * dt
       if (c.mesh.position.x > 50) c.mesh.position.x = -50
     }
-    if (this.fogGate) {
-      const mat = this.fogGate.material as THREE.MeshBasicMaterial
+    for (const l of this.fogLayers) {
+      const mat = l.mesh.material as THREE.MeshBasicMaterial
       if (mat.map) {
-        mat.map.offset.x = (mat.map.offset.x + dt * 0.06) % 1
-        mat.map.offset.y = (mat.map.offset.y + dt * 0.045) % 1
+        mat.map.offset.x = (mat.map.offset.x + l.sx * dt) % 1
+        mat.map.offset.y = (mat.map.offset.y + l.sy * dt) % 1
       }
     }
   }
 
-  setFogGateVisible(v: boolean) {
-    if (this.fogGate) this.fogGate.visible = v
-  }
-
   setFogGatesVisible(g1: boolean, g2: boolean) {
-    if (this.fogGate) this.fogGate.visible = g1
-    if (this.fogGate2) this.fogGate2.visible = g2
+    for (const l of this.fogLayers) {
+      l.mesh.visible = l.gate === 1 ? g1 : g2
+    }
   }
 }
 

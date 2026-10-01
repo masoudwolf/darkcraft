@@ -4,6 +4,17 @@ export class Sfx {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
   private muted = false
+  private volume = 0.8
+
+  /** master volume control (0 = silent) — persists across settings changes */
+  setVolume(v: number) {
+    this.volume = Math.max(0, Math.min(1, v))
+    this.muted = this.volume <= 0.001
+    if (this.master) this.master.gain.value = 0.5 * this.volume
+    if (this.ctx && this.ctx.state === 'suspended' && !this.muted) {
+      this.ctx.resume().catch(() => {})
+    }
+  }
 
   private ensure(): AudioContext | null {
     if (this.muted) return null
@@ -15,7 +26,7 @@ export class Sfx {
         if (!AC) return null
         this.ctx = new AC()
         this.master = this.ctx.createGain()
-        this.master.gain.value = 0.32
+        this.master.gain.value = 0.5 * this.volume
         this.master.connect(this.ctx.destination)
       }
       if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {})

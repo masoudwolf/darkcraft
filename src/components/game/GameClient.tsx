@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Game, type HudState } from '@/lib/game/game'
+import { Game, type HudState, type GameSettings } from '@/lib/game/game'
+import ModelViewer from '@/components/game/ModelViewer'
 
 /* ================= small pixel icons (inline SVG) ================= */
 
@@ -132,6 +133,7 @@ function HintBar() {
     ['E', 'شربت'],
     ['R', 'جادو'],
     ['F', 'تعامل'],
+    ['Esc', 'توقف'],
   ]
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 hidden justify-center gap-x-4 gap-y-0.5 border-t border-white/10 bg-black/45 py-1 text-[11px] text-white/55 backdrop-blur-[2px] sm:flex sm:flex-wrap">
@@ -144,11 +146,106 @@ function HintBar() {
   )
 }
 
-/* ================= menus ================= */
+/* ================= settings modal (shared: menu + pause) ================= */
 
-function MainMenu({ onStart, hasSave, onClear }: { onStart: () => void; hasSave: boolean; onClear: () => void }) {
+function SettingsModal({
+  settings,
+  onChange,
+  onClose,
+}: {
+  settings: GameSettings
+  onChange: (patch: Partial<GameSettings>) => void
+  onClose: () => void
+}) {
   return (
-    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-gradient-to-b from-black/85 via-black/55 to-black/90 px-4" dir="rtl">
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 px-4" dir="rtl">
+      <div className="fadein-anim w-[min(94vw,420px)] rounded-none border-2 border-black bg-zinc-950/95 shadow-[6px_6px_0_rgba(0,0,0,0.6)]">
+        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4">
+          <span className="text-2xl" aria-hidden>⚙️</span>
+          <h3 className="text-lg font-black text-white">تنظیمات</h3>
+        </div>
+        <div className="space-y-5 px-5 py-5">
+          {/* sensitivity */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-sm">
+              <span className="text-white/80">حساسیت ماوس</span>
+              <span className="font-pixel text-[10px] text-emerald-300" dir="ltr">{settings.sens.toFixed(2)}x</span>
+            </div>
+            <input
+              type="range" min={0.3} max={2.2} step={0.05} value={settings.sens}
+              onChange={(e) => onChange({ sens: Number(e.target.value) })}
+              className="h-1.5 w-full accent-emerald-400" dir="ltr"
+            />
+          </div>
+          {/* volume */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-sm">
+              <span className="text-white/80">بلندی صدا</span>
+              <span className="font-pixel text-[10px] text-amber-300" dir="ltr">{Math.round(settings.volume * 100)}%</span>
+            </div>
+            <input
+              type="range" min={0} max={1} step={0.05} value={settings.volume}
+              onChange={(e) => onChange({ volume: Number(e.target.value) })}
+              className="h-1.5 w-full accent-amber-400" dir="ltr"
+            />
+          </div>
+          {/* toggles */}
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ['وارونگی محور Y', settings.invertY, () => onChange({ invertY: !settings.invertY })],
+                ['سایه‌ها', settings.shadows, () => onChange({ shadows: !settings.shadows })],
+              ] as const
+            ).map(([label, on, toggle]) => (
+              <button
+                key={label}
+                onClick={toggle}
+                className={`flex items-center justify-between border px-3 py-2.5 text-xs font-bold transition-colors ${
+                  on
+                    ? 'border-emerald-400/70 bg-emerald-900/40 text-emerald-200'
+                    : 'border-white/15 bg-white/5 text-white/50 hover:bg-white/10'
+                }`}
+              >
+                {label}
+                <span className={`ml-2 inline-block h-2.5 w-2.5 ${on ? 'bg-emerald-400' : 'bg-white/25'}`} aria-hidden />
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] leading-4 text-white/35">
+            تنظیمات خودکار ذخیره می‌شوند. برای بهترین تجربه، سایه‌ها را روی دستگاه‌های ضعیف خاموش کنید.
+          </p>
+        </div>
+        <div className="border-t border-white/10 px-5 py-4">
+          <Button onClick={onClose} className="h-10 w-full rounded-none border-2 border-black/70 bg-zinc-800 font-bold text-white shadow-[3px_3px_0_rgba(0,0,0,0.55)] hover:bg-zinc-700">
+            بازگشت
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ================= main menu ================= */
+
+type MenuPage = 'root' | 'settings' | 'exit'
+
+function MainMenu({
+  onStart,
+  hasSave,
+  onClear,
+  onViewer,
+  onSettings,
+  onExit,
+}: {
+  onStart: () => void
+  hasSave: boolean
+  onClear: () => void
+  onViewer: () => void
+  onSettings: () => void
+  onExit: () => void
+}) {
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center overflow-y-auto bg-gradient-to-b from-black/85 via-black/55 to-black/90 px-4 py-8" dir="rtl">
       <div className="flex items-center gap-3">
         <PixelSwordIcon size={44} />
         <h1 className="font-pixel text-4xl leading-relaxed sm:text-6xl" dir="ltr">
@@ -163,13 +260,36 @@ function MainMenu({ onStart, hasSave, onClear }: { onStart: () => void; hasSave:
         بجنگ، بسوز، در آتش کمپ بیاسای و دوباره برخیز.
       </p>
 
-      <Button
-        size="lg"
-        onClick={onStart}
-        className="mt-8 h-12 border-2 border-black/80 bg-emerald-700 px-10 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-emerald-600"
-      >
-        ورود به دنیا
-      </Button>
+      <div className="mt-8 flex w-[min(90vw,300px)] flex-col gap-2.5">
+        <Button
+          size="lg"
+          onClick={onStart}
+          className="h-12 w-full border-2 border-black/80 bg-emerald-700 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-emerald-600"
+        >
+          {hasSave ? 'ادامه‌ی بازی' : 'شروع بازی'}
+        </Button>
+        <Button
+          size="lg"
+          onClick={onViewer}
+          className="h-11 w-full border-2 border-black/80 bg-sky-900 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-sky-800"
+        >
+          🔬 نمایشگر سه‌بعدی
+        </Button>
+        <Button
+          size="lg"
+          onClick={onSettings}
+          className="h-11 w-full border-2 border-black/80 bg-zinc-800 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-zinc-700"
+        >
+          ⚙️ تنظیمات
+        </Button>
+        <Button
+          size="lg"
+          onClick={onExit}
+          className="h-11 w-full border-2 border-black/80 bg-red-950 font-bold text-red-200 shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-red-900"
+        >
+          خروج
+        </Button>
+      </div>
       {hasSave && (
         <button
           onClick={onClear}
@@ -189,11 +309,81 @@ function MainMenu({ onStart, hasSave, onClear }: { onStart: () => void; hasSave:
         <span><b className="font-pixel text-[10px] text-emerald-300">E</b> شربت</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">R</b> جادو</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">F</b> تعامل</span>
+        <span><b className="font-pixel text-[10px] text-emerald-300">Esc</b> توقف / منو</span>
       </div>
-      <p className="mt-6 text-[11px] text-white/35">نسخه ۰.۴ — جدید: منطقه‌ی خاکسترگاه، باس دوم «پادشاه شعله»، جادوی پیرمانسی، شمشیرزن ویسری و شعله‌ی سرگردان</p>
+      <p className="mt-6 text-center text-[11px] leading-5 text-white/35">
+        نسخه ۰.۶ — جدید: منوی کامل، نمایشگر سه‌بعدی موجودات، دروازه‌های مه ترمیم‌شده
+        <br />و انیمیشن حرفه‌ای کماندار با تیر نوک‌شده
+      </p>
     </div>
   )
 }
+
+/* ================= pause menu ================= */
+
+function PauseMenu({
+  onResume,
+  onSettings,
+  onExitToMenu,
+}: {
+  onResume: () => void
+  onSettings: () => void
+  onExitToMenu: () => void
+}) {
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/70 px-4" dir="rtl">
+      <h2 className="font-pixel text-3xl tracking-[0.2em] text-white/90" dir="ltr">PAUSED</h2>
+      <p className="mt-2 text-xs text-white/50">نبرد نفس می‌کشد... اما خاکستر صبر نمی‌کند</p>
+      <div className="mt-7 flex w-[min(90vw,280px)] flex-col gap-2.5">
+        <Button
+          size="lg"
+          onClick={onResume}
+          className="h-11 w-full border-2 border-black/80 bg-emerald-700 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-emerald-600"
+        >
+          ادامه‌ی بازی
+        </Button>
+        <Button
+          size="lg"
+          onClick={onSettings}
+          className="h-11 w-full border-2 border-black/80 bg-zinc-800 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-zinc-700"
+        >
+          ⚙️ تنظیمات
+        </Button>
+        <Button
+          size="lg"
+          onClick={onExitToMenu}
+          className="h-11 w-full border-2 border-black/80 bg-red-950 font-bold text-red-200 shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-red-900"
+        >
+          خروج به منوی اصلی
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/* ================= exit screen ================= */
+
+function ExitScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black px-4" dir="rtl">
+      <PixelSwordIcon size={54} />
+      <h2 className="mt-8 text-2xl font-black text-white/85">آتش خاموش شد.</h2>
+      <p className="mt-3 max-w-sm text-center text-sm leading-6 text-white/45">
+        «مردن تنها پایان راه نیست.»
+        <br />
+        تا زمان بازگشتت، سول‌ها در تاریکی منتظر می‌مانند...
+      </p>
+      <button
+        onClick={onBack}
+        className="mt-10 border-2 border-white/25 bg-white/5 px-8 py-2.5 text-sm font-bold text-white/80 hover:bg-white/15"
+      >
+        روشن کردن دوباره‌ی آتش
+      </button>
+    </div>
+  )
+}
+
+/* ================= misc overlays ================= */
 
 function YouDied() {
   return (
@@ -309,11 +499,13 @@ function TouchControls({
   onLook,
   onPress,
   onHold,
+  onPause,
 }: {
   onMove: (x: number, y: number) => void
   onLook: (dx: number, dy: number) => void
   onPress: (name: string) => void
   onHold: (name: string, down: boolean) => void
+  onPause: () => void
 }) {
   const stickRef = useRef<HTMLDivElement>(null)
   const knobRef = useRef<HTMLDivElement>(null)
@@ -380,6 +572,18 @@ function TouchControls({
           lookLast.current = null
         }}
       />
+
+      {/* pause button */}
+      <button
+        className="absolute left-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-none border-2 border-white/30 bg-black/55 text-lg text-white/85 active:bg-white/20"
+        onTouchStart={(e) => {
+          e.stopPropagation()
+          onPause()
+        }}
+        aria-label="توقف بازی"
+      >
+        ⏸
+      </button>
 
       {/* joystick */}
       <div
@@ -475,11 +679,15 @@ export default function GameClient() {
   const [isTouch, setIsTouch] = useState(false)
   const [hasSave, setHasSave] = useState(false)
   const [ready, setReady] = useState(false)
+  const [menuPage, setMenuPage] = useState<MenuPage>('root')
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [settings, setSettings] = useState<GameSettings>({ sens: 1, volume: 0.8, invertY: false, shadows: true })
 
   useEffect(() => {
     const g = new Game(containerRef.current!)
     gameRef.current = g
     g.onState = (s) => setHud(s)
+    setSettings({ ...g.settings })
     const raf = requestAnimationFrame(() => {
       setIsTouch(
         typeof window !== 'undefined' &&
@@ -508,20 +716,89 @@ export default function GameClient() {
     setHasSave(false)
   }, [])
 
+  const openViewer = useCallback(() => {
+    const g = gameRef.current
+    if (g) g.frozen = true
+    setViewerOpen(true)
+  }, [])
+
+  const closeViewer = useCallback(() => {
+    const g = gameRef.current
+    if (g) g.frozen = false
+    setViewerOpen(false)
+  }, [])
+
+  const applySettings = useCallback((patch: Partial<GameSettings>) => {
+    const g = gameRef.current
+    if (g) {
+      g.applySettings(patch)
+      setSettings({ ...g.settings })
+    }
+  }, [])
+
+  const exitGame = useCallback(() => {
+    // a browser tab can only be closed by script in rare cases — fall back
+    // to the farewell screen which offers a fresh reload
+    try {
+      window.close()
+    } catch { /* ignore */ }
+    setMenuPage('exit')
+  }, [])
+
+  if (menuPage === 'exit') {
+    return (
+      <div className="fixed inset-0 overflow-hidden bg-black no-select">
+        <ExitScreen onBack={() => window.location.reload()} />
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-black no-select">
       <div ref={containerRef} className="absolute inset-0" />
 
-      {ready && hud && hud.phase !== 'menu' && <Hud hud={hud} />}
+      {ready && hud && (hud.phase === 'playing' || hud.phase === 'paused') && <Hud hud={hud} />}
       {ready && hud && hud.phase === 'playing' && isTouch && (
         <TouchControls
           onMove={(x, y) => gameRef.current?.setTouchMove(x, y)}
           onLook={(dx, dy) => gameRef.current?.touchLook(dx, dy)}
           onPress={(n) => gameRef.current?.touchPress(n)}
           onHold={(n, d) => gameRef.current?.touchHold(n, d)}
+          onPause={() => gameRef.current?.pause()}
         />
       )}
-      {phase === 'menu' && <MainMenu onStart={start} hasSave={hasSave} onClear={clearSave} />}
+
+      {phase === 'menu' && (
+        <MainMenu
+          onStart={start}
+          hasSave={hasSave}
+          onClear={clearSave}
+          onViewer={openViewer}
+          onSettings={() => setMenuPage('settings')}
+          onExit={exitGame}
+        />
+      )}
+      {phase === 'menu' && menuPage === 'settings' && (
+        <SettingsModal settings={settings} onChange={applySettings} onClose={() => setMenuPage('root')} />
+      )}
+      {phase === 'paused' && (
+        <PauseMenu
+          onResume={() => gameRef.current?.resume()}
+          onSettings={() => setMenuPage('settings')}
+          onExitToMenu={() => {
+            setMenuPage('root')
+            gameRef.current?.exitToMenu()
+          }}
+        />
+      )}
+      {phase === 'paused' && menuPage === 'settings' && (
+        <SettingsModal
+          settings={settings}
+          onChange={applySettings}
+          onClose={() => setMenuPage('root')}
+        />
+      )}
+      {viewerOpen && <ModelViewer onClose={closeViewer} />}
       {phase === 'dead' && <YouDied />}
       {hud?.banner === 'bossfell' && phase === 'playing' && (
         <BossFell
