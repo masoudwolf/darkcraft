@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
-import { WorldV2, REGIONS_V2 } from '@/lib/game/worldV2'
+import { WorldV3, REGIONS_V3 } from '@/lib/game/worldV3'
 
 /* ============================================================
-   MAP VIEWER V2 — the inspection deck for the new map.
+   MAP VIEWER V3 — the inspection deck for the new map.
    Drag = orbit · wheel/pinch = zoom · region chips = fly-to.
    The whole world is built here standalone: the game itself
    is untouched until the design is approved.
@@ -43,7 +43,7 @@ export default function MapViewer({ onClose }: Props) {
     renderer: THREE.WebGLRenderer
     scene: THREE.Scene
     camera: THREE.PerspectiveCamera
-    w2: WorldV2
+    w2: WorldV3
     disposables: (() => void)[]
   } | null>(null)
   const cam = useRef<CamState>({ theta: 0.45, phi: 0.98, dist: 112, focus: new THREE.Vector3(-2, 14, 0) })
@@ -116,7 +116,7 @@ export default function MapViewer({ onClose }: Props) {
     }
 
     /* the world itself */
-    const w2 = new WorldV2()
+    const w2 = new WorldV3()
     scene.add(w2.group)
 
     const onResize = () => {
@@ -277,7 +277,7 @@ export default function MapViewer({ onClose }: Props) {
   /* ---------- fly to a region ---------- */
   const gotoRegion = useCallback((idx: number) => {
     setRegionIdx(idx)
-    const r = REGIONS_V2[idx]
+    const r = REGIONS_V3[idx]
     const c = cam.current
     fly.current = {
       fromTheta: c.theta,
@@ -295,7 +295,7 @@ export default function MapViewer({ onClose }: Props) {
     gotoRegionRef.current = gotoRegion
   }, [gotoRegion])
 
-  const region = REGIONS_V2[regionIdx]
+  const region = REGIONS_V3[regionIdx]
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#101720]" dir="rtl">
@@ -321,7 +321,7 @@ export default function MapViewer({ onClose }: Props) {
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* region list */}
         <aside className="order-2 flex shrink-0 gap-2 overflow-x-auto border-t border-white/10 bg-black/40 p-2 md:order-1 md:w-64 md:flex-col md:overflow-x-hidden md:overflow-y-auto md:border-l md:border-t-0 md:p-3">
-          {REGIONS_V2.map((r, i) => (
+          {REGIONS_V3.map((r, i) => (
             <button
               key={r.id}
               onClick={() => gotoRegion(i)}

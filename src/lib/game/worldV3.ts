@@ -1,0 +1,1028 @@
+import * as THREE from 'three'
+import { blockMaterials, mulberry32, createFogMaterial } from './textures'
+
+/* ==================================================================
+   WORLD V3 — rebuilt with one law: CLARITY FIRST.
+
+   Why V2 failed: too dark to read, too vertical to walk, the camera
+   trapped against walls, and regions blurred into a jumble of blocks.
+
+   The V3 laws:
+   1. Every road is ≥4 wide, every gate ≥4 wide, every slope ≤1:2.
+   2. No structure hangs above a walkable path. The camera is free.
+   3. Each region owns ONE bold silhouette + ONE ground colour, so you
+      always know where you are and where to go next.
+   4. Two roads leave the hub — west to the village, east to the ash.
+      Both are lantern-marked and end at a landmark you can already see.
+   5. Heights stay low (6..12 ground, landmarks ~27) — gentle, readable.
+
+                        NORTH (z−)
+   ┌──────────────────────────────────────────────────────────┐
+   │  PARISH HILL (h12)                    CINDER FORTRESS    │
+   │  ╔church + bell tower╗  meadow   ┌──walls──────────┐    │
+   │  ║ graveyard ═ arena (boss1) ║   │ courtyard        │    │
+   │  ╚══ ramp ══════╗            │  │ (boss2)  throne  │    │
+   │  VILLAGE (h7)    │            │  └──gate────────────┘    │
+   │  one street      │            │       ▲                  │
+   │  ═well square═   │            │  ASH WASTES (h6)         │
+   │        ▲         │            │  pools · hermit camp     │
+   │        └── west road ── EMBER SHRINE ── east road ──┘    │
+   │                          (h8 hub)                        │
+   └──────────────────────────────────────────────────────────┘
+                        SOUTH (z+)
+   ================================================================== */
+
+export const V3_HALF = 56 // blocks range -56..55
+
+export const V3_BONFIRE = { x: 0, z: 30 }
+export const V3_MERCHANT = { x: -4.5, z: 34.5 }
+export const V3_SPAWN = { x: 3, z: 33 }
+export const V3_BOSS1_CENTER = { x: -32, z: -18 }
+/** boss-1 fog line, the sealed span, the walk lane and the arena box */
+export const V3_BOSS1_GATE = { z: -10, x0: -40.2, x1: -23.8, lane0: -35.4, lane1: -31.6 }
+export const V3_BOSS1_ARENA = { x0: -39.6, x1: -24.4, z0: -24.4, z1: -10.8 }
+export const V3_BOSS2_CENTER = { x: 34, z: -14 }
+/** boss-2 fog line (the fortress gatehouse) */
+export const V3_GATE2 = { x: 34, z: -6.5 }
+export const V3_PYRO_ITEM = { x: 32, z: 14 }
+/** lava hazards the undead refuse to wade into */
+export const V3_LAVA_POOLS: [number, number, number][] = [
+  [30, 25, 2],
+  [40, 28, 1.5],
+  [27, 5, 1.5],
+]
+
+/* surface codes (index into V3_SURF_NAMES) */
+const S_GRASS = 0
+const S_DIRT = 1
+const S_COBBLE = 2
+const S_BRICK = 3
+const S_MOSSY = 4
+const S_ASH = 5
+const S_LAVA = 6
+const S_WATER = 7
+const S_STONE = 8
+
+export const V3_SURF_NAMES = ['grass', 'dirt', 'cobble', 'stonebrick', 'mossy', 'nether', 'lava', 'water', 'stone']
+
+interface Vec3Lite { x: number; y: number; z: number }
+
+export interface RegionCamV3 { x: number; z: number; y: number; dist: number; theta: number; phi: number }
+export interface RegionV3 {
+  id: string
+  name: string
+  sub: string
+  dot: string
+  desc: string
+  design: string
+  cam: RegionCamV3
+}
+
+export const REGIONS_V3: RegionV3[] = [
+  {
+    id: 'overview',
+    name: 'نمای کل جهان',
+    sub: 'همه‌چیز از یک نگاه — دو جاده، دو لندمارک',
+    dot: '#9db2cc',
+    desc: 'دنیا خوانا است: از آتشگاه، جادهٔ غربی به دهکدهٔ فراموشی می‌رود و از آن‌جا پله‌های تپه، بالا به کلیسا؛ جادهٔ شرقی از خاکسترگاه می‌گذرد و به دروازهٔ دژ ذغال می‌رسد. برجِ ناقوسِ طلایی و دیوارهای دندانه‌دار دژ از هر نقطهٔ نقشه پیدا هستند — هیچ‌وقت گم نمی‌شوی.',
+    design: 'قانون تازه: هر جاده یک مقصدِ قابل‌دیدن دارد. بازیکن همیشه می‌داند کجاست و کجا باید برود.',
+    cam: { x: 0, z: 2, y: 16, dist: 105, theta: 0.0, phi: 0.94 },
+  },
+  {
+    id: 'shrine',
+    name: 'آتشگاه — معبد اخگر',
+    sub: 'هاب بازی — همه‌ی راه‌ها از این‌جا می‌گذرند',
+    dot: '#ffb347',
+    desc: 'صفحه‌ی سنگی معبد روی تپه‌ی چمن نشسته: حلقه‌ی ستون‌های شکسته دور آتش کمپ، دو مجسمه‌ی تعظیم‌کننده سرِ چهارراه را نشان می‌دهند و طاقِ سنگی بالای آن مرز آتشگاه است. بازرگان چادرش را جنوب زده. از این‌جا هر دو لندمارک دیده می‌شوند: برج کلیسا در شمال‌غرب، دیوار دژ در شمال‌شرق.',
+    design: 'مثل Firelink: هاب مرتفع است و کل جهانِ پیرامون را نشان می‌دهد — اما بدون هیاهوی بصری؛ چند عنصر، یک پیام.',
+    cam: { x: 0, z: 30, y: 12, dist: 26, theta: 0.1, phi: 0.7 },
+  },
+  {
+    id: 'village',
+    name: 'دهکدهٔ فراموشی',
+    sub: 'یک خیابان، چهار خانه، یک چاه — خوانا و ساده',
+    dot: '#b09055',
+    desc: 'دهکده دیگر هزارتوی کوچه نیست: یک خیابان شمالی-جنوبی که چهار خانهٔ بزرگ با سقف شیروانی دو طرفش ایستاده‌اند، وسطش میدان چاه است و انتهاش طاقلهٔ هیزم. درها رو به خیابان‌اند، پنجره‌ی یکی روشن است و گاری واژگون کنار میدان مانده. خالی‌شدگان همان‌جا که خانه‌هایشان را ساخته بودند می‌گردند.',
+    design: 'درسِ V۲: پیچ‌وخمِ کوچه‌ها حذف شد. یک خیابانِ پهن یعنی دشمن همیشه جلوی چشم است و جنگ منصفانه.',
+    cam: { x: -38, z: 17, y: 11, dist: 30, theta: 0.35, phi: 0.62 },
+  },
+  {
+    id: 'parish',
+    name: 'تپهٔ کلیسا',
+    sub: 'برجِ ناقوس طلایی — لنگرِ دیداری نقشه',
+    dot: '#ece8dc',
+    desc: 'پله‌های وسیع از دهکده به فلات سنگی می‌رسند: پیشِ رو حیاطِ شوالیه (آرنای باس اول) با دروازهٔ مه، پشتِ آن کلیسای سنگی با پنجره‌های ماه‌گرفته و برج ناقوس با زنگ طلایی، و شرقِ کلیسا گورستانِ محصور با قبرها و مجسمهٔ عزادار. زنگ از آتشگاه پیدا است.',
+    design: 'برج = قطب‌نما. مثل Undead Parish، بازیکن از هر جای نقشه می‌داند «مقصدها آن‌جاست» — بدون هیچ نشانگر HUD.',
+    cam: { x: -32, z: -20, y: 16, dist: 40, theta: 0.75, phi: 0.6 },
+  },
+  {
+    id: 'wastes',
+    name: 'خاکسترگاه',
+    sub: 'دریای خاکستر بین دو جاده',
+    dot: '#ff6a1f',
+    desc: 'شرق، زمین سیاه می‌شود: گودال‌های گدازه با لبه‌سنگیِ هشدار، درخت‌های ذغالی، دو گاری سوخته و اردوی زاهد — چادر، آتشِ سرد و شعلهٔ آتش‌افروزی که منتظر دستِ توست. باز هم همه‌چیز روی یک صفحهٔ باز: هیچ کمینی پشتِ دیوار نیست.',
+    design: 'منطقهٔ «نفس‌گیری» بین دو باس — باز و روشن، با خطرهای دیدنی (گدازه‌ها) نه خطرهای پنهان.',
+    cam: { x: 30, z: 16, y: 10, dist: 36, theta: -0.5, phi: 0.66 },
+  },
+  {
+    id: 'fortress',
+    name: 'دژ ذغال',
+    sub: 'آخرین بارِ پادشاه شعله — دیوار، حیاط، تخت',
+    dot: '#ffd23d',
+    desc: 'دیوار دندانه‌دارِ عظیم از خاکستر بلند است؛ دروازه‌اش با دو برجِ فانوس‌دار جلوه‌گر است و مهِ دروازه حیاطِ دژ را پنهان می‌کند: کوره‌های فرو ریخته، سکوی تختِ شاه در انتهای شمالی و پادشاهِ شعله که وسط حیاط منتظر است. پشتِ دیوار شمالی، دریاچهٔ گدازه می‌درخشد.',
+    design: 'مثل Sen\'s Fortress: دیوار بیرونی، حیاط درونی، تختِ شاه به‌عنوان نقطهٔ فرارِ چشم — هندسه‌ی سه‌لایه‌ای که یک نگاه خوانده می‌شود.',
+    cam: { x: 34, z: -14, y: 14, dist: 42, theta: 0.2, phi: 0.62 },
+  },
+]
+
+/* ================================================================== */
+
+interface RampDef { x0: number; z0: number; x1: number; z1: number; h0: number; h1: number; w: number }
+const RAMPS: RampDef[] = [
+  // west road — shrine → the village gate (straight, lantern-lined, 8→7)
+  { x0: -9, z0: 28, x1: -37, z1: 28, h0: 8, h1: 7, w: 2.6 },
+  // the village street itself (flat 7)
+  { x0: -38, z0: 26, x1: -38, z1: 9, h0: 7, h1: 7, w: 2.6 },
+  // parish climb, leg A — village → the switchback turn (7→10)
+  { x0: -38, z0: 8, x1: -40, z1: -2, h0: 7, h1: 10, w: 2.6 },
+  // parish climb, leg B — the turn → the hill top (10→12)
+  { x0: -40, z0: -2, x1: -36, z1: -8, h0: 10, h1: 12, w: 2.6 },
+  // east road — shrine → the ash line (8→6)
+  { x0: 9, z0: 28, x1: 24, z1: 20, h0: 8, h1: 6, w: 2.6 },
+  // the wastes road (flat 6, brown track through black ash)
+  { x0: 24, z0: 20, x1: 33, z1: 7, h0: 6, h1: 6, w: 2.6 },
+  // the gate ramp — up into the fortress mouth (6→9, about 1:4)
+  { x0: 33, z0: 8, x1: 34, z1: -4, h0: 6, h1: 9, w: 3 },
+]
+
+export class WorldV3 {
+  group = new THREE.Group()
+  mats = blockMaterials()
+  private heights = new Int8Array(V3_HALF * 2 * V3_HALF * 2)
+  private surf = new Uint8Array(V3_HALF * 2 * V3_HALF * 2)
+  /** occupancy of every BUILT block (structures) — the physics world */
+  private solid = new Uint8Array(64 * V3_HALF * 2 * V3_HALF * 2)
+  private rng = mulberry32(3087)
+  private fogGates: { mesh: THREE.Mesh; which: 1 | 2 }[] = []
+  private L: Record<string, Vec3Lite[]> = {}
+
+  constructor() {
+    this.genHeightmap()
+    this.buildTerrain()
+    this.buildShrine()
+    this.buildVillage()
+    this.buildParish()
+    this.buildWastes()
+    this.buildFortress()
+    this.buildMeadow()
+    this.buildFogGates()
+    this.buildSky()
+    this.flush()
+  }
+
+  /* ================= heightmap queries ================= */
+
+  private idx(x: number, z: number) {
+    const bx = Math.min(V3_HALF * 2 - 1, Math.max(0, x + V3_HALF))
+    const bz = Math.min(V3_HALF * 2 - 1, Math.max(0, z + V3_HALF))
+    return bz * V3_HALF * 2 + bx
+  }
+
+  getH(x: number, z: number): number {
+    return this.heights[this.idx(Math.round(x), Math.round(z))]
+  }
+
+  /** surface material code at a column (QA/probe/minimap) */
+  surfAt(x: number, z: number): number {
+    return this.surf[this.idx(Math.round(x), Math.round(z))]
+  }
+
+  /** walking surface y (top face of the top block) */
+  surfaceAt(x: number, z: number): number {
+    return this.getH(x, z) + 1
+  }
+
+  /* ================= physics queries (blocky collision) ================= */
+
+  private cellIdx(x: number, z: number, y: number) {
+    const bx = Math.min(V3_HALF * 2 - 1, Math.max(0, x + V3_HALF))
+    const bz = Math.min(V3_HALF * 2 - 1, Math.max(0, z + V3_HALF))
+    const by = Math.min(63, Math.max(0, y))
+    return (by * V3_HALF * 2 + bz) * V3_HALF * 2 + bx
+  }
+
+  /** is there a BUILT block in this cell? */
+  solidStruct(x: number, y: number, z: number): boolean {
+    return this.solid[this.cellIdx(Math.round(x), Math.round(z), Math.round(y))] === 1
+  }
+
+  /** does this column block a body whose feet are at feetY?
+      (terrain cliffs count as walls; one-block steps do not) */
+  wallAt(x: number, z: number, feetY: number): boolean {
+    const bx = Math.round(x)
+    const bz = Math.round(z)
+    if (this.getH(bx, bz) + 1 > feetY + 1.06) return true // cliff step
+    const y0 = Math.floor(feetY + 1.06)
+    const y1 = Math.floor(feetY + 1.55)
+    for (let y = y0; y <= y1; y++) if (this.solid[this.cellIdx(bx, bz, y)] === 1) return true
+    return false
+  }
+
+  /** highest surface this body can stand on near fromY (auto-steps one block) */
+  supportAt(x: number, z: number, fromY: number): number {
+    const bx = Math.round(x)
+    const bz = Math.round(z)
+    const h = this.getH(bx, bz)
+    let best = h + 1
+    const top = Math.min(63, Math.floor(fromY + 0.06))
+    for (let y = top; y > h; y--) {
+      if (this.solid[this.cellIdx(bx, bz, y)] === 1) {
+        best = y + 1
+        break
+      }
+    }
+    return best
+  }
+
+  /** molten ground underfoot? (the wastes pools + the moat) */
+  isLava(x: number, z: number): boolean {
+    return this.surf[this.idx(Math.round(x), Math.round(z))] === S_LAVA
+  }
+
+  /* ================= heightmap generation ================= */
+
+  private genHeightmap() {
+    const r = mulberry32(977)
+    const o1 = r() * 10, o2 = r() * 10, o3 = r() * 10
+
+    for (let z = -V3_HALF; z < V3_HALF; z++) {
+      for (let x = -V3_HALF; x < V3_HALF; x++) {
+        // gentle rolling meadow — nothing a road can't smooth
+        let h =
+          6 +
+          Math.sin(x * 0.1 + o1) * Math.cos(z * 0.09 + o2) * 1.1 +
+          Math.sin(x * 0.23 + o2) * Math.sin(z * 0.19 + o3) * 0.55
+        h = Math.round(h)
+
+        /* ---- EMBER SHRINE plateau (the hub) ---- */
+        h = this.plateEllipse(h, x, z, 0, 30, 16, 14, 8, 3)
+
+        /* ---- FORGOTTEN VILLAGE floor ---- */
+        h = this.plateRect(h, x, z, -47, -29, 8, 27, 7, 3)
+
+        /* ---- PARISH HILL (big enough to hold church + tower + yard) ---- */
+        h = this.plateEllipse(h, x, z, -32, -21, 20, 18, 12, 4)
+
+        /* ---- ASH WASTES ---- */
+        if (x >= 21) {
+          const burn = 6 + Math.round(Math.sin(x * 0.33 + o2) * Math.cos(z * 0.27 + o3) * 0.6)
+          h = Math.round(lerp(burn, h, smoothstep(19, 25, x)))
+        }
+
+        /* ---- CINDER FORTRESS courtyard incl. the gate apron ---- */
+        h = this.plateRect(h, x, z, 21, 47, -33, -3, 9, 2.5)
+
+        /* ---- roads & ramps cut last — closest centreline wins ---- */
+        let bestD = Infinity
+        let bestW = 0
+        let bestTarget = 0
+        for (const rp of RAMPS) {
+          const dx = rp.x1 - rp.x0
+          const dz = rp.z1 - rp.z0
+          const len2 = dx * dx + dz * dz
+          let t = ((x - rp.x0) * dx + (z - rp.z0) * dz) / len2
+          t = Math.max(0, Math.min(1, t))
+          const px = rp.x0 + dx * t
+          const pz = rp.z0 + dz * t
+          const d = Math.hypot(x - px, z - pz)
+          if (d < bestD) {
+            bestD = d
+            bestW = rp.w
+            bestTarget = lerp(rp.h0, rp.h1, t)
+          }
+        }
+        if (bestD <= bestW) h = Math.round(bestTarget)
+        else if (bestD < bestW + 1.6) h = Math.round(lerp(bestTarget, h, smoothstep(bestW, bestW + 1.6, bestD)))
+
+        /* ---- world rim: a low ridge so the edge never shows the void ---- */
+        const edge = Math.min(x + V3_HALF, V3_HALF - 1 - x, z + V3_HALF, V3_HALF - 1 - z)
+        if (edge < 3) h = Math.max(h, 8 - edge)
+
+        this.heights[this.idx(x, z)] = Math.max(0, Math.min(36, h))
+      }
+    }
+
+    /* ---- surface codes ---- */
+    for (let z = -V3_HALF; z < V3_HALF; z++) {
+      for (let x = -V3_HALF; x < V3_HALF; x++) {
+        let s: number = S_GRASS
+        const dBon = Math.hypot(x - V3_BONFIRE.x, z - V3_BONFIRE.z)
+        const edShrine = Math.hypot(x / 16, (z - 30) / 14)
+        const edHill = Math.hypot((x + 32) / 20, (z + 21) / 18)
+        const inVillage = x >= -47 && x <= -29 && z >= 8 && z <= 27
+        const inWastes = x >= 23
+        const inFortress = x >= 21 && x <= 47 && z >= -33 && z <= -3
+        const onRoad = RAMPS.some((rp) => {
+          const dx = rp.x1 - rp.x0, dz = rp.z1 - rp.z0
+          const len2 = dx * dx + dz * dz
+          let t = ((x - rp.x0) * dx + (z - rp.z0) * dz) / len2
+          t = Math.max(0, Math.min(1, t))
+          const d = Math.hypot(x - (rp.x0 + dx * t), z - (rp.z0 + dz * t))
+          return d <= rp.w + 0.4
+        })
+
+        if (edShrine <= 1) s = (x * 7 + z * 5) % 11 === 0 ? S_MOSSY : S_BRICK // cracked shrine tiles
+        else if (inFortress) s = S_COBBLE // courtyard + apron
+        else if (edHill <= 1) s = S_BRICK // parish flagstones
+        else if (edHill <= 1.15) s = S_MOSSY // hill skirt
+        else if (inVillage) {
+          const street = x >= -40 && x <= -36
+          const square = x >= -41 && x <= -35 && z >= 14 && z <= 20
+          s = street || square ? S_COBBLE : S_GRASS
+        } else if (inWastes) s = onRoad ? S_DIRT : S_ASH
+        else if (onRoad) s = S_DIRT
+
+        // the graveyard keeps bare earth
+        if (x >= -27 && x <= -18 && z >= -33 && z <= -24 && edHill <= 1.05) s = S_DIRT
+        // the bonfire hearth keeps a mossy ring
+        if (dBon < 3) s = S_MOSSY
+        this.surf[this.idx(x, z)] = s
+      }
+    }
+
+    /* ---- the wastes' lava pools: sunken, stone-rimmed, honest ---- */
+    for (const [px, pz, pr] of V3_LAVA_POOLS) {
+      for (let x = px - 4; x <= px + 4; x++)
+        for (let z = pz - 4; z <= pz + 4; z++) {
+          const d = Math.hypot(x - px, z - pz)
+          if (d <= pr) {
+            this.heights[this.idx(x, z)] = 5
+            this.surf[this.idx(x, z)] = S_LAVA
+          } else if (d <= pr + 1) {
+            this.surf[this.idx(x, z)] = S_STONE // the warning rim
+          }
+        }
+    }
+    /* ---- the moat behind the fortress' north wall (unreachable, pure glow) ---- */
+    for (let x = 23; x <= 45; x++)
+      for (let z = -37; z <= -32; z++) {
+        this.heights[this.idx(x, z)] = 5
+        this.surf[this.idx(x, z)] = S_LAVA
+      }
+  }
+
+  /** rectangular district: `target` inside, feathered skirt outside */
+  private plateRect(
+    h: number, x: number, z: number,
+    x0: number, x1: number, z0: number, z1: number,
+    target: number, feather: number
+  ): number {
+    const dx = Math.max(x0 - x, x - x1, 0)
+    const dz = Math.max(z0 - z, z - z1, 0)
+    const d = Math.hypot(dx, dz)
+    if (d <= 0) return target
+    if (d >= feather) return h
+    return lerp(target, h, smoothstep(0, feather, d))
+  }
+
+  /** elliptical district (the hub plateau, the parish hill) */
+  private plateEllipse(
+    h: number, x: number, z: number,
+    cx: number, cz: number, rx: number, rz: number,
+    target: number, feather: number
+  ): number {
+    const ed = Math.hypot((x - cx) / rx, (z - cz) / rz)
+    const f = feather / Math.min(rx, rz)
+    if (ed <= 1) return target
+    if (ed >= 1 + f) return h
+    return lerp(target, h, smoothstep(1, 1 + f, ed))
+  }
+
+  /* ================= terrain rendering ================= */
+
+  private buildInstanced(mat: THREE.Material | THREE.Material[], transforms: Vec3Lite[]) {
+    if (transforms.length === 0) return
+    const geo = new THREE.BoxGeometry(1, 1, 1)
+    const mesh = new THREE.InstancedMesh(geo, mat, transforms.length)
+    const d = new THREE.Object3D()
+    for (let i = 0; i < transforms.length; i++) {
+      d.position.set(transforms[i].x, transforms[i].y, transforms[i].z)
+      d.updateMatrix()
+      mesh.setMatrixAt(i, d.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    mesh.frustumCulled = true
+    this.group.add(mesh)
+  }
+
+  private chunkKey(x: number, z: number) {
+    const cs = 16
+    return `${Math.floor(x / cs)}_${Math.floor(z / cs)}`
+  }
+
+  private buildTerrain() {
+    const exposed = (x: number, z: number, y: number) => {
+      const n: [number, number][] = [[x + 1, z], [x - 1, z], [x, z + 1], [x, z - 1]]
+      for (const [nx, nz] of n) {
+        if (nx < -V3_HALF || nx >= V3_HALF || nz < -V3_HALF || nz >= V3_HALF) return true
+        if (this.heights[this.idx(nx, nz)] < y) return true
+      }
+      return false
+    }
+    const batch = new Map<string, Record<string, Vec3Lite[]>>()
+    const put2 = (x: number, y: number, z: number, matKey: string) => {
+      const k = this.chunkKey(x, z)
+      if (!batch.has(k)) batch.set(k, {})
+      const mats = batch.get(k)!
+      if (!mats[matKey]) mats[matKey] = []
+      mats[matKey].push({ x, y, z })
+    }
+    for (let z = -V3_HALF; z < V3_HALF; z++) {
+      for (let x = -V3_HALF; x < V3_HALF; x++) {
+        const h = this.heights[this.idx(x, z)]
+        const s = this.surf[this.idx(x, z)]
+        put2(x, h + 0.5, z, V3_SURF_NAMES[s])
+        if (s === S_LAVA) put2(x, h - 0.5, z, 'stone') // bed under the melt
+        if (h - 1 >= 0 && exposed(x, z, h - 1))
+          put2(x, h - 0.5, z, s === S_BRICK ? 'stonebrick' : h >= 8 ? 'stone' : 'dirt')
+        if (h - 2 >= 0 && exposed(x, z, h - 2)) put2(x, h - 1.5, z, h >= 8 ? 'stone' : 'dirt')
+        if (h - 3 >= 0 && exposed(x, z, h - 3)) put2(x, h - 2.5, z, 'stone')
+      }
+    }
+    for (const mats of batch.values())
+      for (const [matKey, list] of Object.entries(mats)) {
+        const mat = this.mats[matKey]
+        if (mat && list.length > 0) this.buildInstanced(mat, list)
+      }
+  }
+
+  /* ================= structure helpers ================= */
+
+  /** one block; y = BOTTOM of the block */
+  private b(mat: string, x: number, y: number, z: number) {
+    if (!this.L[mat]) this.L[mat] = []
+    this.L[mat].push({ x, y: y + 0.5, z })
+    this.solid[this.cellIdx(x, z, y)] = 1
+  }
+  /** filled box (inclusive bounds), y = bottoms */
+  private fill(mat: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) {
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++)
+        for (let z = z0; z <= z1; z++) this.b(mat, x, y, z)
+  }
+  private col(mat: string, x: number, z: number, y0: number, y1: number) {
+    for (let y = y0; y <= y1; y++) this.b(mat, x, y, z)
+  }
+  /** battlement caps: every other block along an x line */
+  private crenelX(mat: string, x0: number, x1: number, y: number, z: number) {
+    for (let x = x0; x <= x1; x += 2) this.b(mat, x, y, z)
+  }
+  /** battlement caps: every other block along a z line */
+  private crenelZ(mat: string, z0: number, z1: number, y: number, x: number) {
+    for (let z = z0; z <= z1; z += 2) this.b(mat, x, y, z)
+  }
+  /** remove queued blocks (carve a door); y bounds are block bottoms */
+  private clearCol(mat: string, x: number, y0: number, y1: number, z: number) {
+    const list = this.L[mat]
+    if (list) {
+      this.L[mat] = list.filter(
+        (v) => !(v.x === x && v.z === z && v.y >= y0 + 0.5 && v.y <= y1 + 0.5)
+      )
+    }
+    for (let y = y0; y <= y1; y++) this.solid[this.cellIdx(x, z, y)] = 0
+  }
+  /** stepped gable roof; ridge runs along the longer axis, 1-block eaves */
+  private gableRoof(mat: string, x0: number, x1: number, z0: number, z1: number, yBase: number) {
+    const wideX = x1 - x0 >= z1 - z0
+    if (wideX) {
+      const span = Math.floor((x1 - x0) / 2)
+      for (let i = 0; i <= span; i++) {
+        this.fill(mat, x0 + i, x1 - i, yBase + i, yBase + i, z0 - 1, z1 + 1)
+      }
+    } else {
+      const span = Math.floor((z1 - z0) / 2)
+      for (let i = 0; i <= span; i++) {
+        this.fill(mat, x0 - 1, x1 + 1, yBase + i, yBase + i, z0 + i, z1 - i)
+      }
+    }
+  }
+  /** a dead, burned tree — trunk + two broken arms */
+  private deadTree(mat: string, x: number, y: number, z: number, tall = 3) {
+    this.col(mat, x, z, y, y + tall - 1)
+    this.b(mat, x + 1, y + tall - 1, z)
+    this.b(mat, x, y + tall - 2, z - 1)
+  }
+  /** an oak tree — blocky canopy, Minecraft silhouette */
+  private oakTree(x: number, y: number, z: number) {
+    const th = 3
+    this.col('log', x, z, y, y + th - 1)
+    this.fill('leaves', x - 1, x + 1, y + th - 1, y + th, z - 1, z + 1)
+    this.b('leaves', x, y + th + 1, z)
+    this.b('leaves', x - 1, y + th, z)
+    this.b('leaves', x + 1, y + th, z)
+    this.b('leaves', x, y + th, z - 1)
+    this.b('leaves', x, y + th, z + 1)
+  }
+  /** lantern post: log pole + glow head — the road's waymarks */
+  private lantern(x: number, y: number, z: number, light = false) {
+    this.col('log', x, z, y, y + 1)
+    this.b('glow', x, y + 2, z)
+    if (light) {
+      const pl = new THREE.PointLight(0xffb060, 1.5, 11, 1.7)
+      pl.position.set(x + 0.5, y + 3, z + 0.5)
+      this.group.add(pl)
+    }
+  }
+  private flush() {
+    for (const [matKey, list] of Object.entries(this.L)) {
+      const mat = this.mats[matKey]
+      if (mat && list.length > 0) this.buildInstanced(mat, list)
+    }
+    this.L = {}
+  }
+
+  /* ================= EMBER SHRINE (the hub) ================= */
+
+  private buildShrine() {
+    const y0 = 9 // plaza surface (floor h=8)
+
+    /* the colonnade ring around the bonfire — gaps open W/E for the roads */
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2
+      const px = Math.round(Math.cos(a) * 7)
+      const pz = 30 + Math.round(Math.sin(a) * 6)
+      // keep the west & east road mouths and the merchant cove clear
+      if (Math.abs(pz - 30) <= 2 && Math.abs(px) >= 5) continue
+      if (Math.hypot(px - V3_MERCHANT.x, pz - V3_MERCHANT.z) < 4.4) continue
+      const tall = [4, 3, 5, 2, 4, 3, 5, 2, 4, 3, 5, 2][i % 12]
+      this.col('stonebrick', px, pz, y0, y0 + tall - 1)
+      if (tall >= 4 && i % 3 === 0) this.b('glow', px, y0 + tall, pz)
+      if (tall < 3) this.b('cobble', px + 1, y0, pz + 1) // a fallen drum
+    }
+
+    /* the crossroads arch north of the plaza — the world's signpost */
+    this.fill('stonebrick', -3, -3, y0, y0 + 3, 20, 21)
+    this.fill('stonebrick', 3, 3, y0, y0 + 3, 20, 21)
+    this.fill('stonebrick', -3, 3, y0 + 4, y0 + 4, 20, 21) // lintel, 4-clear beneath
+    this.b('gold', 0, y0 + 5, 20) // the sigil
+
+    /* two bowing statues flank the crossroads */
+    for (const sx of [-2, 2]) {
+      this.b('mossy', sx, y0, 17)
+      this.fill('darkstone', sx, sx, y0 + 1, y0 + 2, 17, 17)
+      this.b('cobble', sx, y0 + 3, 17) // the bowed head
+    }
+
+    /* sitting stones on the hearth's north side (the south stays open for the spawn) */
+    for (const dz of [-2] as const) {
+      this.b('cobble', V3_BONFIRE.x - 3, y0, V3_BONFIRE.z + dz)
+      this.b('cobble', V3_BONFIRE.x + 3, y0, V3_BONFIRE.z + dz)
+    }
+    this.lantern(-9, y0, 23, true)
+    this.lantern(9, y0, 23, true)
+    this.lantern(-9, y0, 37)
+    this.lantern(9, y0, 37)
+
+    /* mossy benches facing the fire */
+    this.fill('mossy', -5, -4, y0, y0, 27, 27)
+    this.fill('mossy', 4, 5, y0, y0, 27, 27)
+  }
+
+  /* ================= FORGOTTEN VILLAGE ================= */
+
+  private buildVillage() {
+    const y0 = 8 // village surface (floor h=7)
+
+    /** one honest house: cobble walls, gable roof, door on the street side */
+    const house = (x0: number, x1: number, z0: number, z1: number, doorSide: 'E' | 'W', lit: boolean) => {
+      for (let x = x0; x <= x1; x++)
+        for (let z = z0; z <= z1; z++) {
+          const edge = x === x0 || x === x1 || z === z0 || z === z1
+          if (!edge) continue
+          this.col('cobble', x, z, y0, y0 + 2)
+        }
+      // the door — 2 wide, 2 tall, on the street-facing side
+      const dz = Math.floor((z0 + z1) / 2)
+      const dx = doorSide === 'E' ? x1 : x0
+      this.clearCol('cobble', dx, y0, y0 + 1, dz)
+      this.clearCol('cobble', dx, y0, y0 + 1, dz + 1)
+      // a window on the back wall; the lit one glows through the door
+      const bx = doorSide === 'E' ? x0 : x1
+      this.clearCol('cobble', bx, y0 + 1, y0 + 1, dz)
+      this.b('glass', bx, y0 + 1, dz)
+      if (lit) this.b('glow', doorSide === 'E' ? x0 + 1 : x1 - 1, y0 + 1, dz)
+      // dark corner posts + the gable roof
+      for (const [cx, cz] of [[x0, z0], [x0, z1], [x1, z0], [x1, z1]] as const) this.b('darkstone', cx, y0 + 2, cz)
+      this.gableRoof('roof', x0, x1, z0, z1, y0 + 3)
+      // chimney poking through the north roof slope
+      const chx = doorSide === 'E' ? x0 + 1 : x1 - 1
+      this.col('cobble', chx, z0, y0 + 5, y0 + 6)
+      // the door awning (one block, well above any head)
+      this.b('plank', dx + (doorSide === 'E' ? 1 : -1), y0 + 2, dz)
+    }
+
+    /* four houses along the single street — doors facing x=−38 */
+    house(-46, -41, 22, 26, 'E', false) // House A (south-west)
+    house(-46, -41, 11, 16, 'E', true) // House D (north-west, the lit one)
+    house(-35, -30, 19, 24, 'W', false) // House B (south-east)
+    house(-35, -30, 10, 15, 'W', false) // House C (north-east)
+
+    /* the well at the square's heart */
+    for (const [wx, wz] of [[-39, 16], [-37, 16], [-39, 18], [-37, 18]] as const) this.b('cobble', wx, y0, wz)
+    this.b('water', -38, y0, 17)
+    this.fill('log', -39, -39, y0, y0 + 2, 17, 17)
+    this.fill('log', -37, -37, y0, y0 + 2, 17, 17)
+    this.fill('plank', -39, -37, y0 + 3, y0 + 3, 17, 17)
+
+    /* the woodshed at the north end — open front, stacked logs */
+    this.fill('log', -46, -46, y0, y0 + 1, 8, 8)
+    this.fill('log', -42, -42, y0, y0 + 1, 8, 8)
+    this.fill('plank', -46, -42, y0 + 2, y0 + 2, 8, 9)
+    this.fill('log', -45, -43, y0, y0, 9, 9) // the stack
+
+    /* the overturned cart by the square + a barrel + crates */
+    this.fill('plank', -33, -32, y0, y0, 17, 18)
+    this.b('log', -31, y0, 17)
+    this.b('log', -31, y0, 18)
+    this.b('plank', -34, y0 + 1, 19)
+    this.b('plank', -30, y0, 20)
+
+    /* low field walls close the village — with honest gaps, never mazes */
+    for (let x = -46; x <= -30; x++) {
+      if (x >= -40 && x <= -34) continue // the street mouth (south)
+      if (Math.abs(x + 44) <= 1) continue // a gap in the south wall
+      if (x >= -46 && x <= -42) continue // the woodshed stands in for the north wall
+      this.b('mossy', x, y0, 27)
+      this.b('mossy', x, y0, 8) // north, the street mouth stays open
+    }
+    for (let z = 9; z <= 26; z++) {
+      if (Math.abs(z - 12) <= 1) continue // the west gate
+      this.b('mossy', -47, y0, z)
+      if (z < 12 || z > 13) this.b('mossy', -29, y0, z) // one east gap
+    }
+
+    /* lanterns at the square + a dead tree */
+    this.lantern(-41, y0, 14, true)
+    this.lantern(-35, y0, 20)
+    this.deadTree('log', -31, y0, 10)
+  }
+
+  /* ================= PARISH HILL — church, graveyard, arena ================= */
+
+  private buildParish() {
+    const y0 = 13 // hill surface (floor h=12)
+    const gz = V3_BOSS1_GATE.z
+
+    /* ---------- the knight's arena (boss 1) ---------- */
+    // south gate line at z=-10: wall segments leave a lane x −35..−32
+    this.fill('stonebrick', -40, -37, y0, y0 + 3, gz, gz)
+    this.fill('stonebrick', -30, -24, y0, y0 + 3, gz, gz)
+    // gate pillars + lintel over the lane
+    this.fill('stonebrick', -36, -36, y0, y0 + 4, gz, gz)
+    this.fill('stonebrick', -31, -31, y0, y0 + 4, gz, gz)
+    this.fill('darkstone', -36, -31, y0 + 5, y0 + 5, gz, gz)
+    this.b('glow', -36, y0 + 4, gz - 1)
+    this.b('glow', -31, y0 + 4, gz - 1)
+    // side walls (2 tall) seal the arena east & west
+    for (let z = gz - 1; z >= -23; z--) {
+      this.fill('cobble', -40, -40, y0, y0 + 1, z, z)
+      this.fill('cobble', -24, -24, y0, y0 + 1, z, z)
+    }
+    // broken columns along the church front
+    for (const cx of [-39, -35, -29, -25]) {
+      this.col('stonebrick', cx, -24, y0, y0 + 2)
+      if (cx !== -35) this.b('glow', cx, y0 + 3, -24)
+    }
+
+    /* ---------- the church ---------- */
+    // nave: walls x −41..−30, z −33..−25, 6 tall, door south x −37..−36
+    for (let x = -41; x <= -30; x++)
+      for (let z = -33; z <= -25; z++) {
+        const edge = x === -41 || x === -30 || z === -33 || z === -25
+        if (!edge) continue
+        this.col('stonebrick', x, z, y0, y0 + 5)
+      }
+    this.clearCol('stonebrick', -37, y0, y0 + 2, -25)
+    this.clearCol('stonebrick', -36, y0, y0 + 2, -25)
+    // tall moon-glass windows on both long walls
+    for (let z = -31; z >= -27; z -= 2) {
+      this.clearCol('stonebrick', -41, y0 + 3, y0 + 3, z)
+      this.b('glass', -41, y0 + 3, z)
+      this.clearCol('stonebrick', -30, y0 + 3, y0 + 3, z)
+      this.b('glass', -30, y0 + 3, z)
+    }
+    // darkstone buttresses frame the corners
+    for (const [bx, bz] of [[-41, -33], [-41, -25], [-30, -33], [-30, -25]] as const) {
+      this.b('darkstone', bx, y0, bz)
+      this.b('darkstone', bx, y0 + 1, bz)
+    }
+    // the steep roof — south eave hangs out, north side tucks into the tower
+    for (let i = 0; i <= 5; i++) {
+      this.fill('darkstone', -41 + i, -30 - i, y0 + 6 + i, y0 + 6 + i, -33, -24)
+    }
+    // the rose window on the west gable
+    this.clearCol('stonebrick', -41, y0 + 4, y0 + 4, -29)
+    this.b('rose', -41, y0 + 4, -29)
+
+    /* the bell tower — the landmark (5×5, gold bell, spire) */
+    for (let x = -38; x <= -34; x++)
+      for (let z = -38; z <= -34; z++) {
+        const edge = x === -38 || x === -34 || z === -38 || z === -34
+        if (!edge) continue
+        this.col('stonebrick', x, z, y0, y0 + 9)
+      }
+    // belfry openings (2 wide) on all four faces
+    this.clearCol('stonebrick', -36, y0 + 8, y0 + 9, -34)
+    this.clearCol('stonebrick', -37, y0 + 8, y0 + 9, -34)
+    this.clearCol('stonebrick', -36, y0 + 8, y0 + 9, -38)
+    this.clearCol('stonebrick', -37, y0 + 8, y0 + 9, -38)
+    this.clearCol('stonebrick', -34, y0 + 8, y0 + 9, -36)
+    this.clearCol('stonebrick', -34, y0 + 8, y0 + 9, -37)
+    this.clearCol('stonebrick', -38, y0 + 8, y0 + 9, -36)
+    this.clearCol('stonebrick', -38, y0 + 8, y0 + 9, -37)
+    // the gold bell, hung in the opening
+    this.fill('gold', -36, -35, y0 + 8, y0 + 9, -36, -36)
+    // the spire + finial
+    this.fill('darkstone', -38, -34, y0 + 10, y0 + 10, -38, -34)
+    this.fill('darkstone', -37, -35, y0 + 11, y0 + 11, -37, -35)
+    this.b('darkstone', -36, y0 + 12, -36)
+    this.b('gold', -36, y0 + 13, -36)
+
+    /* ---------- the church interior ---------- */
+    for (const bz of [-31, -29]) {
+      this.fill('plank', -39, -38, y0, y0, bz, bz)
+      this.fill('plank', -33, -32, y0, y0, bz, bz)
+    }
+    // the altar + candle + cross
+    this.fill('plank', -37, -36, y0, y0, -32, -32)
+    this.b('glow', -36, y0 + 1, -32)
+    this.fill('gold', -36, -36, y0 + 2, y0 + 3, -32, -32)
+    const altarLight = new THREE.PointLight(0xffc070, 1.2, 10, 1.8)
+    altarLight.position.set(-35.5, y0 + 2.5, -31.5)
+    this.group.add(altarLight)
+
+    /* ---------- the graveyard (east of the church) ---------- */
+    for (let x = -27; x <= -18; x++) {
+      if (x === -23 || x === -22) continue // the south gate
+      this.b('cobble', x, y0, -24)
+      this.b('cobble', x, y0, -33)
+    }
+    for (let z = -33; z <= -24; z++) {
+      this.b('cobble', -27, y0, z)
+      this.b('cobble', -18, y0, z)
+    }
+    // eight graves — some crosses, some slabs (all clear of the walls)
+    const graves: [number, number, boolean][] = [
+      [-25, -31, true], [-22, -31, false], [-20, -30, true], [-25, -28, false],
+      [-23, -27, true], [-20, -27, false], [-24, -25, false], [-20, -25, true],
+    ]
+    for (const [gx, gzz, cross] of graves) {
+      if (cross) {
+        this.b('mossy', gx, y0, gzz)
+        this.b('cobble', gx, y0 + 1, gzz)
+        this.b('cobble', gx, y0 + 2, gzz)
+        this.b('mossy', gx - 1, y0 + 2, gzz)
+        this.b('mossy', gx + 1, y0 + 2, gzz)
+      } else {
+        this.b('cobble', gx, y0, gzz)
+        this.b('mossy', gx, y0 + 1, gzz)
+      }
+    }
+    // the mourner statue + one dead tree
+    this.b('mossy', -26, y0, -32)
+    this.fill('darkstone', -26, -26, y0 + 1, y0 + 2, -32, -32)
+    this.b('cobble', -26, y0 + 3, -32)
+    this.deadTree('log', -26, y0, -25)
+  }
+
+  /* ================= ASH WASTES ================= */
+
+  private buildWastes() {
+    const y0 = 7 // ash surface (floor h=6)
+
+    /* dead trees + coal scatter — all kept off the road's width */
+    for (const [tx, tz, tt] of [[36, 18, 3], [45, 10, 4], [28, 30, 3], [48, 22, 3], [43, 4, 2]] as const) {
+      this.deadTree('log', tx, y0, tz, tt)
+    }
+    for (const [cx, cz] of [[33, 24], [42, 16], [28, 23], [47, 8], [38, 31], [27, 7], [50, 18], [35, 28]] as const) {
+      this.b('coal', cx, y0, cz)
+    }
+
+    /* two burned wagons */
+    this.fill('plank', 37, 38, y0, y0, 12, 13)
+    this.b('log', 36, y0, 12)
+    this.b('log', 36, y0, 13)
+    this.b('plank', 38, y0 + 1, 14)
+    this.fill('plank', 44, 45, y0, y0, 26, 27)
+    this.b('log', 46, y0, 26)
+    this.b('log', 46, y0, 27)
+
+    /* the hermit camp — tent, cold fire, a stool (the pyro flame waits here) */
+    this.fill('plank', 31, 31, y0, y0, 11, 13)
+    this.fill('plank', 33, 33, y0, y0, 11, 13)
+    this.fill('plank', 32, 32, y0 + 1, y0 + 1, 11, 13)
+    for (const [fx, fz] of [[31, 17], [33, 17], [31, 19], [33, 19]] as const) this.b('cobble', fx, y0, fz)
+    this.b('coal', 32, y0, 18)
+    this.b('log', 31, y0, 16) // the stool
+  }
+
+  /* ================= CINDER FORTRESS ================= */
+
+  private buildFortress() {
+    const y0 = 10 // courtyard surface (floor h=9)
+
+    /* curtain walls — the gatehouse gap sits at x 31..36 on the south face */
+    for (let x = 24; x <= 44; x++) {
+      if (x >= 29 && x <= 38) continue // gatehouse towers + opening
+      this.fill('cobble', x, x, y0, y0 + 4, -7, -7)
+      if (x % 2 === 0) this.b('cobble', x, y0 + 5, -7)
+    }
+    for (let x = 24; x <= 44; x++) {
+      this.fill('cobble', x, x, y0, y0 + 4, -31, -31)
+      if (x % 2 === 0) this.b('cobble', x, y0 + 5, -31)
+    }
+    for (let z = -28; z <= -11; z++) {
+      this.fill('cobble', 21, 21, y0, y0 + 4, z, z)
+      this.fill('cobble', 47, 47, y0, y0 + 4, z, z)
+      if (z % 2 === 0) {
+        this.b('cobble', 21, y0 + 5, z)
+        this.b('cobble', 47, y0 + 5, z)
+      }
+    }
+
+    /* the gatehouse — two lantern towers + the arch over a 6-wide mouth */
+    this.fill('cobble', 29, 30, y0, y0 + 7, -8, -6)
+    this.fill('cobble', 37, 38, y0, y0 + 7, -8, -6)
+    this.fill('glow', 29, 30, y0 + 8, y0 + 8, -8, -6)
+    this.fill('glow', 37, 38, y0 + 8, y0 + 8, -8, -6)
+    this.fill('darkstone', 31, 36, y0 + 5, y0 + 5, -7, -7) // the arch
+    const gateLight = new THREE.PointLight(0xffa050, 1.7, 13, 1.7)
+    gateLight.position.set(34.5, y0 + 8, -4.5)
+    this.group.add(gateLight)
+
+    /* corner towers with braziers */
+    for (const [tx0, tx1, tz0, tz1] of [[21, 23, -33, -31], [45, 47, -33, -31], [21, 23, -10, -8], [45, 47, -10, -8]] as const) {
+      this.fill('cobble', tx0, tx1, y0, y0 + 6, tz0, tz1)
+      this.b('glow', Math.floor((tx0 + tx1) / 2), y0 + 7, Math.floor((tz0 + tz1) / 2))
+      this.crenelX('cobble', tx0, tx1, y0 + 7, tz0)
+      this.crenelX('cobble', tx0, tx1, y0 + 7, tz1)
+    }
+
+    /* the king's court — throne platform at the north end */
+    this.fill('stonebrick', 32, 37, y0, y0, -30, -26)
+    this.fill('darkstone', 34, 34, y0 + 1, y0 + 2, -29, -29)
+    this.fill('gold', 34, 34, y0 + 3, y0 + 3, -29, -29)
+    this.b('darkstone', 33, y0 + 1, -29)
+    this.b('darkstone', 35, y0 + 1, -29)
+
+    /* broken forges on the west side */
+    this.fill('cobble', 24, 25, y0, y0 + 3, -23, -22)
+    this.b('coal', 24, y0 + 4, -23)
+    this.fill('cobble', 24, 25, y0, y0 + 2, -27, -26)
+    this.b('coal', 25, y0 + 3, -26)
+    this.fill('coal', 27, 28, y0, y0, -24, -23)
+
+    /* the great brazier (outside the fight ring) + weapon racks + a burned cart */
+    this.b('cobble', 44, y0, -14)
+    this.b('glow', 44, y0 + 1, -14)
+    const brazier = new THREE.PointLight(0xff7830, 1.8, 13, 1.7)
+    brazier.position.set(44.5, y0 + 2, -13.5)
+    this.group.add(brazier)
+    for (const [rx, rz] of [[24, -12], [42, -22]] as const) {
+      this.b('log', rx, y0, rz)
+      this.b('log', rx + 2, y0, rz)
+      this.fill('plank', rx, rx + 2, y0 + 2, y0 + 2, rz, rz)
+    }
+    this.fill('plank', 30, 31, y0, y0, -25, -26)
+    this.b('log', 29, y0, -25)
+    this.b('log', 29, y0, -26)
+  }
+
+  /* ================= meadow dressing ================= */
+
+  private buildMeadow() {
+    /* oaks scattered on the grass — never on a road, never near a gate */
+    const trees: [number, number][] = [
+      [-16, 36], [-22, 33], [-14, 12], [12, 38], [20, 32],
+      [16, 10], [-8, 2], [10, 2], [-24, 38], [26, 38], [-12, 22], [14, 22],
+    ]
+    for (const [tx, tz] of trees) {
+      this.oakTree(tx, this.getH(tx, tz) + 1, tz)
+    }
+    /* lone lanterns where the roads leave the plaza light behind */
+    for (const [lx, lz] of [[-17, 31], [18, 27], [-35, 2], [38, 12]] as const) {
+      this.lantern(lx, this.getH(lx, lz) + 1, lz, lz === 31 || lz === 12)
+    }
+    /* a wayside shrine on the east road — a mossy stone + candle */
+    this.b('mossy', 20, this.getH(20, 26) + 1, 26)
+    this.b('glow', 20, this.getH(20, 26) + 2, 26)
+  }
+
+  /* ================= fog gates ================= */
+
+  setFogGatesVisible(g1: boolean, g2: boolean) {
+    for (const f of this.fogGates) f.mesh.visible = f.which === 1 ? g1 : g2
+  }
+
+  /** per-frame: the mist breathes */
+  update(dt: number) {
+    for (const f of this.fogGates) {
+      const mat = f.mesh.material as THREE.ShaderMaterial
+      mat.uniforms.uTime.value += dt
+    }
+  }
+
+  private buildFogGates() {
+    const fogMat = createFogMaterial()
+    // gate 1 — the knight's forecourt
+    const g1 = new THREE.Mesh(new THREE.BoxGeometry(15.2, 5.4, 0.36), fogMat)
+    g1.position.set(-32, 13 + 2.7, V3_BOSS1_GATE.z)
+    this.group.add(g1)
+    this.fogGates.push({ mesh: g1, which: 1 })
+    // gate 2 — the fortress mouth
+    const g2 = new THREE.Mesh(new THREE.BoxGeometry(6.4, 5.4, 0.36), fogMat)
+    g2.position.set(34, 10 + 2.7, V3_GATE2.z)
+    this.group.add(g2)
+    this.fogGates.push({ mesh: g2, which: 2 })
+    this.setFogGatesVisible(true, true)
+  }
+
+  /* ================= sky ================= */
+
+  private buildSky() {
+    /* the dusk dome — deep blue zenith warming to ember at the horizon */
+    const geo = new THREE.SphereGeometry(210, 20, 12)
+    const pos = geo.attributes.position
+    const colors = new Float32Array(pos.count * 3)
+    const zen = new THREE.Color(0x1d2438)
+    const mid = new THREE.Color(0x3a4258)
+    const hor = new THREE.Color(0x8a5a3a)
+    const v = new THREE.Vector3()
+    for (let i = 0; i < pos.count; i++) {
+      v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize()
+      const up = Math.max(0, v.y) // 0 at horizon → 1 at zenith
+      const west = Math.max(0, -v.x) // the sunset side
+      const c = up < 0.28
+        ? mid.clone().lerp(hor, ((0.28 - up) / 0.28) * (0.45 + west * 0.55))
+        : mid.clone().lerp(zen, Math.min(1, (up - 0.28) / 0.5))
+      colors[i * 3] = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    const dome = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false }))
+    this.group.add(dome)
+
+    /* the moon — pale, high, square */
+    const moon = new THREE.Mesh(
+      new THREE.BoxGeometry(7, 7, 0.5),
+      new THREE.MeshBasicMaterial({ color: 0xe8ecf2, fog: false })
+    )
+    moon.position.set(-95, 105, -110)
+    moon.lookAt(0, 0, 0)
+    this.group.add(moon)
+
+    /* faint early stars */
+    const starN = 150
+    const sp = new Float32Array(starN * 3)
+    const r = mulberry32(4242)
+    for (let i = 0; i < starN; i++) {
+      const a = r() * Math.PI * 2
+      const el = 0.25 + r() * 0.7
+      const rad = 195
+      sp[i * 3] = Math.cos(a) * rad * Math.cos(el)
+      sp[i * 3 + 1] = Math.sin(el) * rad
+      sp[i * 3 + 2] = Math.sin(a) * rad * Math.cos(el)
+    }
+    const sg = new THREE.BufferGeometry()
+    sg.setAttribute('position', new THREE.BufferAttribute(sp, 3))
+    const stars = new THREE.Points(
+      sg,
+      new THREE.PointsMaterial({ color: 0xcfd6e4, size: 0.9, fog: false, transparent: true, opacity: 0.75 })
+    )
+    this.group.add(stars)
+
+    /* a few flat clouds drifting above the landmarks */
+    const cloudMat = new THREE.MeshBasicMaterial({ color: 0x5a6478, transparent: true, opacity: 0.5, fog: false })
+    for (const [cx, cy, cz, sx, sz] of [
+      [-40, 46, -20, 16, 8], [20, 49, -35, 20, 9], [45, 47, 15, 14, 7],
+      [-15, 50, 35, 18, 8], [5, 48, -5, 12, 6], [-50, 47, 10, 13, 7],
+    ] as const) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(sx, 1.2, sz), cloudMat)
+      c.position.set(cx, cy, cz)
+      this.group.add(c)
+    }
+  }
+}
+
+/* ================= math helpers ================= */
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t
+}
+function smoothstep(e0: number, e1: number, x: number) {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
+  return t * t * (3 - 2 * t)
+}

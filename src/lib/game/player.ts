@@ -4,7 +4,7 @@ import {
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
-import type { WorldV2 } from './worldV2'
+import type { WorldV3 } from './worldV3'
 import type { Game, PlayerStrikeDef } from './game'
 import type { DmgType, RollTier } from './items'
 
@@ -41,7 +41,7 @@ export interface PlayerCtx {
   input: Input
   camYaw: number
   dt: number
-  world: WorldV2
+  world: WorldV3
   game: Game
 }
 
@@ -645,7 +645,7 @@ export class Player {
 
   /** axis-separated blocky collision — walls stop the body, one-block
       steps auto-climb, cliffs are walls but drops are always allowed */
-  private slide(world: WorldV2, dx: number, dz: number) {
+  private slide(world: WorldV3, dx: number, dz: number) {
     const r = 0.28
     if (dx !== 0) {
       const nx = this.pos.x + dx
@@ -667,7 +667,7 @@ export class Player {
     }
   }
 
-  private resolveGround(world: WorldV2, dt: number, sinking: boolean) {
+  private resolveGround(world: WorldV3, dt: number, sinking: boolean) {
     const ground = world.supportAt(this.pos.x, this.pos.z, this.pos.y)
     if (this.pos.y > ground + 0.02) {
       this.vy -= 24 * dt

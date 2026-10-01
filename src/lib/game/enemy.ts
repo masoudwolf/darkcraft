@@ -8,14 +8,15 @@ import {
   resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
 } from './models'
 import {
-  V2_BONFIRE,
-  V2_BOSS1_GATE_Z,
-  V2_GATE2,
-  V2_BOSS1_CENTER,
-  V2_BOSS2_CENTER,
-  V2_HALF,
-  type WorldV2,
-} from './worldV2'
+  V3_BONFIRE,
+  V3_BOSS1_GATE,
+  V3_BOSS1_ARENA,
+  V3_GATE2,
+  V3_BOSS2_CENTER,
+  V3_HALF,
+  V3_LAVA_POOLS,
+  type WorldV3,
+} from './worldV3'
 import type { Game } from './game'
 import type { Player } from './player'
 
@@ -63,7 +64,7 @@ export class Enemy {
   private stunDur = 0.38
   /** progress of the last stagger beat (so dust FX fire exactly once) */
   protected staggerBeat = 0
-  world?: WorldV2
+  world?: WorldV3
   /** the owning game — gives mobs knowledge of closed gates & arena walls */
   game?: import('./game').Game
 
@@ -175,7 +176,7 @@ export class Enemy {
     while (angDiff < -Math.PI) angDiff += Math.PI * 2
     // bonfire safe zone – hollows will not pursue the unkindled who rest
     const playerSafe =
-      Math.hypot(player.pos.x - V2_BONFIRE.x, player.pos.z - V2_BONFIRE.z) < 5.5
+      Math.hypot(player.pos.x - V3_BONFIRE.x, player.pos.z - V3_BONFIRE.z) < 5.5
     // a closed fog gate blinds and separates — nobody sees or swings across
     const sealed = this.gateSeals(game, player.pos.x, player.pos.z)
 
@@ -503,19 +504,20 @@ export class Enemy {
       across the wall, so nobody “hits through” the sealed gate) */
   protected gateSeals(game: Game | undefined, px: number, pz: number): boolean {
     if (!game) return false
-    // the plaza gate (x≈3): sight across the mist line is blind
+    // the parish forecourt gate (x≈−32): sight across the mist line is blind
+    const g1c = (V3_BOSS1_GATE.x0 + V3_BOSS1_GATE.x1) / 2
     if (!game.bossFell &&
-      Math.abs(this.pos.x - 3) < 3.4 && Math.abs(px - 3) < 3.4 &&
-      (this.pos.z > V2_BOSS1_GATE_Z) !== (pz > V2_BOSS1_GATE_Z)) return true
-    // the caldera breach (x≈40): same, across z≈0
+      Math.abs(this.pos.x - g1c) < 8.2 && Math.abs(px - g1c) < 8.2 &&
+      (this.pos.z > V3_BOSS1_GATE.z) !== (pz > V3_BOSS1_GATE.z)) return true
+    // the fortress gatehouse (x≈34): same, across the gate line
     if (!game.boss2Fell &&
-      Math.abs(this.pos.x - V2_GATE2.x) < 2.8 && Math.abs(px - V2_GATE2.x) < 2.8 &&
-      (this.pos.z > V2_GATE2.z) !== (pz > V2_GATE2.z)) return true
+      Math.abs(this.pos.x - V3_GATE2.x) < 3.4 && Math.abs(px - V3_GATE2.x) < 3.4 &&
+      (this.pos.z > V3_GATE2.z) !== (pz > V3_GATE2.z)) return true
     return false
   }
 
   protected clamp() {
-    const lim = V2_HALF - 1.6
+    const lim = V3_HALF - 1.6
     this.pos.x = Math.max(-lim, Math.min(lim, this.pos.x))
     this.pos.z = Math.max(-lim, Math.min(lim, this.pos.z))
     // closed fog gates are walls for the undead too — and the seal is
@@ -523,44 +525,37 @@ export class Enemy {
     // the south stays south. (The old clamp shoved everyone south, so
     // mobs on the far side teleported straight through the mist.)
     if (this.game) {
-      if (!this.game.bossFell && Math.abs(this.pos.x - 3) < 3.0 &&
-        this.pos.z > V2_BOSS1_GATE_Z - 0.55 && this.pos.z < V2_BOSS1_GATE_Z + 0.65
+      const g1c = (V3_BOSS1_GATE.x0 + V3_BOSS1_GATE.x1) / 2
+      if (!this.game.bossFell && Math.abs(this.pos.x - g1c) < 8.0 &&
+        this.pos.z > V3_BOSS1_GATE.z - 0.55 && this.pos.z < V3_BOSS1_GATE.z + 0.65
       ) {
-        this.pos.z = this.pos.z < V2_BOSS1_GATE_Z ? V2_BOSS1_GATE_Z - 0.55 : V2_BOSS1_GATE_Z + 0.65
+        this.pos.z = this.pos.z < V3_BOSS1_GATE.z ? V3_BOSS1_GATE.z - 0.55 : V3_BOSS1_GATE.z + 0.65
       }
-      if (!this.game.boss2Fell && Math.abs(this.pos.x - V2_GATE2.x) < 2.2 &&
-        this.pos.z > V2_GATE2.z - 0.55 && this.pos.z < V2_GATE2.z + 0.65
+      if (!this.game.boss2Fell && Math.abs(this.pos.x - V3_GATE2.x) < 2.2 &&
+        this.pos.z > V3_GATE2.z - 0.55 && this.pos.z < V3_GATE2.z + 0.65
       ) {
-        this.pos.z = this.pos.z < V2_GATE2.z ? V2_GATE2.z - 0.55 : V2_GATE2.z + 0.65
+        this.pos.z = this.pos.z < V3_GATE2.z ? V3_GATE2.z - 0.55 : V3_GATE2.z + 0.65
       }
     }
     // the molten ground repels the undead — they skirt the shores of the
-    // caldera lake and the wastes pools, never wade in
+    // wastes pools, never wade in
     if (this.world && this.world.isLava(Math.round(this.pos.x), Math.round(this.pos.z))) {
-      if (Math.hypot(this.pos.x - V2_BOSS2_CENTER.x, this.pos.z - V2_BOSS2_CENTER.z) < 16) {
-        // the caldera lake: push back toward the arena island
-        const dx = this.pos.x - V2_BOSS2_CENTER.x
-        const dz = this.pos.z - V2_BOSS2_CENTER.z
-        const l = Math.hypot(dx, dz) || 1
-        this.pos.x -= (dx / l) * 1.4
-        this.pos.z -= (dz / l) * 1.4
-      } else {
-        // the two sunken wastes pools: out to the nearest edge
-        for (const p of [[26, 10, 28, 12], [46, 14, 48, 15]] as const) {
-          const cx = (p[0] + p[2]) / 2 + 0.5
-          const cz = (p[1] + p[3]) / 2 + 0.5
-          const hw = (p[2] - p[0]) / 2 + 0.8
-          const hh = (p[3] - p[1]) / 2 + 0.8
-          const dx = this.pos.x - cx
-          const dz = this.pos.z - cz
-          if (Math.abs(dx) < hw && Math.abs(dz) < hh) {
-            const pxo = hw - Math.abs(dx)
-            const pzo = hh - Math.abs(dz)
-            if (pxo < pzo) this.pos.x += (dx >= 0 ? 1 : -1) * pxo
-            else this.pos.z += (dz >= 0 ? 1 : -1) * pzo
-          }
+      let bd = Infinity
+      let bx = this.pos.x + 1
+      let bz = this.pos.z
+      for (const [lx, lz] of V3_LAVA_POOLS) {
+        const d = Math.hypot(this.pos.x - lx, this.pos.z - lz)
+        if (d < bd) {
+          bd = d
+          bx = lx
+          bz = lz
         }
       }
+      const dx = this.pos.x - bx
+      const dz = this.pos.z - bz
+      const l = Math.hypot(dx, dz) || 1
+      this.pos.x -= (dx / l) * 1.4
+      this.pos.z -= (dz / l) * 1.4
     }
   }
 
@@ -900,8 +895,8 @@ export class BossEnemy extends Enemy {
   protected clamp() {
     super.clamp()
     if (this.alive) {
-      this.pos.x = Math.max(V2_BOSS1_CENTER.x - 7.4, Math.min(V2_BOSS1_CENTER.x + 7.4, this.pos.x))
-      this.pos.z = Math.max(-27.2, Math.min(V2_BOSS1_GATE_Z - 1.0, this.pos.z))
+      this.pos.x = Math.max(V3_BOSS1_ARENA.x0 + 0.4, Math.min(V3_BOSS1_ARENA.x1 - 0.4, this.pos.x))
+      this.pos.z = Math.max(V3_BOSS1_ARENA.z0 + 0.4, Math.min(V3_BOSS1_ARENA.z1 - 0.4, this.pos.z))
     }
   }
 }
@@ -1704,8 +1699,8 @@ export class BossFlameEnemy extends Enemy {
   protected clamp() {
     super.clamp()
     if (this.alive) {
-      this.pos.x = Math.max(V2_BOSS2_CENTER.x - 6.4, Math.min(V2_BOSS2_CENTER.x + 6.4, this.pos.x))
-      this.pos.z = Math.max(V2_BOSS2_CENTER.z - 6.4, Math.min(V2_BOSS2_CENTER.z + 6.4, this.pos.z))
+      this.pos.x = Math.max(V3_BOSS2_CENTER.x - 6.4, Math.min(V3_BOSS2_CENTER.x + 6.4, this.pos.x))
+      this.pos.z = Math.max(V3_BOSS2_CENTER.z - 6.4, Math.min(V3_BOSS2_CENTER.z + 6.4, this.pos.z))
     }
   }
 }

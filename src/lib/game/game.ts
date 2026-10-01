@@ -1,17 +1,19 @@
 import * as THREE from 'three'
 import { Engine } from './engine'
 import {
-  WorldV2,
-  V2_BONFIRE as BONFIRE,
-  V2_MERCHANT as MERCHANT,
-  V2_BOSS1_CENTER as BOSS_CENTER,
-  V2_BOSS1_GATE_Z as GATE_Z,
-  V2_GATE2 as GATE2,
-  V2_BOSS2_CENTER as BOSS2_CENTER,
-  V2_PYRO_ITEM as PYRO_ITEM,
-  V2_HALF,
-  V2_SURF_NAMES,
-} from './worldV2'
+  WorldV3,
+  V3_BONFIRE as BONFIRE,
+  V3_MERCHANT as MERCHANT,
+  V3_BOSS1_CENTER as BOSS_CENTER,
+  V3_BOSS1_GATE as GATE1,
+  V3_BOSS1_ARENA as ARENA1,
+  V3_GATE2 as GATE2,
+  V3_BOSS2_CENTER as BOSS2_CENTER,
+  V3_PYRO_ITEM as PYRO_ITEM,
+  V3_LAVA_POOLS as LAVA_POOLS,
+  V3_HALF,
+  V3_SURF_NAMES,
+} from './worldV3'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
@@ -879,7 +881,7 @@ class Arrow {
       this.game.recoverArrow(this)
       return true
     }
-    if (this.t > 3.2 || Math.abs(this.pos.x) > V2_HALF - 1 || Math.abs(this.pos.z) > V2_HALF - 1) return false
+    if (this.t > 3.2 || Math.abs(this.pos.x) > V3_HALF - 1 || Math.abs(this.pos.z) > V3_HALF - 1) return false
 
     /* ---- player-fired arrows hunt MOBS ---- */
     if (this.fromPlayer) {
@@ -1207,7 +1209,7 @@ class LootDrop {
 
 export class Game {
   engine: Engine
-  world: WorldV2
+  world: WorldV3
   player: Player
   sfx = new Sfx()
   enemies: Enemy[] = []
@@ -1305,15 +1307,16 @@ export class Game {
     ;(window as unknown as { __minesouls?: Game }).__minesouls = this
     this.loadSettings()
 
-    // scene setup — far fog so the parish bell tower stays visible from the hub
+    // scene setup — dusk atmosphere: bright enough to read every region,
+    // warm enough to keep the Dark Souls mood (V2's midnight hid the map)
     const scene = this.engine.scene
-    scene.background = new THREE.Color(0x101720)
-    scene.fog = new THREE.Fog(0x101720, 36, 150)
+    scene.background = new THREE.Color(0x2b3242)
+    scene.fog = new THREE.Fog(0x2b3242, 46, 175)
 
-    const hemi = new THREE.HemisphereLight(0x38445c, 0x2a1c10, 0.75)
+    const hemi = new THREE.HemisphereLight(0xa8b2ce, 0x64513a, 1.4)
     scene.add(hemi)
-    const sun = new THREE.DirectionalLight(0xffd9a0, 1.25)
-    sun.position.set(34, 64, 26)
+    const sun = new THREE.DirectionalLight(0xffcf96, 1.55)
+    sun.position.set(-52, 58, 22)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
     sun.shadow.autoUpdate = false
@@ -1327,7 +1330,7 @@ export class Game {
     sun.shadow.bias = -0.0005
     scene.add(sun)
 
-    this.world = new WorldV2()
+    this.world = new WorldV3()
     scene.add(this.world.group)
 
     // bonfire decor: stuck sword + light + flame particles
@@ -1451,14 +1454,14 @@ export class Game {
 
     // enemies
     // the hollows — placed like a director, not a dice roll: they haunt
-    // the aqueduct, the gate square, the burg streets and the ravine
+    // their own village street, door to door, the way they lived
     const spawnPts: [number, number][] = [
-      [0, 17],   // under the aqueduct's arches, where the old camp cooled
-      [4, 9],    // the gate square, by the overturned cart
-      [4, -4],   // the main street of the burg
-      [-7, -4],  // the alley mouth
-      [2, -17],  // the upper street, one door from the fog
-      [-20, 4],  // the ravine, wading by the fallen statue head
+      [-41, 20],  // by the well square's west corner, still sweeping ash
+      [-35, 17],  // across the square, facing its old neighbour
+      [-38, 14],  // the well, circling the water it can't drink
+      [-43, 17],  // the gap between the two west houses
+      [-33, 25],  // the village's south fence gap
+      [-38, 9],   // the street's north end, back to the parish ramp
     ]
     for (const [x, z] of spawnPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1475,9 +1478,9 @@ export class Game {
 
     // creepers — failed vessels of ember, coiled in the world's veins
     const creeperPts: [number, number][] = [
-      [2, 13],   // the aqueduct camp — a cold fire and a bad idea
-      [-6, -11], // deep in the back alley
-      [9, -13],  // the upper square, by the well
+      [-45, 18],  // behind the west houses, where the field wall bends
+      [-30, 25],  // by the south fence, east of House B
+      [-40, 9],   // the lane below the woodshed
     ]
     for (const [x, z] of creeperPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1488,18 +1491,17 @@ export class Game {
       this.enemies.push(c)
     }
 
-    // skeleton archers — oath-keepers at their old posts: the graveyard
-    // gate, the broken fortress yard, and the road north to the caldera
-    // (short sight on the yard post so the fortress gate stays fair)
+    // skeleton archers — oath-keepers at their old posts: the parish
+    // arrival, the graveyard gate, and the fortress yard
     const skelPts: [number, number][] = [
-      [-22, -21], // outside the graveyard gate, on the parish slope
-      [35, 13],   // the cinder fortress yard
-      [33, 19],   // the wastes road bend
+      [-39, -3],  // the parish ramp, covering the climb with the long sight
+      [-21, -21], // outside the graveyard gate (short sight — the boss yard stays fair)
+      [44, 14],   // the east wastes, by the second lava pool
     ]
     for (const [x, z] of skelPts) {
       const p = new THREE.Vector3(x, 0, z)
       p.y = this.world.surfaceAt(x, z)
-      const s = new SkeletonEnemy(scene, p, x === 35 && z === 13 ? 10 : 13.5)
+      const s = new SkeletonEnemy(scene, p, x === -21 && z === -21 ? 9 : 13.5)
       s.world = this.world
       s.game = this
       this.enemies.push(s)
@@ -1508,9 +1510,9 @@ export class Game {
     // wither skeletons — the Ash Wastes guards; their heavy grey blades
     // chew through shields, so roll instead of block
     const witherPts: [number, number][] = [
-      [27, 22], // the cinder gatehouse
-      [31, 11], // the fortress west wall
-      [38, 8],  // the fortress north approach
+      [28, 18],  // the wastes road, by the first lava pool's rim
+      [34, -3],  // the fortress gate apron
+      [26, 10],  // the ash flats west of the road
     ]
     for (const [x, z] of witherPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1523,8 +1525,8 @@ export class Game {
 
     // blazes — floating sentries spitting fireballs over the wastes
     const blazePts: [number, number][] = [
-      [28, 12], // over the ash flats
-      [41, 3],  // above the caldera bridge, by the breach
+      [26, 8],   // over the ash flats by the wayside shrine
+      [48, -2],  // over the far ash, watching the fortress' east wall
     ]
     for (const [x, z] of blazePts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -2300,18 +2302,18 @@ export class Game {
       this.rest()
       return
     }
-    // fog gate 1 — the zombie knight (the plaza gate, at the top of the town)
-    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 0.4 &&
-      this.player.pos.x > 0.4 && this.player.pos.x < 5.6
+    // fog gate 1 — the zombie knight (the parish forecourt gate)
+    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE1.z + 3.2 && this.player.pos.z > GATE1.z - 0.4 &&
+      this.player.pos.x > GATE1.lane0 && this.player.pos.x < GATE1.lane1
     ) {
       this.fogPassT = 0.75
       this.sfx.bossRoar()
       return
     }
-    // fog gate 2 — the Flame King (the caldera breach)
+    // fog gate 2 — the Flame King (the fortress gatehouse)
     if (!this.boss2Active && !this.boss2Fell &&
-      Math.abs(this.player.pos.x - GATE2.x) < 2.3 &&
-      this.player.pos.z < 2.7 && this.player.pos.z > -0.5
+      Math.abs(this.player.pos.x - GATE2.x) < 2.0 &&
+      this.player.pos.z < GATE2.z + 3.2 && this.player.pos.z > GATE2.z - 0.4
     ) {
       this.fogPass2T = 0.75
       this.sfx.bossRoar()
@@ -2940,13 +2942,13 @@ export class Game {
 
     // pre-render the blocky terrain once (1px per block, V2 world)
     const t = document.createElement('canvas')
-    const H = V2_HALF * 2
+    const H = V3_HALF * 2
     t.width = t.height = H
     const tc = t.getContext('2d')!
-    for (let z = -V2_HALF; z < V2_HALF; z++) {
-      for (let x = -V2_HALF; x < V2_HALF; x++) {
+    for (let z = -V3_HALF; z < V3_HALF; z++) {
+      for (let x = -V3_HALF; x < V3_HALF; x++) {
         const h = this.world.getH(x, z)
-        const s = V2_SURF_NAMES[this.world.surfAt(x, z)]
+        const s = V3_SURF_NAMES[this.world.surfAt(x, z)]
         if (s === 'lava') tc.fillStyle = '#ff7a1f'
         else if (s === 'water') tc.fillStyle = '#3f6a8a'
         else if (s === 'nether') tc.fillStyle = `rgb(${74 + h * 4},${30 + h * 2},${24 + h * 2})`
@@ -2955,7 +2957,7 @@ export class Game {
         else if (s === 'cobble') tc.fillStyle = `rgb(${110 + h * 2},${106 + h * 2},${96 + h * 2})`
         else if (s === 'dirt') tc.fillStyle = `rgb(${100 + h * 4},${72 + h * 3},${44 + h * 2})`
         else tc.fillStyle = `rgb(${40 + h * 5},${78 + h * 9},${28 + h * 4})`
-        tc.fillRect(x + V2_HALF, z + V2_HALF, 1, 1)
+        tc.fillRect(x + V3_HALF, z + V3_HALF, 1, 1)
       }
     }
     this.mapTerrain = t
@@ -2971,9 +2973,9 @@ export class Game {
     const ctx = this.mapCtx
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(this.mapTerrain, 0, 0, 132, 132)
-    const S = 132 / (V2_HALF * 2)
-    const px = (x: number) => (x + V2_HALF) * S
-    const pz = (z: number) => (z + V2_HALF) * S
+    const S = 132 / (V3_HALF * 2)
+    const px = (x: number) => (x + V3_HALF) * S
+    const pz = (z: number) => (z + V3_HALF) * S
 
     // bonfire — warm beacon
     ctx.fillStyle = '#ffb347'
@@ -3111,23 +3113,23 @@ export class Game {
 
   private clampPlayer() {
     const p = this.player.pos
-    const lim = V2_HALF - 1.6
+    const lim = V3_HALF - 1.6
     p.x = Math.max(-lim, Math.min(lim, p.x))
     p.z = Math.max(-lim, Math.min(lim, p.z))
-    // fog gate 1 blocks the whole plaza width before the trigger — the
+    // fog gate 1 blocks the whole gate span before the trigger — the
     // arena is sealed, no slipping around the mist's soft edges
     if (!this.bossActive && !this.bossFell && this.fogPassT <= 0 && !this.player.busy) {
-      if (p.z < GATE_Z + 0.55 && p.x > -8.6 && p.x < 8.6) p.z = GATE_Z + 0.55
+      if (p.z < GATE1.z + 0.55 && p.x > GATE1.x0 && p.x < GATE1.x1) p.z = GATE1.z + 0.55
     }
-    // fog gate 2 seals the bridge lane into the caldera
+    // fog gate 2 seals the gatehouse mouth
     if (!this.boss2Active && !this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
-      if (p.z < 0.6 && p.x > GATE2.x - 3.4 && p.x < GATE2.x + 3.4) p.z = 0.6
+      if (p.z < GATE2.z + 0.55 && Math.abs(p.x - GATE2.x) < 3.4) p.z = GATE2.z + 0.55
     }
     // arena barriers while fighting — held just short of the fog so the
     // player can never stand inside the mist
     if (this.bossActiveBarrier && !this.bossFell) {
-      p.x = Math.max(BOSS_CENTER.x - 7.6, Math.min(BOSS_CENTER.x + 7.6, p.x))
-      p.z = Math.max(-27.2, Math.min(GATE_Z - 0.8, p.z))
+      p.x = Math.max(ARENA1.x0, Math.min(ARENA1.x1, p.x))
+      p.z = Math.max(ARENA1.z0, Math.min(ARENA1.z1, p.z))
     }
     if (this.boss2Barrier && !this.boss2Fell) {
       p.x = Math.max(BOSS2_CENTER.x - 7.2, Math.min(BOSS2_CENTER.x + 7.2, p.x))
@@ -3183,15 +3185,15 @@ export class Game {
     if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 2.7) {
       return 'گفتگو با بازرگان'
     }
-    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 0.4 &&
-      this.player.pos.x > 0.4 && this.player.pos.x < 5.6
+    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE1.z + 3.2 && this.player.pos.z > GATE1.z - 0.4 &&
+      this.player.pos.x > GATE1.lane0 && this.player.pos.x < GATE1.lane1
     ) {
       return 'عبور از دیوار مه'
     }
     if (
       !this.boss2Active && !this.boss2Fell &&
-      Math.abs(this.player.pos.x - GATE2.x) < 2.3 &&
-      this.player.pos.z < 2.7 && this.player.pos.z > -0.5
+      Math.abs(this.player.pos.x - GATE2.x) < 2.0 &&
+      this.player.pos.z < GATE2.z + 3.2 && this.player.pos.z > GATE2.z - 0.4
     ) {
       return 'عبور از دیوار مه دوم'
     }
