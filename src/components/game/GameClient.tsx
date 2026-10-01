@@ -687,6 +687,8 @@ export default function GameClient() {
     const g = new Game(containerRef.current!)
     gameRef.current = g
     g.onState = (s) => setHud(s)
+    // debug/QA hook — lets external test harnesses inspect live game state
+    ;(window as unknown as { __minesouls?: Game }).__minesouls = g
     setSettings({ ...g.settings })
     const raf = requestAnimationFrame(() => {
       setIsTouch(

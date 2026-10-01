@@ -1599,6 +1599,11 @@ export class Game {
     this.emit(true)
   }
 
+  /** world-events (boss stagger beats, knee slams) can jolt the camera too */
+  bumpShake(v: number) {
+    this.shake = Math.max(this.shake, v)
+  }
+
   /* ================= BOSS 2 / PYROMANCY EVENTS ================= */
 
   onBoss2Intro(pos: THREE.Vector3) {

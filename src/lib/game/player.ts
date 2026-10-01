@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock, animCast,
+  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock, animBlockWalk, animCast,
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
@@ -360,13 +360,15 @@ export class Player {
         this.pos.x += mx * WALK_SPEED * 0.42 * dt
         this.pos.z += mz * WALK_SPEED * 0.42 * dt
         this.targetYaw = Math.atan2(mx, mz)
+        // guarding on the move: legs march, shield stays up
+        animBlockWalk(this.h, this.animT)
       } else {
         // standing guard: anchor the shield to the camera's forward — the
         // block arc then reliably covers whatever the player is looking at
         // (stale last-move yaw made hits sneak "through" the shield)
         this.targetYaw = Math.atan2(-Math.sin(camYaw), -Math.cos(camYaw))
+        animBlock(this.h, this.animT)
       }
-      animBlock(this.h, this.animT)
       // stale attack input is discarded while guarding
       input.consume('LMB')
       input.consume('HEAVY')

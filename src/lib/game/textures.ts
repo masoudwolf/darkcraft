@@ -144,59 +144,6 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
       px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,232,150)', 2, 2)
     }
   })
-  /* fog-gate mist — layered blue-grey wisps with a soft vignette so the
-     wall reads as living fog instead of a flat white poster */
-  const fogTexA = makeTex(32, 22, (c, r, s) => {
-    const img = c.createImageData(s, s)
-    for (let y = 0; y < s; y++) {
-      for (let x = 0; x < s; x++) {
-        const i = (y * s + x) * 4
-        // soft oval vignette — edges dissolve to nothing
-        const dx = (x / s - 0.5) * 2
-        const dy = (y / s - 0.5) * 2
-        const d = Math.sqrt(dx * dx + dy * dy)
-        let vig = 1 - Math.max(0, Math.min(1, (d - 0.45) / 0.55))
-        vig = vig * vig * (3 - 2 * vig)
-        // billowing wisp bands
-        const wisp =
-          Math.sin(x * 0.55 + Math.sin(y * 0.4) * 2.2) * 0.5 +
-          Math.sin(y * 0.7 + x * 0.2) * 0.3
-        const n = r()
-        const shade = 128 + wisp * 26 + (n - 0.5) * 34
-        const a = (95 + wisp * 26 + n * 60) * vig
-        img.data[i] = clamp255(shade - 18)
-        img.data[i + 1] = clamp255(shade + 4)
-        img.data[i + 2] = clamp255(shade + 18)
-        img.data[i + 3] = clamp255(a)
-      }
-    }
-    c.putImageData(img, 0, 0)
-  })
-  // second layer — bigger, slower clumps for depth
-  const fogTexB = makeTex(32, 77, (c, r, s) => {
-    const img = c.createImageData(s, s)
-    for (let y = 0; y < s; y++) {
-      for (let x = 0; x < s; x++) {
-        const i = (y * s + x) * 4
-        const dx = (x / s - 0.5) * 2
-        const dy = (y / s - 0.5) * 2
-        const d = Math.sqrt(dx * dx + dy * dy)
-        let vig = 1 - Math.max(0, Math.min(1, (d - 0.3) / 0.7))
-        vig = vig * vig * (3 - 2 * vig)
-        const clump =
-          Math.sin(x * 0.28 + Math.sin(y * 0.22) * 2.6) *
-          Math.cos(y * 0.31 + Math.sin(x * 0.17) * 1.8)
-        const n = r()
-        const shade = 96 + clump * 22 + (n - 0.5) * 22
-        const a = (70 + clump * 30 + n * 40) * vig
-        img.data[i] = clamp255(shade - 12)
-        img.data[i + 1] = clamp255(shade + 2)
-        img.data[i + 2] = clamp255(shade + 14)
-        img.data[i + 3] = clamp255(a)
-      }
-    }
-    c.putImageData(img, 0, 0)
-  })
   // netherrack — the bruised red stone of the Ash Wastes
   const netherTex = makeTex(16, 23, (c, r, s) => {
     fillNoise(c, r, s, [98, 44, 38], 22)
@@ -224,20 +171,6 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     glow: lam(glowTex),
     nether: lam(netherTex),
     lava: new THREE.MeshBasicMaterial({ map: lavaTex }),
-    fog: new THREE.MeshBasicMaterial({
-      map: fogTexA,
-      transparent: true,
-      opacity: 0.92,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-    fog2: new THREE.MeshBasicMaterial({
-      map: fogTexB,
-      transparent: true,
-      opacity: 0.55,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
   }
   return blockMats
 }
@@ -731,4 +664,118 @@ export function characterMaterials(kind: CharKind): CharMats {
     leg,
     all: [side, top, bottom, face, body, arm, leg],
   }
+}
+
+/* ================= FOG-GATE SMOKE (live GPU fog) =================
+
+   The old canvas-texture fog pooled into corners and went patchy —
+   a vignette baked into a tiny bitmap can never fill a wall. This
+   shader fog is the opposite: an fbm noise field whose DENSITY stays
+   uniform across the whole curtain (noise sculpts light and shade,
+   never coverage), billowing slowly in two counter-scrolling layers,
+   with a soft blend into the stone frame only at the outermost edge. */
+
+const FOG_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`
+
+const FOG_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform float uTime;
+uniform float uSeed;
+uniform vec2 uScale;
+uniform vec2 uDrift;
+uniform float uOpacity;
+uniform vec3 uDeep;
+uniform vec3 uMid;
+uniform vec3 uHi;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(234.34, 435.345));
+  p += dot(p, p + 34.23);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+    u.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+  for (int i = 0; i < 5; i++) {
+    v += a * vnoise(p);
+    p = rot * p * 2.03 + vec2(3.7);
+    a *= 0.5;
+  }
+  return v;
+}
+
+void main() {
+  vec2 p = vUv;
+  float t = uTime;
+
+  // two smoke fields drifting in opposite directions; the first one's
+  // fbm WARPS the second so billows roll and fold like real vapour
+  vec2 q1 = p * uScale + vec2(t * uDrift.x, t * uDrift.y) + uSeed;
+  vec2 q2 = p * uScale * 1.9 - vec2(t * uDrift.y * 1.6, t * uDrift.x * 1.1) + uSeed * 1.7 + 11.3;
+  float warp = fbm(q1 * 1.4);
+  float n1 = fbm(q1 + warp * 0.85);
+  float n2 = fbm(q2 + warp * 0.55);
+  float smoke = n1 * 0.62 + n2 * 0.38;
+
+  // UNIFORM body — density stays high everywhere; no holes, no pooling
+  float dens = 0.8 + smoke * 0.2;
+  // the whole curtain breathes, very gently
+  dens *= 0.97 + 0.03 * sin(t * 0.6 + uSeed * 3.0);
+
+  // blend into the stone frame only at the outermost few percent
+  vec2 e = min(p, 1.0 - p);
+  float edge = smoothstep(0.0, 0.09, min(e.x, e.y));
+
+  // colour: slate shadows inside billows, pale mist riding the crests
+  vec3 col = mix(uDeep, uMid, smoothstep(0.28, 0.72, smoke));
+  col = mix(col, uHi, smoothstep(0.66, 0.96, smoke));
+  col += vec3(0.035, 0.04, 0.05) * p.y; // faint lift toward the lintel
+
+  gl_FragColor = vec4(col, dens * edge * uOpacity);
+}
+`
+
+export interface FogMatOptions {
+  seed?: number
+  scale?: [number, number]
+  drift?: [number, number]
+  opacity?: number
+  deep?: number
+  mid?: number
+  hi?: number
+}
+
+export function createFogMaterial(opts: FogMatOptions = {}): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uTime: { value: 0 },
+      uSeed: { value: opts.seed ?? 0 },
+      uScale: { value: new THREE.Vector2(...(opts.scale ?? [2.6, 2.0])) },
+      uDrift: { value: new THREE.Vector2(...(opts.drift ?? [0.05, 0.032])) },
+      uOpacity: { value: opts.opacity ?? 0.96 },
+      uDeep: { value: new THREE.Color(opts.deep ?? 0x39414b) },
+      uMid: { value: new THREE.Color(opts.mid ?? 0x8b97a2) },
+      uHi: { value: new THREE.Color(opts.hi ?? 0xd8dee6) },
+    },
+    vertexShader: FOG_VERT,
+    fragmentShader: FOG_FRAG,
+  })
 }

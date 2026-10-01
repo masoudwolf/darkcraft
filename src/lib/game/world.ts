@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { blockMaterials, mulberry32 } from './textures'
+import { blockMaterials, mulberry32, createFogMaterial } from './textures'
 
 export const WORLD_HALF = 30 // blocks range from -30..29
 export const BONFIRE = { x: 0, z: 14 }
@@ -26,8 +26,8 @@ export class World {
   private heights = new Int8Array(WORLD_HALF * 2 * WORLD_HALF * 2)
   private clouds: { mesh: THREE.Mesh; speed: number }[] = []
   private rng = mulberry32(1337)
-  /** every mist plane, tagged with which gate it belongs to + scroll speed */
-  private fogLayers: { mesh: THREE.Mesh; gate: 1 | 2; sx: number; sy: number }[] = []
+  /** every fog curtain plane: which gate, its own clock, and drift speed */
+  private fogLayers: { mesh: THREE.Mesh; gate: 1 | 2; t: number; sx: number; sy: number }[] = []
 
   constructor() {
     this.genHeightmap()
@@ -330,42 +330,43 @@ export class World {
 
   private buildFogGate() {
     const h = this.heights[this.idx(0, GATE_Z)]
-    const addLayer = (base: THREE.Material, w: number, hh: number, z: number, gate: 1 | 2, sx: number, sy: number) => {
-      // per-layer clones so each plane scrolls with its own offset (parallax)
-      const mat = base.clone()
-      if ((mat as THREE.MeshBasicMaterial).map) {
-        ;(mat as THREE.MeshBasicMaterial).map = (mat as THREE.MeshBasicMaterial).map!.clone()
-        ;(mat as THREE.MeshBasicMaterial).map!.needsUpdate = true
-      }
+    /* three live-GPU smoke curtains, slightly offset in depth so the
+       parallax makes the fog feel like a volume instead of a poster.
+       Each has its own seed, scale and drift → they never sync up. */
+    const addLayer = (
+      w: number, hh: number, z: number, gate: 1 | 2,
+      seed: number, scale: [number, number], drift: [number, number], opacity: number
+    ) => {
+      const mat = createFogMaterial({ seed, scale, drift, opacity })
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, hh), mat)
-      mesh.position.set(0, h + 2.7, z)
+      mesh.position.set(0, h + 2.85, z)
       this.group.add(mesh)
-      this.fogLayers.push({ mesh, gate, sx, sy })
+      this.fogLayers.push({ mesh, gate, t: seed * 7, sx: drift[0], sy: drift[1] })
     }
-    // main body + slower echo layers just behind/next to it for real depth
-    addLayer(this.mats.fog, 5.4, 4.2, GATE_Z, 1, 0.05, -0.032)
-    addLayer(this.mats.fog2, 5.9, 4.6, GATE_Z + 0.12, 1, -0.022, 0.05)
-    addLayer(this.mats.fog2, 5.9, 4.6, GATE_Z - 0.12, 1, 0.03, -0.024)
+    const S = 6.0, W = 6.4 // main wall / wider echo curtains
+    addLayer(S, 4.7, GATE_Z, 1, 0.0, [2.6, 2.0], [0.05, -0.032], 0.97)
+    addLayer(W, 5.0, GATE_Z + 0.12, 1, 3.7, [3.4, 2.6], [-0.026, 0.041], 0.55)
+    addLayer(W, 5.0, GATE_Z - 0.12, 1, 8.1, [4.2, 3.1], [0.034, -0.028], 0.5)
   }
 
   /** second fog wall — faces east/west across the corridor in the great wall */
   private buildGate2() {
     const h = this.heights[this.idx(GATE2.x, GATE2.z)]
-    const addLayer = (base: THREE.Material, w: number, hh: number, x: number, gate: 1 | 2, sx: number, sy: number) => {
-      const mat = base.clone()
-      if ((mat as THREE.MeshBasicMaterial).map) {
-        ;(mat as THREE.MeshBasicMaterial).map = (mat as THREE.MeshBasicMaterial).map!.clone()
-        ;(mat as THREE.MeshBasicMaterial).map!.needsUpdate = true
-      }
+    const addLayer = (
+      w: number, hh: number, x: number, gate: 1 | 2,
+      seed: number, scale: [number, number], drift: [number, number], opacity: number
+    ) => {
+      const mat = createFogMaterial({ seed, scale, drift, opacity })
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, hh), mat)
-      mesh.position.set(x, h + 2.7, GATE2.z)
+      mesh.position.set(x, h + 2.85, GATE2.z)
       mesh.rotation.y = Math.PI / 2
       this.group.add(mesh)
-      this.fogLayers.push({ mesh, gate, sx, sy })
+      this.fogLayers.push({ mesh, gate, t: seed * 9, sx: drift[0], sy: drift[1] })
     }
-    addLayer(this.mats.fog, 5.4, 4.2, GATE2.x, 2, 0.05, -0.032)
-    addLayer(this.mats.fog2, 5.9, 4.6, GATE2.x - 0.12, 2, -0.022, 0.05)
-    addLayer(this.mats.fog2, 5.9, 4.6, GATE2.x + 0.12, 2, 0.03, -0.024)
+    const S = 5.6, W = 6.0
+    addLayer(S, 4.7, GATE2.x, 2, 1.9, [2.6, 2.0], [0.05, -0.032], 0.97)
+    addLayer(W, 5.0, GATE2.x - 0.12, 2, 5.3, [3.4, 2.6], [-0.026, 0.041], 0.55)
+    addLayer(W, 5.0, GATE2.x + 0.12, 2, 9.6, [4.2, 3.1], [0.034, -0.028], 0.5)
   }
 
   /* ---------- sky ---------- */
@@ -419,11 +420,11 @@ export class World {
       if (c.mesh.position.x > 50) c.mesh.position.x = -50
     }
     for (const l of this.fogLayers) {
-      const mat = l.mesh.material as THREE.MeshBasicMaterial
-      if (mat.map) {
-        mat.map.offset.x = (mat.map.offset.x + l.sx * dt) % 1
-        mat.map.offset.y = (mat.map.offset.y + l.sy * dt) % 1
-      }
+      // GPU fog: each curtain keeps its own clock; the drift is baked
+      // into the shader as a uniform, so we only advance time here
+      l.t += dt
+      const mat = l.mesh.material as THREE.ShaderMaterial
+      mat.uniforms.uTime.value = l.t
     }
   }
 

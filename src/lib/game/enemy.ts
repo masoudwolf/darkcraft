@@ -53,6 +53,8 @@ export class Enemy {
   private wanderTarget = new THREE.Vector3()
   private strikeDone = false
   private stunDur = 0.38
+  /** progress of the last stagger beat (so dust FX fire exactly once) */
+  protected staggerBeat = 0
   world?: World
   /** the owning game — gives mobs knowledge of closed gates & arena walls */
   game?: import('./game').Game
@@ -93,6 +95,7 @@ export class Enemy {
     this.deathFxPlayed = false
     this.flash = 0
     this.strikeDone = false
+    this.staggerBeat = 0
     setOpacity(this.h, 1)
     setFlash(this.h, 0)
     resetPose(this.h)
@@ -160,6 +163,8 @@ export class Enemy {
     // bonfire safe zone – hollows will not pursue the unkindled who rest
     const playerSafe =
       Math.hypot(player.pos.x - BONFIRE.x, player.pos.z - BONFIRE.z) < 5.5
+    // a closed fog gate blinds and separates — nobody sees or swings across
+    const sealed = this.gateSeals(game, player.pos.x, player.pos.z)
 
     this.cd = Math.max(0, this.cd - dt)
 
@@ -169,7 +174,7 @@ export class Enemy {
           this.idleAnim(this.animT)
           break
         }
-        if (!playerSafe && dist < this.opts.aggro) {
+        if (!playerSafe && !sealed && dist < this.opts.aggro) {
           this.state = 'chase'
           break
         }
@@ -196,7 +201,7 @@ export class Enemy {
         break
       }
       case 'chase': {
-        if (playerSafe) {
+        if (playerSafe || sealed) {
           this.state = 'return'
           break
         }
@@ -230,7 +235,7 @@ export class Enemy {
         break
       }
       case 'windup': {
-        if (this.windupShouldCancel(dist)) {
+        if (this.windupShouldCancel(dist) || sealed) {
           this.state = 'chase'
           break
         }
@@ -450,10 +455,26 @@ export class Enemy {
     let angDiff = angleToPlayer - this.yaw
     while (angDiff > Math.PI) angDiff -= Math.PI * 2
     while (angDiff < -Math.PI) angDiff += Math.PI * 2
-    if (dist < reach && Math.abs(angDiff) < 1.15) {
+    if (dist < reach && Math.abs(angDiff) < 1.15 &&
+      !this.gateSeals(game, player.pos.x, player.pos.z)
+    ) {
       const dmg = Math.round(this.opts.dmg * (0.9 + Math.random() * 0.2))
       if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
     }
+  }
+
+  /** true when a CLOSED fog gate stands between this hollow and the target —
+      the mist blinds sight, aggression and swings alike (nothing engages
+      across the wall, so nobody “hits through” the sealed gate) */
+  protected gateSeals(game: Game | undefined, px: number, pz: number): boolean {
+    if (!game) return false
+    if (!game.bossFell &&
+      Math.abs(this.pos.x) < 5.2 && Math.abs(px) < 5.2 &&
+      (this.pos.z > GATE_Z) !== (pz > GATE_Z)) return true
+    if (!game.boss2Fell &&
+      Math.abs(this.pos.z - GATE2.z) < 3.4 && Math.abs(pz - GATE2.z) < 3.4 &&
+      (this.pos.x > GATE2.x) !== (px > GATE2.x)) return true
+    return false
   }
 
   protected clamp() {
@@ -464,13 +485,15 @@ export class Enemy {
     if (Math.abs(this.pos.x - ASH_WALL_X) < 0.6 && !(this.pos.z > 15.8 && this.pos.z < 20.2)) {
       this.pos.x = this.pos.x < ASH_WALL_X ? ASH_WALL_X - 0.6 : ASH_WALL_X + 0.6
     }
-    // closed fog gates are walls for the undead too — nothing walks through
-    // the mist until its lord has fallen (this.game is set by the Game)
+    // closed fog gates are walls for the undead too — and the seal is
+    // DIRECTIONAL: whoever approaches from the north stays north, from
+    // the south stays south. (The old clamp shoved everyone south, so
+    // mobs on the far side teleported straight through the mist.)
     if (this.game) {
       if (!this.game.bossFell && Math.abs(this.pos.x) < 4.6 &&
         this.pos.z > GATE_Z - 0.55 && this.pos.z < GATE_Z + 0.65
       ) {
-        this.pos.z = GATE_Z + 0.65
+        this.pos.z = this.pos.z < GATE_Z ? GATE_Z - 0.55 : GATE_Z + 0.65
       }
       if (!this.game.boss2Fell && Math.abs(this.pos.z - GATE2.z) < 2.6 &&
         Math.abs(this.pos.x - GATE2.x) < 0.95
@@ -776,7 +799,29 @@ export class BossEnemy extends Enemy {
   }
 
   protected staggerAnim(p: number) {
-    animStagger(this.h, p)
+    animStagger(this.h, p, this.animT)
+    this.staggerBeats(p, 0x9a8b70)
+  }
+
+  /** fires ground-dust exactly once at the two physical beats of the
+      stagger — the knee slam and the rally push-off — for any boss */
+  protected staggerBeats(p: number, dustColor: number) {
+    const g = this.game
+    if (!g) {
+      this.staggerBeat = 0
+      return
+    }
+    if (p < this.staggerBeat) this.staggerBeat = 0 // a fresh stagger began
+    if (this.staggerBeat < 0.36 && p >= 0.36) {
+      // right knee slams the ground
+      g.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), dustColor, 16, 2.6, 0.55, 0.24)
+      g.bumpShake(0.22)
+    }
+    if (this.staggerBeat < 0.74 && p >= 0.74) {
+      // pushing back up — small kick of dust off the knee
+      g.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 0.25, 0)), dustColor, 9, 2.0, 0.5, 0.2)
+    }
+    this.staggerBeat = Math.max(this.staggerBeat, p)
   }
 
   /* ---- cinematic death ---- */
@@ -905,6 +950,17 @@ export class CreeperEnemy extends Enemy {
     if (dist < 3.4) {
       const dmg = Math.round(this.opts.dmg * (0.9 + Math.random() * 0.2))
       if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+    }
+    // the blast is indiscriminate — every hollow caught inside it burns too
+    // (falloff by distance, bosses shrug most of it off, chains can cascade)
+    for (const e of game.allEnemies) {
+      if (e === this || e.dead) continue
+      const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z)
+      if (d < 3.9) {
+        const fall = 1 - d / 4.4
+        const dmg = Math.max(6, Math.round(this.opts.dmg * 0.9 * fall * (0.9 + Math.random() * 0.2)))
+        e.takeDamage(dmg, game, this.pos.x, this.pos.z)
+      }
     }
     game.onCreeperBoom(this.pos)
     // self-destruct
@@ -1548,7 +1604,10 @@ export class BossFlameEnemy extends Enemy {
   protected roarDur() { return 1.9 }
   protected roarAnim(p: number) { animRoar(this.h, p) }
   protected staggerDur() { return 1.8 }
-  protected staggerAnim(p: number) { animStagger(this.h, p) }
+  protected staggerAnim(p: number) {
+    animStagger(this.h, p, this.animT)
+    this.staggerBeats(p, 0xff8a3a) // the Flame King kicks up ember-ash
+  }
   protected deathDur() { return 1.7 }
   protected deathAnim(p: number) { animBossDead(this.h, p) }
 

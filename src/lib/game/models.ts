@@ -579,6 +579,29 @@ export function animBlock(h: Humanoid, t: number) {
   h.head.rotation.x = 0.06
 }
 
+/** guard-walk: the shield stays welded in front while the legs march,
+    the sword arm counter-swings low and the body rolls over each step.
+    Walking while blocking finally looks alive, not frozen. */
+export function animBlockWalk(h: Humanoid, t: number, f = 1) {
+  resetPose(h)
+  const s = Math.sin(t * 10)
+  const c = Math.cos(t * 10)
+  // marching legs (slightly shorter stride than a free run — you're braced)
+  h.legL.rotation.x = s * 0.58 * f
+  h.legR.rotation.x = -s * 0.58 * f
+  // shield arm locked up, breathing with the brace tremble
+  h.armL.rotation.x = -1.62 + Math.sin(t * 9) * 0.02
+  h.armL.rotation.y = -0.5
+  h.armL.rotation.z = 0.35
+  // sword arm trails low, counter-swinging against the shield arm
+  h.armR.rotation.x = -0.5 + s * 0.3 * f
+  h.armR.rotation.z = -0.3 - c * 0.06
+  h.root.rotation.y = -0.16
+  h.root.rotation.z = c * 0.035
+  h.root.position.y = Math.abs(c) * 0.035 * f
+  h.head.rotation.x = 0.06
+}
+
 export function animDrink(h: Humanoid, p: number) {
   resetPose(h)
   if (p < 0.35) h.armR.rotation.x = lerp(0, -2.5, p / 0.35)
@@ -850,20 +873,77 @@ export function animStomp(h: Humanoid, p: number) {
   }
 }
 
-/** posture broken: heavy slump forward, wobbling, wide open for a punish */
-export function animStagger(h: Humanoid, p: number) {
+/** posture broken — a believable Souls-style stagger told in four beats:
+    1. recoil (0..0.14): the blow rocks the lord back onto his heels — head
+       snaps away, arms flare out, the body lifts off the ground a moment
+    2. crumple (0.14..0.36): balance is lost; he lurches forward and a knee
+       slams the ground (dust beat fires from the boss class here)
+    3. kneel (0.36..0.74): head hangs low, shoulders heave with wounded
+       breathing, the planted sword hand keeps him from face-planting
+    4. rally (0.74..1): a growl pushes him back up — shaking off the cobwebs
+       with a head-wobble, squaring the shoulders for the next exchange
+    `t` is absolute time so breathing stays alive while held in the kneel. */
+export function animStagger(h: Humanoid, p: number, t = 0) {
   resetPose(h)
-  const slump = Math.min(1, p * 3.5) * (1 - Math.max(0, (p - 0.7) / 0.3) * 0.5)
-  const wobble = Math.sin(p * 13) * 0.09 * (1 - p)
-  h.root.rotation.x = 0.52 * slump
-  h.root.rotation.z = wobble
-  h.head.rotation.x = 0.55 * slump
-  h.head.rotation.z = wobble * 1.4
-  h.armL.rotation.x = 0.65 * slump
-  h.armR.rotation.x = 0.6 * slump
-  h.armL.rotation.z = 0.35 * slump
-  h.armR.rotation.z = -0.35 * slump
-  h.root.position.y = -0.1 * slump
+  if (p < 0.14) {
+    // ---- 1. recoil ----
+    const q = easeOut(p / 0.14)
+    h.root.position.y = 0.1 * q
+    h.root.rotation.x = -0.4 * q
+    h.head.rotation.x = -0.62 * q
+    h.armL.rotation.x = -1.5 * q
+    h.armR.rotation.x = -1.7 * q
+    h.armL.rotation.z = 0.85 * q
+    h.armR.rotation.z = -0.85 * q
+    h.legL.rotation.x = -0.5 * q
+    h.legR.rotation.x = 0.25 * q
+  } else if (p < 0.36) {
+    // ---- 2. crumple: lurch down, right knee hits the ground ----
+    const q = (p - 0.14) / 0.22
+    const e = q * q * (3 - 2 * q)
+    h.root.position.y = lerp(0.1, -0.52, e)
+    h.root.rotation.x = lerp(-0.4, 0.24, e)
+    h.root.rotation.z = lerp(0, 0.1, e) // lists to the kneeling side
+    h.legR.rotation.x = lerp(0.25, -1.5, e) // knee folded under
+    h.legL.rotation.x = lerp(-0.5, 0.5, e) // planted leg takes the weight
+    h.legL.rotation.z = lerp(0, 0.12, e)
+    h.armL.rotation.x = lerp(-1.5, 0.7, e)
+    h.armL.rotation.z = lerp(0.85, 0.25, e)
+    h.armR.rotation.x = lerp(-1.7, -1.05, e) // sword hand reaches for the floor
+    h.armR.rotation.z = lerp(-0.85, -0.3, e)
+    h.head.rotation.x = lerp(-0.62, 0.45, e)
+  } else if (p < 0.74) {
+    // ---- 3. kneel: wounded breathing, head hanging ----
+    const breath = Math.sin(t * 3.4)
+    h.root.position.y = -0.52 + breath * 0.02
+    h.root.rotation.x = 0.24 + breath * 0.045
+    h.root.rotation.z = 0.1 + Math.sin(t * 1.6) * 0.05
+    h.legR.rotation.x = -1.5
+    h.legL.rotation.x = 0.5
+    h.legL.rotation.z = 0.12
+    h.armL.rotation.x = 0.7 + breath * 0.12 // dangling arm sways with the heave
+    h.armL.rotation.z = 0.25
+    h.armR.rotation.x = -1.05 + Math.sin(t * 13) * 0.02 // planted, faint tremble
+    h.armR.rotation.z = -0.3
+    h.head.rotation.x = 0.45 + breath * 0.05
+    h.head.rotation.z = Math.sin(t * 1.3) * 0.14 // consciousness pulling back
+  } else {
+    // ---- 4. rally: pushes off the knee, shakes the cobwebs off ----
+    const q = (p - 0.74) / 0.26
+    const e = easeOut(q)
+    h.root.position.y = lerp(-0.52, 0, e)
+    h.root.rotation.x = lerp(0.24, -0.14, Math.min(1, q * 1.4)) * (1 - Math.max(0, q - 0.7) / 0.3)
+    h.root.rotation.z = lerp(0.1, 0, e)
+    h.legR.rotation.x = lerp(-1.5, 0, e)
+    h.legL.rotation.x = lerp(0.5, 0, e)
+    h.legL.rotation.z = lerp(0.12, 0, e)
+    h.armR.rotation.x = lerp(-1.05, 0, e)
+    h.armR.rotation.z = lerp(-0.3, 0, e)
+    h.armL.rotation.x = lerp(0.7, 0, e)
+    h.armL.rotation.z = lerp(0.25, 0, e)
+    h.head.rotation.x = lerp(0.45, 0, e)
+    h.head.rotation.z = Math.sin(q * 9) * 0.15 * (1 - q) // the shake-off
+  }
 }
 
 /** boss death: reels back howling, sinks to its knees, collapses forward */
