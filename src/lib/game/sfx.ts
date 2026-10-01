@@ -231,4 +231,25 @@ export class Sfx {
     this.tone(554, 0.24, 'triangle', 0.22, undefined, 0.14)
     this.tone(166, 0.4, 'sine', 0.22, undefined, 0.05)
   }
+
+  /* ---- boss death finales ---- */
+
+  /** the knight's body bursts into voxels — deep thud + airy soul shimmer rising */
+  soulCollapse() {
+    this.noise(0.4, 0.5, 700, 90)
+    this.tone(70, 0.5, 'sine', 0.5, 30)
+    ;[523, 659, 784, 1046, 1318].forEach((f, i) =>
+      this.tone(f, 0.34, 'triangle', 0.12, undefined, 0.18 + i * 0.1)
+    )
+    this.noise(0.9, 0.1, 2600, 5200, 0.15)
+  }
+
+  /** the Flame King combusts — massive whoosh, deep boom, crackling fade */
+  inferno() {
+    this.noise(0.9, 0.6, 1600, 160)
+    this.tone(64, 0.8, 'sine', 0.55, 24)
+    this.noise(0.25, 0.4, 4200, 900, 0.02)
+    this.tone(120, 0.7, 'sawtooth', 0.14, 55, 0.1)
+    this.noise(1.4, 0.14, 900, 240, 0.35)
+  }
 }

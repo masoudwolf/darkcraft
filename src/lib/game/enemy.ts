@@ -40,6 +40,7 @@ export class Enemy {
   animT = Math.random() * 10
   dead = false
   deathT = 0
+  deathFxPlayed = false
   flash = 0
   isBoss: boolean
   name: string
@@ -84,6 +85,7 @@ export class Enemy {
     this.cd = 0
     this.dead = false
     this.deathT = 0
+    this.deathFxPlayed = false
     this.flash = 0
     this.strikeDone = false
     setOpacity(this.h, 1)
@@ -125,7 +127,13 @@ export class Enemy {
 
     if (this.dead) {
       this.deathT += dt
-      this.deathAnim(Math.min(1, this.stateT / this.deathDur()))
+      const p = Math.min(1, this.stateT / this.deathDur())
+      // at the chosen beat of the fall the lord's body bursts into its death FX
+      if (!this.deathFxPlayed && p >= this.deathFxAt()) {
+        this.deathFxPlayed = true
+        this.spawnDeathFx(game, p)
+      }
+      this.deathAnim(p)
       this.stateT += dt
       const holdT = this.deathDur() + 0.2
       if (this.deathT > holdT) {
@@ -402,6 +410,14 @@ export class Enemy {
   protected deathDur() {
     return 0.9
   }
+
+  /** fall-progress (0..1) at which the body-burst death FX fires; >1 = never */
+  protected deathFxAt(): number {
+    return 2
+  }
+
+  /** the actual burst — bosses override this to erupt into voxels/flames */
+  protected spawnDeathFx(_game: Game, _p: number) {}
 
   protected deathAnim(p: number) {
     animDead(this.h, p)
@@ -719,6 +735,16 @@ export class BossEnemy extends Enemy {
 
   protected deathAnim(p: number) {
     animBossDead(this.h, p)
+  }
+
+  /** the knight bursts into tumbling voxels the moment his body hits the ground */
+  protected deathFxAt() {
+    return 0.74
+  }
+
+  protected spawnDeathFx(game: Game) {
+    this.h.group.visible = false
+    game.onBossCollapse(this.pos, this.h)
   }
 
   protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
@@ -1397,6 +1423,16 @@ export class BossFlameEnemy extends Enemy {
   protected staggerAnim(p: number) { animStagger(this.h, p) }
   protected deathDur() { return 1.7 }
   protected deathAnim(p: number) { animBossDead(this.h, p) }
+
+  /** the Flame King combusts on his knees — white-hot flash, pillar of fire, ember whirl */
+  protected deathFxAt() {
+    return 0.42
+  }
+
+  protected spawnDeathFx(game: Game) {
+    this.h.group.visible = false
+    game.onBossInferno(this.pos, this.h)
+  }
 
   protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
     if (this.pick === 'volley') {

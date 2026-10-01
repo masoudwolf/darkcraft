@@ -3,7 +3,7 @@ import { Engine } from './engine'
 import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS } from './world'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
-import { createSword } from './models'
+import { createSword, type Humanoid } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
 
@@ -206,8 +206,409 @@ class Shockwave {
   }
 }
 
-/* Skeleton arrows — flat blocky projectile, blockable from the front,
-   fully dodgeable with roll i-frames, sticks into the ground briefly. */
+/* The grand finale when a lord falls. Two flavours:
+   - 'collapse': the knight's blocky body erupts into voxels that scatter,
+     tumble and bounce to rest while green soul-wisps stream skyward.
+   - 'inferno': the Flame King combusts — white-hot core flash, a rising
+     pillar of fire, embers whirling upward like a fire whirl, and smoke. */
+class BossDeathFX {
+  private t = 0
+  private life: number
+  private cubes: {
+    mesh: THREE.Mesh
+    vx: number
+    vy: number
+    vz: number
+    sx: number
+    sy: number
+    sz: number
+    size: number
+    restY: number
+    ember: { ang: number; radius: number; angSpd: number; vy: number } | null
+  }[] = []
+  private wisps: THREE.Points | null = null
+  private wispVel: Float32Array = new Float32Array(0)
+  private wispAng: number[] = []
+  private smoke: THREE.Points | null = null
+  private smokeVel: Float32Array = new Float32Array(0)
+  private pillars: {
+    mesh: THREE.Mesh
+    t: number
+    life: number
+    base: number
+    expand: number
+    op: number
+    rise: number
+  }[] = []
+  private ring: THREE.Mesh | null = null
+  private core: THREE.Mesh | null = null
+  private light: THREE.PointLight | null = null
+  private light0 = 0
+  private emberMats: THREE.MeshLambertMaterial[] = []
+  private geos: THREE.BufferGeometry[] = []
+  private mats: THREE.Material[] = []
+
+  constructor(
+    private game: Game,
+    private pos: THREE.Vector3,
+    private mode: 'collapse' | 'inferno',
+    body: Humanoid
+  ) {
+    const scene = game.engine.scene
+    const gy = game.world.surfaceAt(pos.x, pos.z)
+    this.pos.y = gy
+    this.life = mode === 'collapse' ? 2.7 : 3.0
+
+    // palette sampled from the fallen lord's own materials
+    const palette: THREE.Color[] = []
+    body.group.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      const mat = mesh.material as THREE.MeshLambertMaterial | undefined
+      if (mat && mat.color && !palette.some((c) => c.equals(mat.color))) {
+        palette.push(mat.color.clone())
+      }
+    })
+    if (palette.length === 0) palette.push(new THREE.Color(0x4a7a3a))
+
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1)
+    this.geos.push(boxGeo)
+    const count = mode === 'collapse' ? 64 : 66
+    const bs = mode === 'collapse' ? 2.25 : 2.35 // body scale of the fallen lord
+
+    for (let i = 0; i < count; i++) {
+      const baseCol = palette[i % palette.length]
+      const mat = new THREE.MeshLambertMaterial()
+      this.mats.push(mat)
+      if (mode === 'inferno') {
+        const fire = [0xfff3b0, 0xffd25e, 0xff8a2a, 0xff5a1e, 0xffb05e]
+        mat.color.set(fire[i % fire.length]).lerp(baseCol, 0.25)
+        mat.emissive.copy(mat.color)
+        mat.emissiveIntensity = 0.9
+        this.emberMats.push(mat)
+      } else {
+        mat.color.copy(baseCol).multiplyScalar(0.85 + Math.random() * 0.3)
+      }
+      const mesh = new THREE.Mesh(boxGeo, mat)
+      const size =
+        (mode === 'collapse' ? 0.16 + Math.random() * 0.2 : 0.1 + Math.random() * 0.17) *
+        (0.8 + bs * 0.28)
+      mesh.scale.setScalar(size)
+      const a = Math.random() * Math.PI * 2
+      const rr = Math.random() * 0.55 * bs
+      const startX = this.pos.x + Math.cos(a) * rr
+      const startZ = this.pos.z + Math.sin(a) * rr
+      let ember: typeof this.cubes[number]['ember'] = null
+      let vx = 0
+      let vy = 0
+      let vz = 0
+      if (mode === 'collapse') {
+        // burst outward from the body, tumble, bounce on the arena floor
+        const sp = 2.0 + Math.random() * 3.2
+        const a2 = Math.random() * Math.PI * 2
+        vx = Math.cos(a2) * sp
+        vz = Math.sin(a2) * sp
+        vy = 2.4 + Math.random() * 3.8
+      } else {
+        // ember of the fire whirl — spirals upward with accelerating heat
+        ember = {
+          ang: Math.random() * Math.PI * 2,
+          radius: 0.35 + Math.random() * 1.25,
+          angSpd: (Math.random() < 0.5 ? -1 : 1) * (1.6 + Math.random() * 2.6),
+          vy: 1.7 + Math.random() * 2.6,
+        }
+      }
+      mesh.position.set(
+        startX,
+        gy + 0.2 + Math.random() * 1.7 * bs,
+        startZ
+      )
+      mesh.rotation.set(
+        Math.random() * Math.PI,
+        Math.random() * Math.PI,
+        Math.random() * Math.PI
+      )
+      scene.add(mesh)
+      this.cubes.push({
+        mesh,
+        vx,
+        vy,
+        vz,
+        sx: (Math.random() - 0.5) * 14,
+        sy: (Math.random() - 0.5) * 14,
+        sz: (Math.random() - 0.5) * 14,
+        size,
+        restY: gy + size / 2,
+        ember,
+      })
+    }
+
+    if (mode === 'collapse') {
+      // green soul-wisps streaming out of the remains (Minecraft XP style)
+      const n = 36
+      const posArr = new Float32Array(n * 3)
+      this.wispVel = new Float32Array(n * 3)
+      for (let i = 0; i < n; i++) {
+        posArr[i * 3] = this.pos.x + (Math.random() - 0.5) * 1.7
+        posArr[i * 3 + 1] = gy + 0.3 + Math.random() * 2.2
+        posArr[i * 3 + 2] = this.pos.z + (Math.random() - 0.5) * 1.7
+        const ang = Math.random() * Math.PI * 2
+        this.wispAng.push(ang)
+        this.wispVel[i * 3] = Math.cos(ang) * (0.2 + Math.random() * 0.45)
+        this.wispVel[i * 3 + 1] = 0.9 + Math.random() * 1.6
+        this.wispVel[i * 3 + 2] = Math.sin(ang) * (0.2 + Math.random() * 0.45)
+      }
+      const wispGeo = new THREE.BufferGeometry()
+      wispGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+      const wispMat = new THREE.PointsMaterial({
+        color: 0x8cff70,
+        size: 0.2,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      })
+      this.wisps = new THREE.Points(wispGeo, wispMat)
+      this.geos.push(wispGeo)
+      this.mats.push(wispMat)
+      scene.add(this.wisps)
+
+      // expanding pale-soul ring on the ground
+      const ringGeo = new THREE.RingGeometry(0.82, 1, 40)
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xa4ff96,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      })
+      this.ring = new THREE.Mesh(ringGeo, ringMat)
+      this.ring.rotation.x = -Math.PI / 2
+      this.ring.position.set(this.pos.x, gy + 0.12, this.pos.z)
+      this.geos.push(ringGeo)
+      this.mats.push(ringMat)
+      scene.add(this.ring)
+
+      this.light = new THREE.PointLight(0x9fffa8, 5.5, 17, 1.8)
+      this.light.position.set(this.pos.x, gy + 1.5, this.pos.z)
+      this.light0 = 5.5
+      scene.add(this.light)
+    } else {
+      // rising pillar of fire — two nested additive shells
+      const mkPillar = (rTop: number, rBot: number, h: number, col: number, op: number, base: number, expand: number, life: number, rise: number) => {
+        const geo = new THREE.CylinderGeometry(rTop, rBot, h, 12, 1, true)
+        const mat = new THREE.MeshBasicMaterial({
+          color: col,
+          transparent: true,
+          opacity: op,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        })
+        const m = new THREE.Mesh(geo, mat)
+        m.position.set(this.pos.x, gy + h / 2 - 0.2, this.pos.z)
+        m.scale.set(base, 1, base)
+        scene.add(m)
+        this.pillars.push({ mesh: m, t: 0, life, base, expand, op, rise })
+        this.geos.push(geo)
+        this.mats.push(mat)
+      }
+      mkPillar(0.5, 0.85, 5.4, 0xfff0a8, 0.9, 0.25, 1.75, 1.05, 0.6)
+      mkPillar(0.95, 1.55, 4.6, 0xff7a1e, 0.62, 0.25, 1.95, 1.2, 0.45)
+      // scorch mark that lingers on the arena floor
+      mkPillar(1, 1, 0.06, 0x140a06, 0.55, 0.6, 1.9, 2.6, 0)
+
+      // white-hot core flash
+      const coreGeo = new THREE.SphereGeometry(0.55, 10, 8)
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      })
+      this.core = new THREE.Mesh(coreGeo, coreMat)
+      this.core.position.set(this.pos.x, gy + 1.2, this.pos.z)
+      this.geos.push(coreGeo)
+      this.mats.push(coreMat)
+      scene.add(this.core)
+
+      // drifting smoke after the blast
+      const n = 30
+      const posArr = new Float32Array(n * 3)
+      this.smokeVel = new Float32Array(n * 3)
+      for (let i = 0; i < n; i++) {
+        posArr[i * 3] = this.pos.x + (Math.random() - 0.5) * 1.8
+        posArr[i * 3 + 1] = gy + 0.4 + Math.random() * 2.2
+        posArr[i * 3 + 2] = this.pos.z + (Math.random() - 0.5) * 1.8
+        const a = Math.random() * Math.PI * 2
+        this.smokeVel[i * 3] = Math.cos(a) * (0.15 + Math.random() * 0.35)
+        this.smokeVel[i * 3 + 1] = 0.5 + Math.random() * 0.8
+        this.smokeVel[i * 3 + 2] = Math.sin(a) * (0.15 + Math.random() * 0.35)
+      }
+      const smokeGeo = new THREE.BufferGeometry()
+      smokeGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+      const smokeMat = new THREE.PointsMaterial({
+        color: 0x4a4245,
+        size: 0.5,
+        transparent: true,
+        opacity: 0.4,
+        depthWrite: false,
+      })
+      this.smoke = new THREE.Points(smokeGeo, smokeMat)
+      this.geos.push(smokeGeo)
+      this.mats.push(smokeMat)
+      scene.add(this.smoke)
+
+      this.light = new THREE.PointLight(0xff9040, 9.5, 21, 1.6)
+      this.light.position.set(this.pos.x, gy + 1.6, this.pos.z)
+      this.light0 = 9.5
+      scene.add(this.light)
+    }
+  }
+
+  update(dt: number): boolean {
+    this.t += dt
+    const k = this.t / this.life
+    const scene = this.game.engine.scene
+
+    // voxels
+    for (const c of this.cubes) {
+      if (c.ember) {
+        c.ember.ang += c.ember.angSpd * dt
+        c.ember.radius *= 1 - 0.24 * dt
+        c.ember.vy += 1.15 * dt
+        c.mesh.position.set(
+          this.pos.x + Math.cos(c.ember.ang) * c.ember.radius,
+          c.mesh.position.y + c.ember.vy * dt,
+          this.pos.z + Math.sin(c.ember.ang) * c.ember.radius
+        )
+      } else {
+        c.vy -= 11.5 * dt
+        c.mesh.position.x += c.vx * dt
+        c.mesh.position.y += c.vy * dt
+        c.mesh.position.z += c.vz * dt
+        if (c.mesh.position.y < c.restY && c.vy < 0) {
+          c.mesh.position.y = c.restY
+          if (Math.abs(c.vy) > 1.1) {
+            // bounce with energy loss
+            c.vy = -c.vy * 0.36
+            c.vx *= 0.55
+            c.vz *= 0.55
+            c.sx *= 0.5
+            c.sy *= 0.5
+            c.sz *= 0.5
+          } else {
+            // settle and grind to a halt
+            c.vy = 0
+            c.vx *= 0.8
+            c.vz *= 0.8
+          }
+        }
+      }
+      c.mesh.rotation.x += c.sx * dt
+      c.mesh.rotation.y += c.sy * dt
+      c.mesh.rotation.z += c.sz * dt
+      if (k > 0.62) {
+        const fade = Math.max(0.001, 1 - (k - 0.62) / 0.38)
+        c.mesh.scale.setScalar(c.size * fade)
+      }
+    }
+
+    // embers flicker like real fire
+    for (const m of this.emberMats) {
+      m.emissiveIntensity = 0.6 + Math.random() * 0.55
+    }
+
+    if (this.wisps) {
+      const posAttr = this.wisps.geometry.getAttribute('position') as THREE.BufferAttribute
+      for (let i = 0; i < posAttr.count; i++) {
+        this.wispAng[i] += dt * (1.2 + (i % 5) * 0.22)
+        posAttr.setXYZ(
+          i,
+          posAttr.getX(i) + (Math.cos(this.wispAng[i]) * 0.3 + this.wispVel[i * 3]) * dt,
+          posAttr.getY(i) + this.wispVel[i * 3 + 1] * dt,
+          posAttr.getZ(i) + (Math.sin(this.wispAng[i]) * 0.3 + this.wispVel[i * 3 + 2]) * dt
+        )
+      }
+      posAttr.needsUpdate = true
+      ;(this.wisps.material as THREE.PointsMaterial).opacity = Math.max(0, 0.95 * (1 - k * 1.15))
+    }
+
+    if (this.smoke) {
+      const posAttr = this.smoke.geometry.getAttribute('position') as THREE.BufferAttribute
+      for (let i = 0; i < posAttr.count; i++) {
+        posAttr.setXYZ(
+          i,
+          posAttr.getX(i) + this.smokeVel[i * 3] * dt,
+          posAttr.getY(i) + this.smokeVel[i * 3 + 1] * dt,
+          posAttr.getZ(i) + this.smokeVel[i * 3 + 2] * dt
+        )
+      }
+      posAttr.needsUpdate = true
+      ;(this.smoke.material as THREE.PointsMaterial).opacity =
+        0.4 * Math.min(1, this.t / 0.4) * Math.max(0, 1 - k)
+    }
+
+    // fire pillar / scorch discs
+    this.pillars = this.pillars.filter((p) => {
+      p.t += dt
+      const e = 1 - Math.pow(1 - Math.min(1, p.t / 0.5), 3)
+      p.mesh.scale.set(p.base + p.expand * e, 1 + 0.12 * e, p.base + p.expand * e)
+      ;(p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(
+        0,
+        p.op * (1 - p.t / p.life)
+      )
+      p.mesh.position.y += p.rise * dt
+      if (p.t >= p.life) {
+        scene.remove(p.mesh)
+        return false
+      }
+      return true
+    })
+
+    if (this.core) {
+      const ck = Math.min(1, this.t / 0.38)
+      this.core.scale.setScalar(1 + ck * 3.4)
+      ;(this.core.material as THREE.MeshBasicMaterial).opacity = 0.78 * (1 - ck)
+      if (ck >= 1) {
+        scene.remove(this.core)
+        this.core = null
+      }
+    }
+
+    if (this.ring) {
+      const rk = Math.min(1, this.t / 0.75)
+      const e = 1 - Math.pow(1 - rk, 3)
+      this.ring.scale.setScalar(0.6 + e * 4.0)
+      ;(this.ring.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - rk)
+      if (rk >= 1) {
+        scene.remove(this.ring)
+        this.ring = null
+      }
+    }
+
+    if (this.light) {
+      this.light.intensity = Math.max(0, this.light0 * (1 - this.t / 1.15))
+      if (this.t >= 1.15) {
+        scene.remove(this.light)
+        this.light = null
+      }
+    }
+
+    if (this.t >= this.life) {
+      for (const c of this.cubes) scene.remove(c.mesh)
+      if (this.wisps) scene.remove(this.wisps)
+      if (this.smoke) scene.remove(this.smoke)
+      for (const g of this.geos) g.dispose()
+      for (const m of this.mats) m.dispose()
+      return false
+    }
+    return true
+  }
+}
+
+
 class Arrow {
   private mesh: THREE.Group
   private vel = new THREE.Vector3()
@@ -461,6 +862,7 @@ export class Game {
   private waves: Shockwave[] = []
   private arrows: Arrow[] = []
   private fireballs: Fireball[] = []
+  private deathFx: BossDeathFX[] = []
   private lavaPools: { mesh: THREE.Mesh; x: number; z: number; t: number }[] = []
   private lavaTick = 0
   private bloodstain: { mesh: THREE.Group; amount: number } | null = null
@@ -1157,6 +1559,24 @@ export class Game {
     this.lavaPools.push({ mesh: m, x, z, t: 0 })
   }
 
+  /* ================= BOSS DEATH FINALES ================= */
+
+  /** the ancient knight bursts into tumbling voxels while his souls stream skyward */
+  onBossCollapse(pos: THREE.Vector3, body: Humanoid) {
+    this.deathFx.push(new BossDeathFX(this, pos.clone(), 'collapse', body))
+    this.sfx.soulCollapse()
+    this.hitstop = 0.22
+    this.shake = Math.max(this.shake, 0.55)
+  }
+
+  /** the Flame King combusts — white-hot flash, a pillar of fire and an ember whirl */
+  onBossInferno(pos: THREE.Vector3, body: Humanoid) {
+    this.deathFx.push(new BossDeathFX(this, pos.clone(), 'inferno', body))
+    this.sfx.inferno()
+    this.hitstop = 0.26
+    this.shake = Math.max(this.shake, 0.72)
+  }
+
   /** any enemy (Blaze, Flame King) calls this at the release moment */
   spawnFireball(from: THREE.Vector3, target: THREE.Vector3, dmg: number) {
     this.fireballs.push(new Fireball(this, from, target, dmg, false))
@@ -1742,8 +2162,9 @@ export class Game {
     }
 
     for (const e of this.enemies) e.update(dt, this.player, this)
-    if (!this.bossFell) this.boss.update(dt, this.player, this)
-    if (!this.boss2Fell) this.boss2.update(dt, this.player, this)
+    // fallen lords keep updating so their cinematic death animation + FX can play out
+    this.boss.update(dt, this.player, this)
+    this.boss2.update(dt, this.player, this)
 
     this.world.update(dt)
     this.updateBonfire(dt)
@@ -1812,6 +2233,8 @@ export class Game {
       if (!alive) f.dispose(this.engine.scene)
       return alive
     })
+    // the grand finale when a lord falls (voxel collapse / inferno)
+    this.deathFx = this.deathFx.filter((f) => f.update(dt))
     // temporary molten patches from the Flame King's slams
     this.lavaPools = this.lavaPools.filter((lp) => {
       lp.t += dt
