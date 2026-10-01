@@ -1,11 +1,13 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, createBow, createBlazeRods, animIdle, animWalk, animZombieWalk, animAttack, animHit, animDead,
+  createHumanoid, createBow, createBlazeRods, animIdle, animWalk, animZombieWalk, animZombieIdle,
+  animCreeperWalk, animCreeperIdle, animSkeletonWalk, animBowIdle, animWitherWalk,
+  animAttack, animHit, animDead,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
   animBowDraw, animBowShoot, animPoke, lerp,
   resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
 } from './models'
-import { ASH_WALL_X, BONFIRE, type World } from './world'
+import { ASH_WALL_X, BONFIRE, LAVA_POOLS, type World } from './world'
 import type { Game } from './game'
 import type { Player } from './player'
 
@@ -59,9 +61,10 @@ export class Enemy {
     this.maxHp = opts.hp
     this.isBoss = !!opts.isBoss
     this.name = opts.name ?? 'Hollow'
+    const sworded = kind === 'zombie' || kind === 'boss' || kind === 'wither' || kind === 'bossflame'
     this.h = createHumanoid(kind, opts.scale, {
-      sword: kind === 'zombie' || kind === 'boss' || kind === 'wither',
-      swordScale: kind === 'boss' ? 1.9 : 1,
+      sword: sworded,
+      swordScale: kind === 'boss' ? 1.9 : kind === 'bossflame' ? 2.1 : 1,
     })
     this.pos.copy(spawn)
     this.home.copy(spawn)
@@ -161,7 +164,7 @@ export class Enemy {
     switch (this.state) {
       case 'idle': {
         if (!this.active) {
-          animIdle(this.h, this.animT)
+          this.idleAnim(this.animT)
           break
         }
         if (!playerSafe && dist < this.opts.aggro) {
@@ -184,9 +187,9 @@ export class Enemy {
           this.pos.x += (wx / wd) * 1.1 * dt
           this.pos.z += (wz / wd) * 1.1 * dt
           this.yaw = Math.atan2(wx, wz)
-          animWalk(this.h, this.animT, 0.5)
+          this.strollAnim(this.animT, 0.5)
         } else {
-          animIdle(this.h, this.animT)
+          this.idleAnim(this.animT)
         }
         break
       }
@@ -221,7 +224,7 @@ export class Enemy {
         this.yaw = Math.atan2(hx, hz)
         this.pos.x += (hx / hd) * this.opts.speed * 0.8 * dt
         this.pos.z += (hz / hd) * this.opts.speed * 0.8 * dt
-        animWalk(this.h, this.animT, 0.8)
+        this.strollAnim(this.animT, 0.8)
         break
       }
       case 'windup': {
@@ -347,7 +350,24 @@ export class Enemy {
     this.yaw = angleToPlayer
     this.pos.x += (dx / (dist || 1)) * this.speed() * dt
     this.pos.z += (dz / (dist || 1)) * this.speed() * dt
-    animZombieWalk(this.h, this.animT, this.isBoss ? 1.25 : 1)
+    this.moveAnim(this.animT, this.isBoss ? 1.25 : 1)
+  }
+
+  /* ---- per-mob locomotion hooks — every horror moves like itself ---- */
+
+  /** lazy wander pacing (unused alertness) */
+  protected strollAnim(t: number, f = 1) {
+    animZombieWalk(this.h, t, f * 0.85)
+  }
+
+  /** standing around — hunched undead shamble by default */
+  protected idleAnim(t: number) {
+    animZombieIdle(this.h, t)
+  }
+
+  /** hunting gait during chase */
+  protected moveAnim(t: number, f = 1) {
+    animZombieWalk(this.h, t, f)
   }
 
   protected attackCooldown() {
@@ -441,6 +461,21 @@ export class Enemy {
     // the great ash wall is solid — only the fog-gate corridor pierces it
     if (Math.abs(this.pos.x - ASH_WALL_X) < 0.6 && !(this.pos.z > 15.8 && this.pos.z < 20.2)) {
       this.pos.x = this.pos.x < ASH_WALL_X ? ASH_WALL_X - 0.6 : ASH_WALL_X + 0.6
+    }
+    // the molten pools repel the undead — they skirt the edges, never wade in
+    for (const p of LAVA_POOLS) {
+      const cx = (p.x0 + p.x1) / 2 + 0.5
+      const cz = (p.z0 + p.z1) / 2 + 0.5
+      const hw = (p.x1 - p.x0) / 2 + 0.8
+      const hh = (p.z1 - p.z0) / 2 + 0.8
+      const dx = this.pos.x - cx
+      const dz = this.pos.z - cz
+      if (Math.abs(dx) < hw && Math.abs(dz) < hh) {
+        const pxo = hw - Math.abs(dx)
+        const pzo = hh - Math.abs(dz)
+        if (pxo < pzo) this.pos.x += (dx >= 0 ? 1 : -1) * pxo
+        else this.pos.z += (dz >= 0 ? 1 : -1) * pzo
+      }
     }
   }
 
@@ -799,6 +834,19 @@ export class CreeperEnemy extends Enemy {
     this.h.group.scale.setScalar(this.opts.scale)
   }
 
+  /* quadruped locomotion — the creeper trots like the animal it is */
+  protected strollAnim(t: number, f = 1) {
+    animCreeperWalk(this.h, t, f)
+  }
+
+  protected idleAnim(t: number) {
+    animCreeperIdle(this.h, t)
+  }
+
+  protected moveAnim(t: number, f = 1) {
+    animCreeperWalk(this.h, t, f)
+  }
+
   protected onWindupStart(game?: Game, _dist?: number, _angDiff?: number) {
     game?.sfx.hiss()
   }
@@ -814,6 +862,10 @@ export class CreeperEnemy extends Enemy {
     this.h.group.scale.setScalar(s)
     this.h.legL.rotation.x = 0.45 * p
     this.h.legR.rotation.x = -0.45 * p
+    if (this.h.legsBack) {
+      this.h.legsBack[0].rotation.x = -0.35 * p
+      this.h.legsBack[1].rotation.x = 0.35 * p
+    }
     setFlashWhite(this.h, p * 0.5 + Math.max(0, Math.sin(p * 26)) * 0.3 * p)
   }
 
@@ -909,19 +961,27 @@ export class SkeletonEnemy extends Enemy {
       // backpedal away, still facing the player (bone-rattling hurry)
       this.pos.x -= ux * this.speed() * 0.85 * dt
       this.pos.z -= uz * this.speed() * 0.85 * dt
-      animWalk(this.h, this.animT, 1.15)
+      animSkeletonWalk(this.h, this.animT, 1.15)
     } else if (dist > 11.5) {
       // close the gap to firing range
       this.pos.x += ux * this.speed() * dt
       this.pos.z += uz * this.speed() * dt
-      animWalk(this.h, this.animT, 1)
+      animSkeletonWalk(this.h, this.animT, 1)
     } else {
       // hold ground + a lazy side-strafe so it never feels frozen
       const sway = Math.sin(this.animT * 1.7) * 0.55
       this.pos.x += -uz * sway * dt
       this.pos.z += ux * sway * dt
-      animIdle(this.h, this.animT)
+      animBowIdle(this.h, this.animT)
     }
+  }
+
+  protected strollAnim(t: number, f = 1) {
+    animSkeletonWalk(this.h, t, f)
+  }
+
+  protected idleAnim(t: number) {
+    animBowIdle(this.h, t)
   }
 
   /* ---- telegraphs ---- */
@@ -1007,9 +1067,17 @@ export class WitherSkeletonEnemy extends Enemy {
       windup: 0.5,
       recover: 0.65,
       souls: 70,
-      scale: 1.0,
+      scale: 1.08,
       name: 'شمشیرزن ویسری',
     })
+  }
+
+  protected moveAnim(t: number, f = 1) {
+    animWitherWalk(this.h, t, f)
+  }
+
+  protected strollAnim(t: number, f = 1) {
+    animWitherWalk(this.h, t, f * 0.8)
   }
 
   protected attackCooldown() {
@@ -1077,7 +1145,9 @@ export class BlazeEnemy extends Enemy {
     this.h.armR.visible = false
     this.h.legL.visible = false
     this.h.legR.visible = false
-    this.rods = createBlazeRods()
+    const rods = createBlazeRods()
+    this.rods = rods.group
+    this.h.extras.push(...rods.extras)
     this.h.root.add(this.rods)
   }
 
@@ -1086,6 +1156,15 @@ export class BlazeEnemy extends Enemy {
     this.rods.rotation.set(0, 0, 0)
     this.rods.position.y = 0
     setFlashWhite(this.h, 0)
+  }
+
+  /* a floating sentry doesn't walk — it scans the ash while hovering */
+  protected idleAnim(t: number) {
+    animCreeperIdle(this.h, t)
+  }
+
+  protected strollAnim(t: number, _f = 1) {
+    animCreeperIdle(this.h, t)
   }
 
   update(dt: number, player: Player, game: Game) {
@@ -1269,6 +1348,11 @@ export class BossFlameEnemy extends Enemy {
 
   protected speed() {
     return this.opts.speed * (this.phase2() ? 1.28 : 1)
+  }
+
+  /** the king marches like a warlord — heavy even stride, blade swinging */
+  protected moveAnim(t: number, f = 1) {
+    animWalk(this.h, t, f * 1.1)
   }
 
   protected attackCooldown() {

@@ -17,25 +17,47 @@ export interface Humanoid {
   armR: THREE.Group
   legL: THREE.Group
   legR: THREE.Group
+  legsBack: [THREE.Group, THREE.Group] | null // creeper hind legs
   materials: THREE.MeshLambertMaterial[]
+  extras: THREE.Material[] // unlit glow materials (eyes, lava veins) — never flashed/faded
   sword: THREE.Group | null
 }
 
-export function createSword(scale = 1, rusty = false): THREE.Group {
+export type SwordStyle = 'iron' | 'rust' | 'stone' | 'obsidian'
+
+export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group {
   const g = new THREE.Group()
-  const mat = (c: number) => new THREE.MeshLambertMaterial({ color: c })
-  const bladeC = rusty ? 0x9aa39a : 0xcdd4de
-  const mk = (w: number, h: number, d: number, m: THREE.Material, y: number) => {
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const glow = (c: number) => new THREE.MeshBasicMaterial({ color: c })
+  const bladeC = style === 'rust' ? 0x9aa39a : style === 'stone' ? 0x9a9fa4 : style === 'obsidian' ? 0x2a2226 : 0xcdd4de
+  const guardC = style === 'stone' ? 0x6a6458 : style === 'obsidian' ? 0x171114 : 0x4a3620
+  const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
-    mesh.position.y = y
+    mesh.position.set(x, y, z)
     mesh.castShadow = true
     g.add(mesh)
     return mesh
   }
-  mk(0.07, 0.2, 0.07, mat(0x6e4f30), 0) // handle
-  mk(0.26, 0.06, 0.09, mat(0x4a3620), 0.13) // guard
-  mk(0.11, 0.62, 0.06, mat(bladeC), 0.47) // blade
-  mk(0.07, 0.12, 0.05, mat(bladeC), 0.82) // tip
+  mk(0.07, 0.2, 0.07, lam(0x6e4f30), 0, 0) // handle
+  mk(0.26, 0.06, 0.09, lam(guardC), 0, 0.13) // guard
+  mk(0.11, 0.62, 0.06, lam(bladeC), 0, 0.47) // blade
+  mk(0.07, 0.12, 0.05, lam(bladeC), 0, 0.82) // tip
+  if (style === 'obsidian') {
+    // a molten edge burning along the whole blade
+    mk(0.13, 0.6, 0.02, glow(0xff7a1e), 0, 0.47, 0.035)
+    mk(0.13, 0.6, 0.02, glow(0xff7a1e), 0, 0.47, -0.035)
+    mk(0.09, 0.11, 0.03, glow(0xffc23d), 0, 0.82, 0)
+    mk(0.11, 0.1, 0.065, lam(0x3a3034), 0, 0.2) // scorched collar
+  }
+  if (style === 'rust') {
+    // a battered relic — nicked edges and a blood-dark fuller
+    mk(0.045, 0.62, 0.065, lam(0x6a7268), 0, 0.47)
+    mk(0.11, 0.06, 0.062, lam(0x7d6a52), 0, 0.3)
+    mk(0.11, 0.05, 0.062, lam(0x7d6a52), 0, 0.66)
+  }
+  if (style === 'stone') {
+    mk(0.13, 0.1, 0.07, lam(0x6a6458), 0, 0.24) // chunky stone collar
+  }
   g.scale.setScalar(scale)
   return g
 }
@@ -85,9 +107,11 @@ export function createBow(): THREE.Group {
   return g
 }
 
-/** the Blaze's orbiting smoke rods — attached to the body root, spun in code */
-export function createBlazeRods(): THREE.Group {
+/** the Blaze's orbiting smoke rods — attached to the body root, spun in code.
+    Each rod carries a white-hot tip so the orbit reads as a fire wheel. */
+export function createBlazeRods(): { group: THREE.Group; extras: THREE.Material[] } {
   const g = new THREE.Group()
+  const extras: THREE.Material[] = []
   const hot = new THREE.MeshLambertMaterial({ color: 0xc47a1e })
   const dark = new THREE.MeshLambertMaterial({ color: 0x8a5414 })
   for (let i = 0; i < 4; i++) {
@@ -95,15 +119,67 @@ export function createBlazeRods(): THREE.Group {
     const rod = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.14), i % 2 ? hot : dark)
     rod.position.set(Math.cos(a) * 0.33, 0.95, Math.sin(a) * 0.33)
     rod.castShadow = true
-    g.add(rod)
+    const tipMat = new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffd873 : 0xff9a2e })
+    extras.push(tipMat)
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.09, 0.16), tipMat)
+    tip.position.set(Math.cos(a) * 0.33, 1.29, Math.sin(a) * 0.33)
+    g.add(rod, tip)
   }
-  return g
+  return { group: g, extras }
+}
+
+/** tiny unlit cubes mounted just in front of the face — burning eyes that
+    read at any distance and give each horror its signature stare */
+function addGlowEyes(
+  head: THREE.Mesh,
+  extras: THREE.Material[],
+  color: number,
+  dx = 0.115,
+  y = 0.02
+) {
+  const mat = new THREE.MeshBasicMaterial({ color })
+  extras.push(mat)
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.03), mat)
+    eye.position.set(sx * dx, y, 0.262)
+    head.add(eye)
+  }
+}
+
+/** iron pauldron pair — bolted to the torso over the shoulder joints so
+    the arms swing underneath the armor like a true knight's */
+function addPauldrons(
+  torso: THREE.Group,
+  extras: THREE.Material[],
+  size: number,
+  color: number,
+  rimColor: number,
+  y = 1.44,
+  lavaRim = false
+) {
+  const plate = new THREE.MeshLambertMaterial({ color })
+  const rim = new THREE.MeshLambertMaterial({ color: rimColor })
+  for (const sx of [-1, 1]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(size, size * 0.55, size), plate)
+    p.position.set(sx * (0.375 + size * 0.06), y, 0)
+    p.castShadow = true
+    const band = new THREE.Mesh(new THREE.BoxGeometry(size * 1.06, size * 0.14, size * 1.06), rim)
+    band.position.set(sx * (0.375 + size * 0.06), y - size * 0.3, 0)
+    if (lavaRim) {
+      const molten = new THREE.MeshBasicMaterial({ color: 0xff8a2e })
+      extras.push(molten)
+      const crack = new THREE.Mesh(new THREE.BoxGeometry(size * 0.9, 0.045, 0.1), molten)
+      crack.position.set(sx * (0.375 + size * 0.06), y + size * 0.3, 0)
+      torso.add(crack)
+    }
+    torso.add(p, band)
+  }
 }
 
 export function createHumanoid(
   kind: CharKind,
   scale = 1,
-  opts: { sword?: boolean; shield?: boolean; swordScale?: number } = {}
+  opts: { sword?: boolean; shield?: boolean; swordScale?: number; swordStyle?: SwordStyle } = {}
 ): Humanoid {
   const mats = characterMaterials(kind)
   const group = new THREE.Group()
@@ -120,6 +196,7 @@ export function createHumanoid(
   spin.add(spinInner)
   root.add(spin)
 
+  const extras: THREE.Material[] = []
   const mkMesh = (w: number, h: number, d: number, mat: THREE.Material | THREE.Material[], x = 0, y = 0, z = 0) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
     m.position.set(x, y, z)
@@ -128,27 +205,47 @@ export function createHumanoid(
   }
 
   const isCreeper = kind === 'creeper'
+  // bone-thin limbs for the skeletons — THE silhouette that reads "skeleton"
+  const thin = kind === 'skeleton' || kind === 'wither'
+  const limb = thin ? 0.14 : 0.25
 
   // legs pivot at hip
   const legL = new THREE.Group()
   const legR = new THREE.Group()
+  // creeper hind legs (real pivots so the quadruped gait can move them)
+  let legsBack: [THREE.Group, THREE.Group] | null = null
   // body
   let body: THREE.Mesh
   // head
   let head: THREE.Mesh
 
   if (isCreeper) {
-    // four stubby legs (front pair animated, back pair static)
-    legL.position.set(0.13, 0.42, 0.12)
+    // four stubby legs — the FRONT pair hangs on legL/legR, the back pair
+    // on legsBack, so animCreeperWalk can trot a proper diagonal gait
+    legL.position.set(0.13, 0.42, 0.14)
     legL.add(mkMesh(0.22, 0.42, 0.22, mats.leg, 0, -0.21, 0))
-    legR.position.set(-0.13, 0.42, 0.12)
+    legR.position.set(-0.13, 0.42, 0.14)
     legR.add(mkMesh(0.22, 0.42, 0.22, mats.leg, 0, -0.21, 0))
-    spinInner.add(
-      mkMesh(0.22, 0.42, 0.22, mats.leg, 0.13, 0.21, -0.12),
-      mkMesh(0.22, 0.42, 0.22, mats.leg, -0.13, 0.21, -0.12)
-    )
+    const legBL = new THREE.Group()
+    legBL.position.set(0.13, 0.42, -0.14)
+    legBL.add(mkMesh(0.22, 0.42, 0.22, mats.leg, 0, -0.21, 0))
+    const legBR = new THREE.Group()
+    legBR.position.set(-0.13, 0.42, -0.14)
+    legBR.add(mkMesh(0.22, 0.42, 0.22, mats.leg, 0, -0.21, 0))
+    legsBack = [legBL, legBR]
+    spinInner.add(legBL, legBR)
     body = mkMesh(0.46, 0.92, 0.32, mats.body, 0, 0.86, 0)
     head = mkMesh(0.56, 0.56, 0.56, mats.head, 0, 1.6, 0)
+  } else if (thin) {
+    legL.position.set(0.09, 0.75, 0)
+    legL.add(mkMesh(limb, 0.75, limb, mats.leg, 0, -0.375, 0))
+    legR.position.set(-0.09, 0.75, 0)
+    legR.add(mkMesh(limb, 0.75, limb, mats.leg, 0, -0.375, 0))
+    body = mkMesh(0.4, 0.75, 0.18, mats.body, 0, 1.125, 0)
+    head = mkMesh(0.5, 0.5, 0.5, mats.head, 0, 1.75, 0)
+    // bony pelvis bridging the spine to the legs
+    const pelvis = mkMesh(0.42, 0.16, 0.2, mats.body, 0, 0.8, 0)
+    spinInner.add(pelvis)
   } else {
     legL.position.set(0.125, 0.75, 0)
     legL.add(mkMesh(0.25, 0.75, 0.25, mats.leg, 0, -0.375, 0))
@@ -161,19 +258,27 @@ export function createHumanoid(
   // arms pivot at shoulder (creeper has none — kept as invisible pivots
   // so shared animation code keeps working)
   const armL = new THREE.Group()
-  armL.position.set(0.375, 1.375, 0)
   const armR = new THREE.Group()
-  armR.position.set(-0.375, 1.375, 0)
   if (!isCreeper) {
-    armL.add(mkMesh(0.25, 0.75, 0.25, mats.arm, 0, -0.3125, 0))
-    armR.add(mkMesh(0.25, 0.75, 0.25, mats.arm, 0, -0.3125, 0))
+    if (thin) {
+      // shoulders tighter over the narrow skeletal chest
+      const halfSpan = 0.2 + limb / 2
+      armL.position.set(halfSpan, 1.375, 0)
+      armR.position.set(-halfSpan, 1.375, 0)
+    } else {
+      armL.position.set(0.375, 1.375, 0)
+      armR.position.set(-0.375, 1.375, 0)
+    }
+    armL.add(mkMesh(limb, 0.75, limb, mats.arm, 0, -0.3125, 0))
+    armR.add(mkMesh(limb, 0.75, limb, mats.arm, 0, -0.3125, 0))
   }
 
   spinInner.add(legL, legR, body, armL, armR, head)
 
+  const swordStyle: SwordStyle = opts.swordStyle ?? (kind === 'boss' ? 'rust' : kind === 'wither' ? 'stone' : 'iron')
   let sword: THREE.Group | null = null
   if (opts.sword) {
-    sword = createSword(opts.swordScale ?? 1, kind === 'boss')
+    sword = createSword(opts.swordScale ?? 1, swordStyle)
     sword.position.set(0, -0.72, 0.06)
     // blade points forward (+Z), tip slightly down — 105° from the forearm.
     // (was -75° which made the blade point behind the character)
@@ -188,22 +293,83 @@ export function createHumanoid(
     armL.add(sh)
   }
 
-  // the Flame King wears a crown of blocky embers
+  /* ---------- per-kind model dressing ---------- */
+  if (kind === 'boss') {
+    // the Ancient Zombie Knight: bolted armor over a rotted body
+    const steel = new THREE.MeshLambertMaterial({ color: 0x7c828c })
+    const steelDark = new THREE.MeshLambertMaterial({ color: 0x565a64 })
+    mats.all.push(steel, steelDark)
+    // chestplate over the torso
+    const chest = mkMesh(0.56, 0.36, 0.31, steel, 0, 1.26, 0)
+    const chestRidge = mkMesh(0.08, 0.3, 0.33, steelDark, 0, 1.28, 0)
+    // belt + tattered tabard hint
+    const belt = mkMesh(0.56, 0.09, 0.29, steelDark, 0, 0.86, 0)
+    // helm: iron band across the brow + a battle-scarred crimson crest
+    const helmBand = mkMesh(0.54, 0.1, 0.54, steel, 0, 0.19, 0)
+    helmBand.position.y = 0.19
+    const crest = mkMesh(0.08, 0.13, 0.42, new THREE.MeshLambertMaterial({ color: 0x6a1d1d }), 0, 0.31, 0)
+    head.add(helmBand, crest)
+    spinInner.add(chest, chestRidge, belt)
+    addPauldrons(spinInner, extras, 0.34, 0x7c828c, 0x565a64, 1.46)
+    addGlowEyes(head, extras, 0xff2a2a)
+  }
+
   if (kind === 'bossflame') {
-    const ember = new THREE.MeshLambertMaterial({ color: 0xff7a1e })
-    const emberHot = new THREE.MeshLambertMaterial({ color: 0xffc23d })
-    const flame = (dx: number, h: number, m: THREE.Material) => {
-      const f = new THREE.Mesh(new THREE.BoxGeometry(0.09, h, 0.09), m)
+    // the Flame King: obsidian battle-plate split by glowing lava veins
+    const obsidian = new THREE.MeshLambertMaterial({ color: 0x241d20 })
+    const obsidianDark = new THREE.MeshLambertMaterial({ color: 0x171114 })
+    mats.all.push(obsidian, obsidianDark)
+    const chest = mkMesh(0.58, 0.4, 0.33, obsidian, 0, 1.24, 0)
+    const belt = mkMesh(0.58, 0.1, 0.31, obsidianDark, 0, 0.86, 0)
+    const molten = new THREE.MeshBasicMaterial({ color: 0xff7a1e })
+    extras.push(molten)
+    const moltenHot = new THREE.MeshBasicMaterial({ color: 0xffc23d })
+    extras.push(moltenHot)
+    // lava veins splitting the chestplate
+    const veinL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.02), molten)
+    veinL.position.set(-0.12, 1.3, 0.17)
+    const veinR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.02), molten)
+    veinR.position.set(0.14, 1.34, 0.17)
+    const veinC = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.02), moltenHot)
+    veinC.position.set(0, 1.28, 0.175)
+    spinInner.add(chest, belt, veinL, veinR, veinC)
+    addPauldrons(spinInner, extras, 0.4, 0x241d20, 0x171114, 1.48, true)
+    // a crown of five unlit flame tongues, the center one hottest
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xff7a1e })
+    const flameHot = new THREE.MeshBasicMaterial({ color: 0xffc23d })
+    extras.push(flameMat, flameHot)
+    const flame = (dx: number, h: number, m: THREE.Material, w = 0.09) => {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), m)
       f.position.set(dx, 0.25 + h / 2, 0)
       head.add(f)
     }
-    flame(-0.18, 0.22, ember)
-    flame(0, 0.34, emberHot)
-    flame(0.18, 0.2, ember)
+    flame(-0.2, 0.2, flameMat, 0.08)
+    flame(-0.1, 0.26, flameHot, 0.07)
+    flame(0, 0.36, flameHot)
+    flame(0.1, 0.26, flameMat, 0.07)
+    flame(0.2, 0.2, flameMat, 0.08)
+    addGlowEyes(head, extras, 0xffd23d)
+  }
+
+  if (kind === 'wither') {
+    // ember eyes smoldering inside the charcoal skull
+    addGlowEyes(head, extras, 0xff7b24)
+  }
+
+  if (kind === 'blaze') {
+    // a furnace mouth burning through the golden core
+    const furnace = new THREE.MeshBasicMaterial({ color: 0xffdf7a })
+    const furnaceHot = new THREE.MeshBasicMaterial({ color: 0xfff6d8 })
+    extras.push(furnace, furnaceHot)
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.04), furnace)
+    mouth.position.set(0, 0.94, 0.17)
+    const heart = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.03), furnaceHot)
+    heart.position.set(0, 0.94, 0.185)
+    spinInner.add(mouth, heart)
   }
 
   group.scale.setScalar(scale)
-  return { group, root, spin, head, body, armL, armR, legL, legR, materials: mats.all, sword }
+  return { group, root, spin, head, body, armL, armR, legL, legR, legsBack, materials: mats.all, extras, sword }
 }
 
 /* ================= ANIMATIONS ================= */
@@ -219,6 +385,10 @@ export function resetPose(h: Humanoid) {
   h.legL.rotation.set(0, 0, 0)
   h.legR.rotation.set(0, 0, 0)
   h.head.rotation.set(0, 0, 0)
+  if (h.legsBack) {
+    h.legsBack[0].rotation.set(0, 0, 0)
+    h.legsBack[1].rotation.set(0, 0, 0)
+  }
 }
 
 export function animIdle(h: Humanoid, t: number) {
@@ -326,6 +496,9 @@ export function animHit(h: Humanoid, p: number) {
   h.root.rotation.x = -0.4 * s
   h.armL.rotation.x = -0.6 * s
   h.armR.rotation.x = -0.6 * s
+  // the head snaps back — pain reads from the face first
+  h.head.rotation.x = -0.5 * s
+  h.head.rotation.z = 0.18 * s
 }
 
 export function animDead(h: Humanoid, p: number) {
@@ -341,15 +514,115 @@ function easeOut(t: number) {
   return 1 - Math.pow(1 - t, 3)
 }
 
-/** zombie-style arms-out walk */
+/** zombie-style arms-out walk — broken-neck head tilt, lopsided arm sway,
+    a slight hungry hunch. The off-arm lags behind the sword arm. */
 export function animZombieWalk(h: Humanoid, t: number, f = 1) {
   resetPose(h)
   const s = Math.sin(t * 9)
+  const c = Math.cos(t * 9)
   h.legL.rotation.x = s * 0.6 * f
   h.legR.rotation.x = -s * 0.6 * f
   h.armL.rotation.x = -1.35 + Math.sin(t * 5) * 0.1
   h.armR.rotation.x = -1.35 + Math.cos(t * 5) * 0.1
-  h.head.rotation.z = Math.sin(t * 3) * 0.08
+  h.armL.rotation.z = 0.12 + c * 0.06
+  h.armR.rotation.z = -0.12 - c * 0.04
+  h.head.rotation.z = Math.sin(t * 3) * 0.09 // the broken-neck sway
+  h.head.rotation.x = 0.1 // staring down its next meal
+  h.root.rotation.x = 0.06
+  h.root.position.y = Math.abs(c) * 0.035 * f
+}
+
+/** hollow shamble-in-place: hunched, arms dangling, head rolling loose */
+export function animZombieIdle(h: Humanoid, t: number) {
+  resetPose(h)
+  const b = Math.sin(t * 1.7)
+  h.root.rotation.x = 0.13 + b * 0.02
+  h.armL.rotation.x = -0.35 + b * 0.08
+  h.armR.rotation.x = -0.35 - b * 0.08
+  h.armL.rotation.z = 0.16
+  h.armR.rotation.z = -0.16
+  h.head.rotation.z = Math.sin(t * 0.8) * 0.16
+  h.head.rotation.x = 0.14
+  h.root.position.y = b * 0.012
+}
+
+/* ================= CREEPER (quadruped) ANIMATIONS ================= */
+
+/** proper four-legged trot — diagonal pairs (FL+BR / FR+BL) alternate,
+    the body rolls over its feet and the head bobs on its stalk */
+export function animCreeperWalk(h: Humanoid, t: number, f = 1) {
+  resetPose(h)
+  const s = Math.sin(t * 11)
+  const c = Math.cos(t * 11)
+  h.legL.rotation.x = s * 0.8 * f // front-left
+  h.legR.rotation.x = -s * 0.8 * f // front-right
+  if (h.legsBack) {
+    h.legsBack[0].rotation.x = -s * 0.8 * f // back-left (anti-phase to front-left)
+    h.legsBack[1].rotation.x = s * 0.8 * f // back-right
+  }
+  h.root.rotation.z = c * 0.055
+  h.head.rotation.x = 0.06 + c * 0.06
+  h.root.position.y = Math.abs(c) * 0.045 * f
+}
+
+/** silent watcher: slow scanning head, a breathing rise of the chest */
+export function animCreeperIdle(h: Humanoid, t: number) {
+  resetPose(h)
+  const b = Math.sin(t * 2.2)
+  h.head.rotation.y = Math.sin(t * 0.55) * 0.35
+  h.head.rotation.x = 0.05 + b * 0.035
+  h.root.position.y = b * 0.012
+  h.root.rotation.z = Math.sin(t * 1.1) * 0.015
+}
+
+/* ================= SKELETON ARCHER ANIMATIONS ================= */
+
+/** rattle-step march with the bow carried low and ready */
+export function animSkeletonWalk(h: Humanoid, t: number, f = 1) {
+  resetPose(h)
+  const s = Math.sin(t * 10)
+  const c = Math.cos(t * 10)
+  h.legL.rotation.x = s * 0.62 * f
+  h.legR.rotation.x = -s * 0.62 * f
+  h.armL.rotation.x = -0.5 // bow arm half-raised, ready to snap up
+  h.armL.rotation.z = 0.1
+  h.armR.rotation.x = s * 0.5
+  h.root.rotation.y = c * 0.05
+  h.head.rotation.y = Math.sin(t * 2.2) * 0.12
+  h.root.position.y = Math.abs(c) * 0.04 * f
+}
+
+/** holding ground at firing range: bow up, draw hand loose, scanning */
+export function animBowIdle(h: Humanoid, t: number) {
+  resetPose(h)
+  const w = Math.sin(t * 1.8)
+  h.armL.rotation.x = -1.35 + w * 0.05
+  h.armL.rotation.z = 0.08
+  h.armR.rotation.x = -1.05 + Math.sin(t * 1.8 + 0.6) * 0.05
+  h.armR.rotation.z = -0.25
+  h.root.rotation.y = Math.sin(t * 0.9) * 0.08
+  h.head.rotation.y = Math.sin(t * 0.7) * 0.18
+  h.head.rotation.x = 0.03
+}
+
+/* ================= WITHER SKELETON ANIMATIONS ================= */
+
+/** predatory, jittery stride — fast cycle, deep lean, sword arm trailing
+    loose and low while the free claw reaches for you */
+export function animWitherWalk(h: Humanoid, t: number, f = 1) {
+  resetPose(h)
+  const s = Math.sin(t * 13)
+  const c = Math.cos(t * 13)
+  h.legL.rotation.x = s * 0.72 * f
+  h.legR.rotation.x = -s * 0.72 * f
+  h.armR.rotation.x = 0.25 + c * 0.14
+  h.armR.rotation.z = -0.1
+  h.armL.rotation.x = -0.7 + s * 0.35
+  h.armL.rotation.z = 0.28
+  h.root.rotation.x = 0.15
+  h.head.rotation.x = 0.1
+  h.head.rotation.z = Math.sin(t * 6.5) * 0.06
+  h.root.position.y = Math.abs(c) * 0.05 * f
 }
 
 /* ================= BOSS ANIMATIONS ================= */
@@ -627,4 +900,5 @@ export function disposeHumanoid(h: Humanoid) {
     if (mesh.geometry) mesh.geometry.dispose()
   })
   for (const m of h.materials) m.dispose()
+  for (const m of h.extras) m.dispose()
 }

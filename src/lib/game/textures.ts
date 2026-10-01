@@ -208,256 +208,453 @@ interface CharTexs {
 
 const charTexs: Record<string, CharTexs> = {}
 
+/** scattered patches — rot, camo, moss, embers */
+function blotch(
+  ctx: CanvasRenderingContext2D,
+  rng: Rng,
+  s: number,
+  color: string,
+  n: number,
+  w = 2,
+  h = 2
+) {
+  for (let i = 0; i < n; i++) {
+    px(ctx, Math.floor(rng() * s), Math.floor(rng() * s), color, w, h)
+  }
+}
+
 function getCharTexs(kind: CharKind): CharTexs {
   if (charTexs[kind]) return charTexs[kind]
 
-  const cfg = {
-    player: {
-      skin: [198, 152, 110] as [number, number, number],
-      skinVary: 14,
-      hairTop: [66, 48, 33] as [number, number, number],
-      body: [0, 148, 148] as [number, number, number],
-      arm: [198, 152, 110] as [number, number, number],
-      sleeve: true,
-      leg: [58, 62, 112] as [number, number, number],
-      eye: '#4a4ac0',
-      mouth: [122, 82, 62] as [number, number, number],
-    },
-    zombie: {
-      skin: [96, 148, 86] as [number, number, number],
-      skinVary: 18,
-      hairTop: [80, 122, 72] as [number, number, number],
-      body: [44, 96, 82] as [number, number, number],
-      arm: [96, 148, 86] as [number, number, number],
-      sleeve: false,
-      leg: [74, 66, 76] as [number, number, number],
-      eye: '#101410',
-      mouth: [40, 64, 40] as [number, number, number],
-    },
-    boss: {
-      skin: [118, 140, 100] as [number, number, number],
-      skinVary: 14,
-      hairTop: [72, 62, 50] as [number, number, number],
-      body: [108, 112, 120] as [number, number, number],
-      arm: [118, 122, 130] as [number, number, number],
-      sleeve: false,
-      leg: [88, 92, 100] as [number, number, number],
-      eye: '#c82828',
-      mouth: [50, 56, 46] as [number, number, number],
-    },
-    creeper: {
-      skin: [96, 176, 96] as [number, number, number],
-      skinVary: 30,
-      hairTop: [74, 148, 74] as [number, number, number],
-      body: [84, 162, 84] as [number, number, number],
-      arm: [96, 176, 96] as [number, number, number],
-      sleeve: false,
-      leg: [78, 152, 78] as [number, number, number],
-      eye: '#0d1f0d',
-      mouth: [12, 24, 12] as [number, number, number],
-    },
-    skeleton: {
-      skin: [224, 220, 204] as [number, number, number],
-      skinVary: 16,
-      hairTop: [206, 200, 182] as [number, number, number],
-      body: [216, 212, 196] as [number, number, number],
-      arm: [224, 220, 204] as [number, number, number],
-      sleeve: false,
-      leg: [212, 208, 192] as [number, number, number],
-      eye: '#141414',
-      mouth: [64, 60, 52] as [number, number, number],
-    },
-    wither: {
-      skin: [56, 54, 58] as [number, number, number],
-      skinVary: 14,
-      hairTop: [44, 42, 46] as [number, number, number],
-      body: [66, 64, 70] as [number, number, number],
-      arm: [56, 54, 58] as [number, number, number],
-      sleeve: false,
-      leg: [48, 46, 50] as [number, number, number],
-      eye: '#ff7b24',
-      mouth: [30, 28, 30] as [number, number, number],
-    },
-    blaze: {
-      skin: [236, 176, 52] as [number, number, number],
-      skinVary: 26,
-      hairTop: [214, 140, 36] as [number, number, number],
-      body: [196, 124, 32] as [number, number, number],
-      arm: [236, 176, 52] as [number, number, number],
-      sleeve: false,
-      leg: [176, 110, 28] as [number, number, number],
-      eye: '#fff2c0',
-      mouth: [120, 60, 12] as [number, number, number],
-    },
-    bossflame: {
-      skin: [52, 42, 44] as [number, number, number],
-      skinVary: 12,
-      hairTop: [38, 30, 32] as [number, number, number],
-      body: [46, 36, 38] as [number, number, number],
-      arm: [52, 42, 44] as [number, number, number],
-      sleeve: false,
-      leg: [40, 32, 34] as [number, number, number],
-      eye: '#ffd23d',
-      mouth: [90, 36, 14] as [number, number, number],
-    },
-  }[kind]
+  /* per-kind base palettes for the plain-noise fallbacks */
+  const skinBase: Record<CharKind, [[number, number, number], number]> = {
+    player: [[198, 152, 110], 14],
+    zombie: [[96, 148, 86], 16],
+    boss: [[118, 140, 100], 12],
+    creeper: [[88, 168, 88], 24],
+    skeleton: [[224, 220, 204], 10],
+    wither: [[56, 54, 58], 10],
+    blaze: [[236, 176, 52], 24],
+    bossflame: [[52, 42, 44], 10],
+  }
+  const [sb, sv] = skinBase[kind]
 
+  /* ---------- FACES (8x8, the soul of every mob) ---------- */
   const faceTex = makeTex(8, 30, (c, r, s) => {
-    fillNoise(c, r, s, cfg.skin, cfg.skinVary)
+    fillNoise(c, r, s, sb, sv)
+
     if (kind === 'creeper') {
-      // iconic creeper face on an 8x8 grid
+      // the iconic face — kept canonical
       const bl = '#0d1f0d'
-      px(c, 1, 2, bl, 2, 2) // left eye
-      px(c, 5, 2, bl, 2, 2) // right eye
-      px(c, 3, 4, bl, 2, 1) // mouth top
-      px(c, 2, 5, bl, 4, 2) // mouth wide
-      px(c, 2, 7, bl, 1, 1) // fang left
-      px(c, 5, 7, bl, 1, 1) // fang right
+      px(c, 1, 2, bl, 2, 2)
+      px(c, 5, 2, bl, 2, 2)
+      px(c, 3, 4, bl, 2, 1)
+      px(c, 2, 5, bl, 4, 2)
+      px(c, 2, 7, bl, 1, 1)
+      px(c, 5, 7, bl, 1, 1)
       return
     }
+
+    if (kind === 'zombie') {
+      // sunken brow + dead black eyes + ragged mouth
+      px(c, 1, 3, 'rgba(0,0,0,0.30)', 2, 1)
+      px(c, 5, 3, 'rgba(0,0,0,0.30)', 2, 1)
+      px(c, 2, 4, '#0c120c')
+      px(c, 5, 4, '#0c120c')
+      px(c, 1, 4, 'rgba(20,34,20,0.55)')
+      px(c, 6, 4, 'rgba(20,34,20,0.55)')
+      px(c, 2, 5, 'rgba(30,50,28,0.6)')
+      px(c, 5, 5, 'rgba(30,50,28,0.6)')
+      px(c, 3, 5, 'rgba(0,0,0,0.15)', 2, 1)
+      px(c, 2, 6, 'rgba(16,26,16,0.95)', 1, 1)
+      px(c, 4, 6, 'rgba(16,26,16,0.95)', 2, 1)
+      px(c, 3, 7, '#b8c0a8') // a lone tooth
+      return
+    }
+
+    if (kind === 'boss') {
+      // ancient knight corpse: helm shadow, burning red eyes, ragged beard
+      px(c, 0, 2, 'rgba(0,0,0,0.45)', 8, 1)
+      px(c, 1, 3, 'rgba(120,20,20,0.9)', 2, 1)
+      px(c, 5, 3, 'rgba(120,20,20,0.9)', 2, 1)
+      px(c, 1, 4, '#8a1414')
+      px(c, 6, 4, '#8a1414')
+      px(c, 2, 4, '#ff2a2a')
+      px(c, 5, 4, '#ff2a2a')
+      px(c, 1, 5, 'rgba(0,0,0,0.28)')
+      px(c, 6, 5, 'rgba(0,0,0,0.28)')
+      px(c, 3, 5, 'rgba(0,0,0,0.2)', 2, 1)
+      px(c, 2, 6, 'rgba(24,30,22,0.95)', 4, 1)
+      px(c, 1, 7, 'rgba(58,66,50,0.95)', 6, 1) // grey stubble
+      return
+    }
+
     if (kind === 'skeleton') {
-      // hollow black sockets + grim teeth — the classic skull grid
+      // skull: brow ridge, hollow sockets, nasal gap, grinning teeth
+      px(c, 1, 2, 'rgba(150,142,124,0.9)', 2, 1)
+      px(c, 5, 2, 'rgba(150,142,124,0.9)', 2, 1)
       px(c, 1, 3, '#141414', 2, 2)
       px(c, 5, 3, '#141414', 2, 2)
-      px(c, 3, 5, '#3a362e', 2, 1)
-      px(c, 2, 6, '#3a362e', 4, 1)
-      px(c, 3, 7, '#cfcaba', 1, 1) // tooth gaps
-      px(c, 5, 7, '#cfcaba', 1, 1)
+      px(c, 1, 3, 'rgba(206,202,186,0.55)') // faint glint of empty bone
+      px(c, 0, 5, 'rgba(120,112,96,0.8)')
+      px(c, 7, 5, 'rgba(120,112,96,0.8)')
+      px(c, 3, 5, 'rgba(90,84,70,0.95)', 2, 1)
+      px(c, 1, 6, '#d8d4c4', 6, 1)
+      px(c, 2, 6, '#6a6456')
+      px(c, 4, 6, '#6a6456')
+      px(c, 6, 6, '#6a6456')
+      px(c, 2, 7, 'rgba(0,0,0,0.18)', 4, 1)
       return
     }
+
     if (kind === 'wither') {
-      // charcoal skull — hollow sockets with a single ember gleam each
+      // charcoal skull with embers burning inside the sockets
+      px(c, 1, 2, 'rgba(20,18,22,0.9)', 2, 1)
+      px(c, 5, 2, 'rgba(20,18,22,0.9)', 2, 1)
       px(c, 1, 3, '#0c0a0c', 2, 2)
       px(c, 5, 3, '#0c0a0c', 2, 2)
-      px(c, 2, 4, '#ff7b24', 1, 1)
-      px(c, 5, 4, '#ff7b24', 1, 1)
-      px(c, 3, 5, '#2a262a', 2, 1)
-      px(c, 2, 6, '#2a262a', 4, 1)
+      px(c, 2, 4, '#ff9a3a')
+      px(c, 5, 4, '#ff9a3a')
+      px(c, 3, 5, '#26242a', 2, 1)
+      px(c, 2, 6, '#26242a', 4, 1)
+      px(c, 4, 0, 'rgba(255,123,36,0.55)', 1, 2) // glowing crack on the crown
       return
     }
+
     if (kind === 'blaze') {
-      // molten bright eyes over a dark smoke maw
+      // white-hot eyes over a dark smoke maw
       px(c, 1, 3, '#fff6d8', 2, 2)
       px(c, 5, 3, '#fff6d8', 2, 2)
-      px(c, 3, 5, '#5a2a08', 2, 2)
+      px(c, 1, 5, 'rgba(255,150,40,0.85)', 2, 1)
+      px(c, 5, 5, 'rgba(255,150,40,0.85)', 2, 1)
+      px(c, 3, 5, '#4a2208', 2, 2)
+      blotch(c, r, s, 'rgba(90,42,8,0.5)', 4, 1, 1)
       return
     }
+
     if (kind === 'bossflame') {
-      // burning glare + a molten crack for a mouth
-      px(c, 1, 2, 'rgba(0,0,0,0.5)', 2, 1)
-      px(c, 5, 2, 'rgba(0,0,0,0.5)', 2, 1)
-      px(c, 1, 3, '#ffd23d', 2, 2)
-      px(c, 5, 3, '#ffd23d', 2, 2)
-      px(c, 3, 5, '#1a1214', 2, 1)
-      px(c, 2, 6, '#c24a18', 4, 1)
+      // burning glare + a molten crack splitting the jaw
+      px(c, 1, 2, 'rgba(0,0,0,0.55)', 2, 1)
+      px(c, 5, 2, 'rgba(0,0,0,0.55)', 2, 1)
+      px(c, 1, 3, '#ffd23d', 2, 1)
+      px(c, 5, 3, '#ffd23d', 2, 1)
+      px(c, 2, 4, '#fff4c8')
+      px(c, 5, 4, '#fff4c8')
+      px(c, 2, 5, '#c24a18', 4, 1)
+      px(c, 3, 6, '#ff7a1e', 2, 1)
+      px(c, 1, 6, '#8a2c10')
+      px(c, 0, 4, 'rgba(255,122,30,0.6)')
+      px(c, 7, 4, 'rgba(255,122,30,0.6)')
       return
     }
-    // eyes (minecraft style)
+
+    // player — classic minecraft eyes + brow + mouth
     px(c, 1, 4, '#ffffff')
-    px(c, 2, 4, cfg.eye)
-    px(c, 5, 4, cfg.eye)
+    px(c, 2, 4, '#4a4ac0')
+    px(c, 5, 4, '#4a4ac0')
     px(c, 6, 4, '#ffffff')
-    // brow
     px(c, 1, 3, 'rgba(0,0,0,0.25)', 2, 1)
     px(c, 5, 3, 'rgba(0,0,0,0.25)', 2, 1)
-    // nose + mouth
     px(c, 3, 5, 'rgba(0,0,0,0.18)', 2, 1)
-    px(c, 3, 6, `rgb(${cfg.mouth[0]},${cfg.mouth[1]},${cfg.mouth[2]})`, 2, 1)
+    px(c, 3, 6, 'rgb(122,82,62)', 2, 1)
   })
 
+  /* ---------- BODY PARTS ---------- */
   const texs: CharTexs = {
     skin: makeTex(8, 31, (c, r, s) => {
-      fillNoise(c, r, s, cfg.skin, cfg.skinVary)
+      fillNoise(c, r, s, sb, sv)
+      if (kind === 'zombie') {
+        blotch(c, r, s, 'rgba(44,80,40,0.85)', 5, 2, 1)
+        blotch(c, r, s, 'rgba(150,192,124,0.8)', 4, 1, 1)
+      }
       if (kind === 'creeper') {
-        // camo patches
-        for (let i = 0; i < 9; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 2)
+        blotch(c, r, s, 'rgba(30,80,30,0.9)', 8, 2, 2)
+        blotch(c, r, s, 'rgba(150,214,140,0.75)', 5, 1, 1)
+        blotch(c, r, s, 'rgba(60,130,60,0.8)', 4, 2, 1)
+      }
+      if (kind === 'skeleton') {
+        // hairline bone cracks + age stains
+        for (let i = 0; i < 3; i++) {
+          const x = Math.floor(r() * 6), y = Math.floor(r() * 5)
+          px(c, x, y, 'rgba(130,120,100,0.7)', 1, 2)
+          px(c, x + 1, y + 1, 'rgba(130,120,100,0.5)')
         }
-        for (let i = 0; i < 6; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(150,214,140,0.7)', 2, 1)
+        blotch(c, r, s, 'rgba(178,168,140,0.5)', 2, 2, 1)
+      }
+      if (kind === 'wither') {
+        blotch(c, r, s, 'rgba(24,22,26,0.8)', 4, 2, 1)
+        px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(255,123,36,0.85)', 1, 1)
+        px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(255,123,36,0.6)', 1, 1)
+      }
+      if (kind === 'blaze') {
+        blotch(c, r, s, 'rgba(255,224,120,0.9)', 3, 2, 2)
+        blotch(c, r, s, 'rgba(90,42,8,0.45)', 5, 1, 1)
+      }
+      if (kind === 'bossflame') {
+        for (let i = 0; i < 3; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(255,122,30,0.85)', 1, 2)
         }
+        blotch(c, r, s, 'rgba(20,14,16,0.9)', 3, 2, 1)
       }
     }),
     face: faceTex,
-    hairTop: makeTex(8, 32, (c, r, s) => fillNoise(c, r, s, cfg.hairTop, 12)),
-    body: makeTex(8, 33, (c, r, s) => {
-      fillNoise(c, r, s, cfg.body, 16)
-      if (kind === 'skeleton') {
-        // ribcage shading — dark horizontal bone gaps
-        px(c, 0, 2, '#8a8578', s, 1)
-        px(c, 0, 4, '#8a8578', s, 1)
-        px(c, 0, 6, '#8a8578', s, 1)
-        px(c, 3, 1, '#9a9484', 2, 5)
-      }
-      if (kind === 'wither') {
-        // charred ribcage
-        px(c, 0, 2, '#2e2c30', s, 1)
-        px(c, 0, 4, '#2e2c30', s, 1)
-        px(c, 0, 6, '#2e2c30', s, 1)
-        px(c, 3, 1, '#3a383c', 2, 5)
-      }
-      if (kind === 'blaze') {
-        // smoke flecks drifting over molten gold
-        for (let i = 0; i < 8; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(60,40,20,0.55)', 2, 1)
-        }
-      }
-      if (kind === 'bossflame') {
-        // ember cracks glowing through charred plates
-        for (let i = 0; i < 10; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,120,30)', 1, 2)
-        }
-        px(c, 0, 5, 'rgb(160,40,20)', 8, 1)
-      }
-      if (kind === 'creeper') {
-        for (let i = 0; i < 8; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 2)
-        }
+    hairTop: makeTex(8, 32, (c, r, s) => {
+      if (kind === 'boss') {
+        // iron helm crown with rivets and battle scratches
+        fillNoise(c, r, s, [100, 104, 112], 10)
+        px(c, 0, 0, 'rgba(60,64,72,0.9)', 8, 1)
+        px(c, 0, 7, 'rgba(60,64,72,0.9)', 8, 1)
+        px(c, 1, 1, '#565a64'); px(c, 6, 1, '#565a64')
+        px(c, 1, 6, '#565a64'); px(c, 6, 6, '#565a64')
+        blotch(c, r, s, 'rgba(150,158,168,0.8)', 3, 2, 1)
+        return
       }
       if (kind === 'zombie') {
-        for (let i = 0; i < 8; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(20,30,20,0.6)', 2, 2)
+        fillNoise(c, r, s, [80, 122, 72], 14)
+        blotch(c, r, s, 'rgba(52,84,48,0.8)', 4, 1, 1)
+        return
+      }
+      if (kind === 'skeleton') {
+        fillNoise(c, r, s, [206, 200, 182], 10)
+        px(c, Math.floor(r() * 6), 3, 'rgba(130,120,100,0.7)', 1, 2)
+        return
+      }
+      if (kind === 'wither') {
+        fillNoise(c, r, s, [44, 42, 46], 8)
+        px(c, 3, 2, 'rgba(255,123,36,0.6)', 1, 1)
+        return
+      }
+      if (kind === 'blaze') {
+        fillNoise(c, r, s, [214, 140, 36], 20)
+        blotch(c, r, s, 'rgba(255,224,120,0.9)', 3, 2, 1)
+        return
+      }
+      if (kind === 'bossflame') {
+        fillNoise(c, r, s, [38, 30, 32], 8)
+        px(c, 2, 4, 'rgba(255,122,30,0.7)', 1, 2)
+        px(c, 6, 1, 'rgba(255,122,30,0.5)', 1, 1)
+        return
+      }
+      if (kind === 'creeper') {
+        fillNoise(c, r, s, [74, 148, 74], 20)
+        blotch(c, r, s, 'rgba(30,80,30,0.85)', 4, 2, 1)
+        return
+      }
+      fillNoise(c, r, s, [66, 48, 33], 12)
+    }),
+    body: makeTex(8, 33, (c, r, s) => {
+      if (kind === 'zombie') {
+        // torn teal tunic: moss stains, holes with rot showing through, ragged hem
+        fillNoise(c, r, s, [44, 96, 82], 14)
+        blotch(c, r, s, 'rgba(30,58,38,0.75)', 5, 2, 2)
+        for (let i = 0; i < 3; i++) {
+          const x = Math.floor(r() * 6), y = 2 + Math.floor(r() * 4)
+          px(c, x, y, 'rgba(12,20,12,0.95)', 2, 1)
+          px(c, x, y, 'rgba(96,148,86,0.9)', 1, 1)
         }
+        px(c, 0, 7, 'rgba(20,30,22,0.95)', 8, 1)
+        px(c, 2, 7, 'rgba(44,96,82,1)')
+        px(c, 5, 7, 'rgba(52,104,88,1)')
+        return
       }
       if (kind === 'boss') {
-        for (let i = 0; i < 6; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(70,74,82)')
-        }
-        px(c, 0, 5, 'rgb(140,40,40)', 8, 1)
+        // steel chestplate: center ridge, rivets, belt, tattered skirt
+        fillNoise(c, r, s, [108, 112, 120], 10)
+        px(c, 3, 0, 'rgba(150,158,168,0.85)', 2, 6)
+        px(c, 0, 0, 'rgba(60,64,72,0.9)', 8, 1)
+        px(c, 0, 0, 'rgba(60,64,72,0.7)', 1, 6)
+        px(c, 7, 0, 'rgba(60,64,72,0.7)', 1, 6)
+        px(c, 1, 1, '#565a64'); px(c, 6, 1, '#565a64')
+        px(c, 0, 4, '#565a64'); px(c, 7, 4, '#565a64')
+        blotch(c, r, s, 'rgba(120,26,26,0.5)', 2, 2, 1)
+        px(c, 0, 6, '#4a3826', 8, 1)
+        px(c, 3, 6, '#9aa0a8', 2, 1)
+        px(c, 0, 7, '#33383a', 8, 1)
+        px(c, 1, 7, '#22262a')
+        px(c, 5, 7, '#22262a')
+        return
       }
+      if (kind === 'skeleton') {
+        // ribcage: horizontal bone gaps + bright sternum + pelvis
+        fillNoise(c, r, s, [216, 212, 196], 10)
+        px(c, 0, 2, 'rgba(138,132,114,0.9)', 8, 1)
+        px(c, 0, 4, 'rgba(138,132,114,0.9)', 8, 1)
+        px(c, 0, 6, 'rgba(138,132,114,0.9)', 8, 1)
+        px(c, 3, 1, 'rgba(238,234,218,0.9)', 2, 5)
+        px(c, 0, 0, 'rgba(150,142,124,0.9)', 2, 1)
+        px(c, 6, 0, 'rgba(150,142,124,0.9)', 2, 1)
+        px(c, 0, 7, 'rgba(160,152,132,0.9)', 8, 1)
+        px(c, 3, 7, 'rgba(138,132,114,0.9)', 2, 1)
+        return
+      }
+      if (kind === 'wither') {
+        // charred ribcage with embers nested between the bones
+        fillNoise(c, r, s, [66, 64, 70], 10)
+        px(c, 0, 2, 'rgba(38,36,42,0.9)', 8, 1)
+        px(c, 0, 4, 'rgba(38,36,42,0.9)', 8, 1)
+        px(c, 0, 6, 'rgba(38,36,42,0.9)', 8, 1)
+        px(c, 3, 1, 'rgba(92,88,96,0.9)', 2, 5)
+        px(c, 1, 3, 'rgba(255,123,36,0.85)', 1, 1)
+        px(c, 6, 5, 'rgba(255,123,36,0.7)', 1, 1)
+        return
+      }
+      if (kind === 'blaze') {
+        fillNoise(c, r, s, [196, 124, 32], 18)
+        blotch(c, r, s, 'rgba(255,214,100,0.9)', 3, 2, 1)
+        blotch(c, r, s, 'rgba(60,40,20,0.55)', 6, 1, 1)
+        return
+      }
+      if (kind === 'bossflame') {
+        // obsidian plates split by glowing lava veins
+        fillNoise(c, r, s, [46, 36, 38], 8)
+        px(c, 0, 2, 'rgba(20,14,16,0.95)', 8, 1)
+        px(c, 0, 5, 'rgba(20,14,16,0.95)', 8, 1)
+        px(c, 0, 5, 'rgb(160,40,20)', 8, 1)
+        for (let i = 0; i < 4; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,122,30)', 1, 2)
+        }
+        px(c, 4, 3, 'rgb(255,200,80)')
+        return
+      }
+      if (kind === 'creeper') {
+        fillNoise(c, r, s, [84, 162, 84], 20)
+        blotch(c, r, s, 'rgba(30,80,30,0.9)', 6, 2, 2)
+        blotch(c, r, s, 'rgba(150,214,140,0.7)', 3, 1, 1)
+        return
+      }
+      if (kind === 'player') {
+        fillNoise(c, r, s, [0, 148, 148], 14)
+        return
+      }
+      fillNoise(c, r, s, sb, sv)
     }),
     arm: makeTex(8, 34, (c, r, s) => {
-      if (cfg.sleeve) {
-        fillNoise(c, r, s, cfg.body, 14)
+      if (kind === 'player') {
+        // sleeve + bare forearm
+        fillNoise(c, r, s, [0, 148, 148], 14)
         for (let y = 5; y < s; y++)
           for (let x = 0; x < s; x++) {
-            const v = (r() - 0.5) * cfg.skinVary
-            px(c, x, y, `rgb(${clamp255(cfg.arm[0] + v)},${clamp255(cfg.arm[1] + v)},${clamp255(cfg.arm[2] + v)})`)
+            const v = (r() - 0.5) * 14
+            px(c, x, y, `rgb(${clamp255(198 + v)},${clamp255(152 + v)},${clamp255(110 + v)})`)
           }
-      } else {
-        fillNoise(c, r, s, cfg.arm, cfg.skinVary)
+        return
+      }
+      if (kind === 'zombie') {
+        fillNoise(c, r, s, [96, 148, 86], 16)
+        blotch(c, r, s, 'rgba(44,80,40,0.85)', 4, 2, 1)
+        px(c, 0, 6, 'rgba(40,60,36,0.45)', 8, 2)
+        return
+      }
+      if (kind === 'boss') {
+        // pauldron + torn sleeve + gauntlet
+        px(c, 0, 0, '#7c828c', 8, 3)
+        px(c, 0, 0, 'rgba(60,64,72,0.9)', 8, 1)
+        px(c, 1, 1, '#565a64', 1, 1)
+        px(c, 5, 2, '#565a64', 1, 1)
+        fillNoise2(c, r, s, [50, 56, 50], 12, 3, 6)
+        px(c, 0, 3, 'rgba(20,24,20,0.6)', 8, 1)
+        px(c, 0, 6, '#8d939c', 8, 2)
+        px(c, 0, 6, 'rgba(60,64,72,0.8)', 8, 1)
+        return
+      }
+      if (kind === 'skeleton') {
+        fillNoise(c, r, s, [224, 220, 204], 10)
+        px(c, 0, 0, 'rgba(150,142,124,0.9)', 8, 1)
+        px(c, 0, 7, 'rgba(150,142,124,0.9)', 8, 1)
+        px(c, 3, 3, 'rgba(130,120,100,0.7)', 1, 2)
+        return
+      }
+      if (kind === 'wither') {
+        fillNoise(c, r, s, [56, 54, 58], 10)
+        px(c, 0, 0, 'rgba(30,28,32,0.9)', 8, 1)
+        px(c, 0, 7, 'rgba(30,28,32,0.9)', 8, 1)
+        px(c, 5, 4, 'rgba(255,123,36,0.7)', 1, 1)
+        return
+      }
+      if (kind === 'bossflame') {
+        fillNoise(c, r, s, [52, 42, 44], 10)
+        px(c, 0, 5, 'rgba(184,134,42,0.95)', 8, 1) // gold bracer
+        px(c, 2, 2, 'rgba(255,122,30,0.8)', 1, 2)
+        px(c, 0, 7, 'rgba(20,14,16,0.9)', 8, 1)
+        return
+      }
+      fillNoise(c, r, s, sb, sv)
+      if (kind === 'blaze') {
+        blotch(c, r, s, 'rgba(255,224,120,0.9)', 3, 2, 1)
+      }
+      if (kind === 'creeper') {
+        blotch(c, r, s, 'rgba(30,80,30,0.9)', 5, 2, 1)
       }
     }),
     leg: makeTex(8, 35, (c, r, s) => {
-      fillNoise(c, r, s, cfg.leg, 14)
+      if (kind === 'zombie') {
+        fillNoise(c, r, s, [74, 66, 76], 12)
+        px(c, 3, 3, 'rgba(94,84,94,0.9)', 2, 2)
+        px(c, 0, 5, 'rgba(20,20,22,0.6)', 3, 1)
+        px(c, 0, 6, 'rgba(40,34,38,0.95)', 8, 2)
+        return
+      }
+      if (kind === 'boss') {
+        // armored greave: knee plate, strap, dark boot
+        fillNoise(c, r, s, [104, 108, 116], 10)
+        px(c, 2, 2, 'rgba(150,158,168,0.9)', 4, 2)
+        px(c, 0, 4, 'rgba(58,44,30,0.95)', 8, 1)
+        px(c, 0, 6, 'rgba(60,64,70,0.95)', 8, 2)
+        px(c, 0, 0, 'rgba(60,64,72,0.7)', 8, 1)
+        return
+      }
       if (kind === 'skeleton') {
-        // bone joint shading
-        px(c, 0, 0, '#918c7e', s, 1)
-        px(c, 0, 7, '#918c7e', s, 1)
+        fillNoise(c, r, s, [212, 208, 192], 10)
+        px(c, 0, 0, 'rgba(145,140,126,0.9)', 8, 1)
+        px(c, 3, 3, 'rgba(238,234,218,0.9)', 2, 1)
+        px(c, 0, 7, 'rgba(145,140,126,0.9)', 8, 1)
+        px(c, 1, 5, 'rgba(130,120,100,0.6)', 1, 2)
+        return
       }
       if (kind === 'wither') {
-        px(c, 0, 0, '#302e32', s, 1)
-        px(c, 0, 7, '#302e32', s, 1)
+        fillNoise(c, r, s, [48, 46, 50], 10)
+        px(c, 0, 0, 'rgba(28,26,30,0.9)', 8, 1)
+        px(c, 0, 7, 'rgba(28,26,30,0.9)', 8, 1)
+        px(c, 6, 3, 'rgba(255,123,36,0.6)', 1, 1)
+        return
       }
+      if (kind === 'bossflame') {
+        fillNoise(c, r, s, [40, 32, 34], 8)
+        px(c, 0, 2, 'rgba(20,14,16,0.9)', 8, 1)
+        px(c, 4, 4, 'rgba(255,122,30,0.8)', 1, 2)
+        px(c, 0, 6, 'rgba(24,18,20,0.95)', 8, 2)
+        return
+      }
+      fillNoise(c, r, s, sb, sv)
       if (kind === 'creeper') {
-        for (let i = 0; i < 6; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 1)
-        }
+        blotch(c, r, s, 'rgba(30,80,30,0.85)', 5, 2, 1)
+      }
+      if (kind === 'blaze') {
+        blotch(c, r, s, 'rgba(255,224,120,0.8)', 2, 2, 1)
       }
     }),
   }
   charTexs[kind] = texs
   return texs
+}
+
+/** fill only a horizontal band of rows (rows y0..y1-1) */
+function fillNoise2(
+  ctx: CanvasRenderingContext2D,
+  rng: Rng,
+  s: number,
+  base: [number, number, number],
+  vary: number,
+  y0: number,
+  y1: number
+) {
+  for (let y = y0; y < y1; y++) {
+    for (let x = 0; x < s; x++) {
+      const v = (rng() - 0.5) * vary
+      ctx.fillStyle = `rgb(${clamp255(base[0] + v)},${clamp255(base[1] + v)},${clamp255(base[2] + v)})`
+      ctx.fillRect(x, y, 1, 1)
+    }
+  }
 }
 
 export interface CharMats {
