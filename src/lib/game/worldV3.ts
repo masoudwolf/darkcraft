@@ -2,14 +2,30 @@ import * as THREE from 'three'
 import { blockMaterials, mulberry32, createFogMaterial } from './textures'
 
 /* ==================================================================
-   WORLD V3 — rebuilt with one law: CLARITY FIRST.
+   WORLD V4 — V3's clarity, grown into a living world.
+
+   The V3 laws still hold: wide roads, low heights, one silhouette per
+   region, lantern-marked destinations. On top of them V4 adds the
+   layer that was missing — DENSITY and DISCOVERY:
+
+   1. THE LOOP. A mossy stair (the Watchers' Stair) falls from the
+      parish plateau's east flank to the meadow and returns to the
+      shrine's north arch — the Dark-Souls circle: hub → village →
+      parish → shortcut → hub. The world is now a ring, not a fork.
+   2. The meadow gained a pond with a dock; the ashes gained a ruined
+      gate arch around the pyromancy flame; the fortress yard gained
+      a processional walkway, barracks ruin and a well.
+   3. Detail pass: candles, hay, barrels, spikes, vents, slits, a
+      burned homestead, a crypt — every region earns a second look.
+   4. Drifting ash motes and rising lava embers (buildAmbient) keep
+      the air alive between the landmarks.
 
    Why V2 failed: too dark to read, too vertical to walk, the camera
    trapped against walls, and regions blurred into a jumble of blocks.
 
    The V3 laws:
    1. Every road is ≥4 wide, every gate ≥4 wide, every slope ≤1:2.
-   2. No structure hangs above a walkable path. The camera is free.
+   2. No LOW structure hangs above a walkable path. The camera is free.
    3. Each region owns ONE bold silhouette + ONE ground colour, so you
       always know where you are and where to go next.
    4. Two roads leave the hub — west to the village, east to the ash.
@@ -50,6 +66,7 @@ export const V3_LAVA_POOLS: [number, number, number][] = [
   [30, 25, 2],
   [40, 28, 1.5],
   [27, 5, 1.5],
+  [44, 30, 1.5],
 ]
 
 /* surface codes (index into V3_SURF_NAMES) */
@@ -84,8 +101,8 @@ export const REGIONS_V3: RegionV3[] = [
     name: 'نمای کل جهان',
     sub: 'همه‌چیز از یک نگاه — دو جاده، دو لندمارک',
     dot: '#9db2cc',
-    desc: 'دنیا خوانا است: از آتشگاه، جادهٔ غربی به دهکدهٔ فراموشی می‌رود و از آن‌جا پله‌های تپه، بالا به کلیسا؛ جادهٔ شرقی از خاکسترگاه می‌گذرد و به دروازهٔ دژ ذغال می‌رسد. برجِ ناقوسِ طلایی و دیوارهای دندانه‌دار دژ از هر نقطهٔ نقشه پیدا هستند — هیچ‌وقت گم نمی‌شوی.',
-    design: 'قانون تازه: هر جاده یک مقصدِ قابل‌دیدن دارد. بازیکن همیشه می‌داند کجاست و کجا باید برود.',
+    desc: 'دنیا خوانا است و حالا حلقه است: از آتشگاه، جادهٔ غربی به دهکدهٔ فراموشی می‌رود و از آن‌جا پله‌های تپه، بالا به کلیسا؛ جادهٔ شرقی از خاکسترگاه می‌گذرد و به دروازهٔ دژ ذغال می‌رسد — و پله‌های کهنهٔ «نگهبانان» از دامنهٔ شرقی تپه، پایین به چمن و طاق چهارراه برمی‌گردند. حوضِ چمنِ غرب، پناهگاهِ ساکت میان‌راه است. برجِ ناقوسِ طلایی و دیوارهای دندانه‌دار دژ از هر نقطهٔ نقشه پیدا هستند — هیچ‌وقت گم نمی‌شوی.',
+    design: 'قانون تازه: هر جاده یک مقصدِ قابل‌دیدن دارد و جهان یک حلقه است — مثل Firelink، میان‌بُرها جایزهٔ کاوش‌اند، نه خطای طراحی.',
     cam: { x: 0, z: 2, y: 16, dist: 105, theta: 0.0, phi: 0.94 },
   },
   {
@@ -93,7 +110,7 @@ export const REGIONS_V3: RegionV3[] = [
     name: 'آتشگاه — معبد اخگر',
     sub: 'هاب بازی — همه‌ی راه‌ها از این‌جا می‌گذرند',
     dot: '#ffb347',
-    desc: 'صفحه‌ی سنگی معبد روی تپه‌ی چمن نشسته: حلقه‌ی ستون‌های شکسته دور آتش کمپ، دو مجسمه‌ی تعظیم‌کننده سرِ چهارراه را نشان می‌دهند و طاقِ سنگی بالای آن مرز آتشگاه است. بازرگان چادرش را جنوب زده. از این‌جا هر دو لندمارک دیده می‌شوند: برج کلیسا در شمال‌غرب، دیوار دژ در شمال‌شرق.',
+    desc: 'صفحه‌ی سنگی معبد روی تپه‌ی چمن نشسته: حلقه‌ی ستون‌های شکسته دور آتش کمپ، شمع‌ها و جاکلیدیِ سلاح، دو مجسمه‌ی تعظیم‌کننده سرِ چهارراه را نشان می‌دهند و طاقِ سنگی بالای آن مرز آتشگاه است. ویرانه‌ی تالارِ کهنه در چمنِ غرب ایستاده و نهالِ اخگر هنوز در آن گرم است. بازرگان چادرش را جنوب زده. از این‌جا هر دو لندمارک دیده می‌شوند: برج کلیسا در شمال‌غرب، دیوار دژ در شمال‌شرق.',
     design: 'مثل Firelink: هاب مرتفع است و کل جهانِ پیرامون را نشان می‌دهد — اما بدون هیاهوی بصری؛ چند عنصر، یک پیام.',
     cam: { x: 0, z: 30, y: 12, dist: 26, theta: 0.1, phi: 0.7 },
   },
@@ -102,7 +119,7 @@ export const REGIONS_V3: RegionV3[] = [
     name: 'دهکدهٔ فراموشی',
     sub: 'یک خیابان، چهار خانه، یک چاه — خوانا و ساده',
     dot: '#b09055',
-    desc: 'دهکده دیگر هزارتوی کوچه نیست: یک خیابان شمالی-جنوبی که چهار خانهٔ بزرگ با سقف شیروانی دو طرفش ایستاده‌اند، وسطش میدان چاه است و انتهاش طاقلهٔ هیزم. درها رو به خیابان‌اند، پنجره‌ی یکی روشن است و گاری واژگون کنار میدان مانده. خالی‌شدگان همان‌جا که خانه‌هایشان را ساخته بودند می‌گردند.',
+    desc: 'دهکده دیگر هزارتوی کوچه نیست: یک خیابان شمالی-جنوبی که چهار خانهٔ بزرگ با سقف شیروانی دو طرفش ایستاده‌اند، وسطش میدان چاه است و انتهاش طاقلهٔ هیزم. درها رو به خیابان‌اند، فانوس کنار هر در، گاری واژگون کنار میدان مانده — و جنوبِ پرچین، خانهٔ سوخته‌ای مانده که آتشِ نخستین هنوز رهایش نکرده. خالی‌شدگان همان‌جا که خانه‌هایشان را ساخته بودند می‌گردند.',
     design: 'درسِ V۲: پیچ‌وخمِ کوچه‌ها حذف شد. یک خیابانِ پهن یعنی دشمن همیشه جلوی چشم است و جنگ منصفانه.',
     cam: { x: -38, z: 17, y: 11, dist: 30, theta: 0.35, phi: 0.62 },
   },
@@ -111,7 +128,7 @@ export const REGIONS_V3: RegionV3[] = [
     name: 'تپهٔ کلیسا',
     sub: 'برجِ ناقوس طلایی — لنگرِ دیداری نقشه',
     dot: '#ece8dc',
-    desc: 'پله‌های وسیع از دهکده به فلات سنگی می‌رسند: پیشِ رو حیاطِ شوالیه (آرنای باس اول) با دروازهٔ مه، پشتِ آن کلیسای سنگی با پنجره‌های ماه‌گرفته و برج ناقوس با زنگ طلایی، و شرقِ کلیسا گورستانِ محصور با قبرها و مجسمهٔ عزادار. زنگ از آتشگاه پیدا است.',
+    desc: 'پله‌های وسیع از دهکده به فلات سنگی می‌رسند: پیشِ رو حیاطِ شوالیه (آرنای باس اول) با دروازهٔ مه، پشتِ آن کلیسای سنگی با پنجره‌های ماه‌گرفته و برج ناقوس با زنگ طلایی، سردابِ کوچکِ چسبیده به دیوار شمالی، و شرقِ کلیسا گورستانِ محصور با دوازده قبر، شمع‌های روشن و مجسمهٔ عزادار. سرِ پله‌های نگهبانان — میان‌بُرِ چمن — از دامنهٔ شرقی پیدا است. زنگ از آتشگاه پیدا است.',
     design: 'برج = قطب‌نما. مثل Undead Parish، بازیکن از هر جای نقشه می‌داند «مقصدها آن‌جاست» — بدون هیچ نشانگر HUD.',
     cam: { x: -32, z: -20, y: 16, dist: 40, theta: 0.75, phi: 0.6 },
   },
@@ -120,7 +137,7 @@ export const REGIONS_V3: RegionV3[] = [
     name: 'خاکسترگاه',
     sub: 'دریای خاکستر بین دو جاده',
     dot: '#ff6a1f',
-    desc: 'شرق، زمین سیاه می‌شود: گودال‌های گدازه با لبه‌سنگیِ هشدار، درخت‌های ذغالی، دو گاری سوخته و اردوی زاهد — چادر، آتشِ سرد و شعلهٔ آتش‌افروزی که منتظر دستِ توست. باز هم همه‌چیز روی یک صفحهٔ باز: هیچ کمینی پشتِ دیوار نیست.',
+    desc: 'شرق، زمین سیاه می‌شود: گودال‌های گدازه با لبه‌سنگیِ هشدار و نورِ سرخِ خودشان، سنجاق‌سوخته‌های ابسیدین، درخت‌های ذغالی، دو گاری سوخته و اردوی زاهد — چادر، آتشِ سرد و شعلهٔ آتش‌افروزی که زیرِ طاقِ دروازهٔ سوخته منتظر دستِ توست. باز هم همه‌چیز روی یک صفحهٔ باز: هیچ کمینی پشتِ دیوار نیست.',
     design: 'منطقهٔ «نفس‌گیری» بین دو باس — باز و روشن، با خطرهای دیدنی (گدازه‌ها) نه خطرهای پنهان.',
     cam: { x: 30, z: 16, y: 10, dist: 36, theta: -0.5, phi: 0.66 },
   },
@@ -129,7 +146,7 @@ export const REGIONS_V3: RegionV3[] = [
     name: 'دژ ذغال',
     sub: 'آخرین بارِ پادشاه شعله — دیوار، حیاط، تخت',
     dot: '#ffd23d',
-    desc: 'دیوار دندانه‌دارِ عظیم از خاکستر بلند است؛ دروازه‌اش با دو برجِ فانوس‌دار جلوه‌گر است و مهِ دروازه حیاطِ دژ را پنهان می‌کند: کوره‌های فرو ریخته، سکوی تختِ شاه در انتهای شمالی و پادشاهِ شعله که وسط حیاط منتظر است. پشتِ دیوار شمالی، دریاچهٔ گدازه می‌درخشد.',
+    desc: 'دیوار دندانه‌دارِ عظیم از خاکستر بلند است؛ دروازه‌اش با دو برجِ فانوس‌دار و پنجره‌های تیرباران جلوه‌گر است و مهِ دروازه حیاطِ دژ را پنهان می‌کند: راهروی آیینیِ سنگی که از دروازه تا سکوی تختِ شاه می‌رود، کوره‌های فرو ریخته، چاهِ پادگان، خرابهٔ سربازخانه در کنار دیوار شرقی و پادشاهِ شعله که وسط حیاط منتظر است. پشتِ دیوار شمالی، دریاچهٔ گدازه می‌درخشد.',
     design: 'مثل Sen\'s Fortress: دیوار بیرونی، حیاط درونی، تختِ شاه به‌عنوان نقطهٔ فرارِ چشم — هندسه‌ی سه‌لایه‌ای که یک نگاه خوانده می‌شود.',
     cam: { x: 34, z: -14, y: 14, dist: 42, theta: 0.2, phi: 0.62 },
   },
@@ -137,7 +154,7 @@ export const REGIONS_V3: RegionV3[] = [
 
 /* ================================================================== */
 
-interface RampDef { x0: number; z0: number; x1: number; z1: number; h0: number; h1: number; w: number }
+interface RampDef { x0: number; z0: number; x1: number; z1: number; h0: number; h1: number; w: number; shortcut?: boolean }
 const RAMPS: RampDef[] = [
   // west road — shrine → the village gate (straight, lantern-lined, 8→7)
   { x0: -9, z0: 28, x1: -37, z1: 28, h0: 8, h1: 7, w: 2.6 },
@@ -153,6 +170,13 @@ const RAMPS: RampDef[] = [
   { x0: 24, z0: 20, x1: 33, z1: 7, h0: 6, h1: 6, w: 2.6 },
   // the gate ramp — up into the fortress mouth (6→9, about 1:4)
   { x0: 33, z0: 8, x1: 34, z1: -4, h0: 6, h1: 9, w: 3 },
+  // ---- THE WATCHERS' STAIR — the shortcut loop ----
+  // leg S1 — off the parish plateau's east flank (12→9, ≈1:4)
+  { x0: -18, z0: -14, x1: -11, z1: -2, h0: 12, h1: 9, w: 2.2, shortcut: true },
+  // leg S2 — down the meadow's spine toward the shrine (9→8)
+  { x0: -11, z0: -2, x1: -6, z1: 14, h0: 9, h1: 8, w: 2.2, shortcut: true },
+  // leg S3 — the last steps, aimed at the crossroads arch (flat 8)
+  { x0: -6, z0: 14, x1: -2, z1: 19, h0: 8, h1: 8, w: 2.2, shortcut: true },
 ]
 
 export class WorldV3 {
@@ -165,6 +189,13 @@ export class WorldV3 {
   private rng = mulberry32(3087)
   private fogGates: { mesh: THREE.Mesh; which: 1 | 2 }[] = []
   private L: Record<string, Vec3Lite[]> = {}
+  private motes: THREE.Points | null = null
+  private motesBase: Float32Array | null = null
+  private motesPhase: Float32Array | null = null
+  private embers: THREE.Points | null = null
+  private embersBase: Float32Array | null = null
+  private embersPhase: Float32Array | null = null
+  private t = 0
 
   constructor() {
     this.genHeightmap()
@@ -177,6 +208,7 @@ export class WorldV3 {
     this.buildMeadow()
     this.buildFogGates()
     this.buildSky()
+    this.buildAmbient()
     this.flush()
   }
 
@@ -282,6 +314,9 @@ export class WorldV3 {
         /* ---- CINDER FORTRESS courtyard incl. the gate apron ---- */
         h = this.plateRect(h, x, z, 21, 47, -33, -3, 9, 2.5)
 
+        /* ---- the burned homestead plot, south of the village fence ---- */
+        h = this.plateRect(h, x, z, -45, -40, 29, 33, 7, 2)
+
         /* ---- roads & ramps cut last — closest centreline wins ---- */
         let bestD = Infinity
         let bestW = 0
@@ -322,14 +357,19 @@ export class WorldV3 {
         const inVillage = x >= -47 && x <= -29 && z >= 8 && z <= 27
         const inWastes = x >= 23
         const inFortress = x >= 21 && x <= 47 && z >= -33 && z <= -3
-        const onRoad = RAMPS.some((rp) => {
+        let onRoad = false
+        let onShortcut = false
+        for (const rp of RAMPS) {
           const dx = rp.x1 - rp.x0, dz = rp.z1 - rp.z0
           const len2 = dx * dx + dz * dz
           let t = ((x - rp.x0) * dx + (z - rp.z0) * dz) / len2
           t = Math.max(0, Math.min(1, t))
           const d = Math.hypot(x - (rp.x0 + dx * t), z - (rp.z0 + dz * t))
-          return d <= rp.w + 0.4
-        })
+          if (d <= rp.w + 0.4) {
+            if (rp.shortcut) onShortcut = true
+            else onRoad = true
+          }
+        }
 
         if (edShrine <= 1) s = (x * 7 + z * 5) % 11 === 0 ? S_MOSSY : S_BRICK // cracked shrine tiles
         else if (inFortress) s = S_COBBLE // courtyard + apron
@@ -340,6 +380,7 @@ export class WorldV3 {
           const square = x >= -41 && x <= -35 && z >= 14 && z <= 20
           s = street || square ? S_COBBLE : S_GRASS
         } else if (inWastes) s = onRoad ? S_DIRT : S_ASH
+        else if (onShortcut) s = S_MOSSY // the Watchers' Stair — ancient, green
         else if (onRoad) s = S_DIRT
 
         // the graveyard keeps bare earth
@@ -368,6 +409,20 @@ export class WorldV3 {
       for (let z = -37; z <= -32; z++) {
         this.heights[this.idx(x, z)] = 5
         this.surf[this.idx(x, z)] = S_LAVA
+      }
+
+    /* ---- the meadow pond — one calm mirror on the west lawn ----
+       one block deep, ring-flattened so the step in AND out is 1 */
+    for (let x = -26; x <= -14; x++)
+      for (let z = 29; z <= 39; z++) {
+        const d = Math.hypot((x + 20) / 3.2, (z - 34) / 2.4)
+        if (d <= 1) {
+          this.heights[this.idx(x, z)] = 5
+          this.surf[this.idx(x, z)] = S_WATER
+        } else if (d <= 1.55) {
+          this.heights[this.idx(x, z)] = 6
+          if (this.surf[this.idx(x, z)] === S_GRASS) this.surf[this.idx(x, z)] = S_DIRT
+        }
       }
   }
 
@@ -445,6 +500,7 @@ export class WorldV3 {
         const s = this.surf[this.idx(x, z)]
         put2(x, h + 0.5, z, V3_SURF_NAMES[s])
         if (s === S_LAVA) put2(x, h - 0.5, z, 'stone') // bed under the melt
+        if (s === S_WATER) put2(x, h - 0.5, z, 'dirt') // bed under the mirror
         if (h - 1 >= 0 && exposed(x, z, h - 1))
           put2(x, h - 0.5, z, s === S_BRICK ? 'stonebrick' : h >= 8 ? 'stone' : 'dirt')
         if (h - 2 >= 0 && exposed(x, z, h - 2)) put2(x, h - 1.5, z, h >= 8 ? 'stone' : 'dirt')
@@ -588,6 +644,45 @@ export class WorldV3 {
     /* mossy benches facing the fire */
     this.fill('mossy', -5, -4, y0, y0, 27, 27)
     this.fill('mossy', 4, 5, y0, y0, 27, 27)
+
+    /* candle stubs ringed around the hearth — small fires remember */
+    for (const [cx, cz] of [[-2, 28], [2, 28], [-2, 32], [2, 32]] as const) this.b('gold', cx, y0, cz)
+
+    /* a weapon rack by the east bench — someone kept watch here
+       (kept clear of the east road mouth) */
+    this.b('log', 8, y0, 24)
+    this.b('log', 10, y0, 24)
+    this.fill('plank', 8, 10, y0 + 1, y0 + 1, 24, 24)
+
+    /* banner poles flanking the crossroads arch */
+    for (const px of [-5, 5]) {
+      this.col('log', px, 19, y0, y0 + 1)
+      this.b('gold', px, y0 + 2, 19)
+    }
+
+    /* rubble spills outside the colonnade — age without clutter */
+    for (const [rx, rz] of [[-10, 24], [11, 36], [-6, 40]] as const) {
+      this.b('cobble', rx, y0, rz)
+      this.b('mossy', rx + 1, y0, rz)
+      this.b('cobble', rx, y0, rz + 1)
+    }
+
+    /* the ruined annex on the plaza's west lawn — the shrine's old hall */
+    for (let x = -13; x <= -8; x++) {
+      this.col('mossy', x, 36, y0, y0 + 1)
+      if (x % 2 === 0) this.b('stonebrick', x, y0 + 2, 36)
+    }
+    for (let z = 37; z <= 40; z++) {
+      this.col('stonebrick', -13, z, y0, y0 + 1)
+      this.b('mossy', -8, y0, z)
+    }
+    this.fill('cobble', -12, -9, y0, y0, 38, 39) // fallen roof rubble
+    /* the ember sapling — a shoot of the First Coal, still warm */
+    this.col('log', -10, 39, y0, y0 + 1)
+    this.b('glow', -10, y0 + 2, 39)
+    this.b('leaves', -9, y0 + 2, 39)
+    this.b('leaves', -11, y0 + 2, 39)
+    this.b('leaves', -10, y0 + 2, 38)
   }
 
   /* ================= FORGOTTEN VILLAGE ================= */
@@ -667,6 +762,39 @@ export class WorldV3 {
     this.lantern(-41, y0, 14, true)
     this.lantern(-35, y0, 20)
     this.deadTree('log', -31, y0, 10)
+
+    /* hay bales beside the woodshed */
+    this.b('mossy', -43, y0, 10)
+    this.b('mossy', -44, y0, 10)
+
+    /* barrels and crates leaning on the houses */
+    this.b('log', -42, y0, 21)
+    this.b('log', -30, y0, 11)
+    this.b('plank', -30, y0, 12)
+
+    /* a leaning notice board by the square's south lip
+       (kept clear of the hollow's well-side patrol) */
+    this.b('log', -41, y0, 17)
+    this.b('log', -41, y0, 19)
+    this.fill('plank', -41, -41, y0 + 1, y0 + 1, 17, 19)
+
+    /* the burned homestead — the fire came through here and never left */
+    const ry0 = 8 // homestead plot (floor h=7)
+    for (let x = -45; x <= -40; x++) {
+      this.b('cobble', x, ry0, 29) // the north wall, low and broken
+      if (x % 2 === 0) this.b('darkstone', x, ry0 + 1, 29)
+    }
+    this.col('cobble', -45, 30, ry0, ry0 + 1)
+    this.col('darkstone', -45, 31, ry0, ry0 + 2)
+    this.col('cobble', -40, 30, ry0, ry0 + 1)
+    this.b('darkstone', -40, ry0 + 2, 31)
+    // a charred roof beam slumps across the ruin
+    this.fill('darkstone', -44, -42, ry0 + 2, ry0 + 2, 32, 32)
+    // the hearth still holds its coal; the floor is ash and rubble
+    this.b('coal', -43, ry0, 31)
+    this.b('darkstone', -42, ry0, 32)
+    this.b('cobble', -44, ry0, 32)
+    this.deadTree('log', -39, this.getH(-39, 33) + 1, 33, 2)
   }
 
   /* ================= PARISH HILL — church, graveyard, arena ================= */
@@ -795,6 +923,42 @@ export class WorldV3 {
     this.fill('darkstone', -26, -26, y0 + 1, y0 + 2, -32, -32)
     this.b('cobble', -26, y0 + 3, -32)
     this.deadTree('log', -26, y0, -25)
+
+    /* four more graves — the parish outlived its town */
+    for (const [gx, gz, cross] of [[-26, -29, true], [-19, -31, false], [-22, -25, true], [-19, -26, false]] as const) {
+      if (cross) {
+        this.b('mossy', gx, y0, gz)
+        this.b('cobble', gx, y0 + 1, gz)
+        this.b('cobble', gx, y0 + 2, gz)
+        this.b('mossy', gx - 1, y0 + 2, gz)
+        this.b('mossy', gx + 1, y0 + 2, gz)
+      } else {
+        this.b('cobble', gx, y0, gz)
+        this.b('mossy', gx, y0 + 1, gz)
+      }
+    }
+
+    /* taller corner posts guard the graveyard walls */
+    for (const [cx, cz] of [[-27, -24], [-18, -24], [-27, -33], [-18, -33]] as const) {
+      this.b('cobble', cx, y0 + 1, cz)
+      this.b('mossy', cx, y0 + 2, cz)
+    }
+
+    /* a lantern leans by the graveyard gate; candles mark two visits */
+    this.lantern(-25, y0, -23)
+    this.b('glow', -25, y0, -30)
+    this.b('glow', -21, y0, -26)
+
+    /* the crypt — a low stone box against the church's north wall */
+    for (let x = -33; x <= -30; x++)
+      for (let z = -36; z <= -34; z++) {
+        const edge = x === -33 || x === -30 || z === -36 || z === -34
+        if (!edge) continue
+        this.col('stonebrick', x, z, y0, y0 + 2)
+      }
+    this.clearCol('stonebrick', -30, y0, y0 + 1, -35) // the east door
+    this.fill('stonebrick', -33, -30, y0 + 3, y0 + 3, -36, -34) // slab roof
+    this.fill('plank', -32, -31, y0, y0, -35, -35) // the tomb slab
   }
 
   /* ================= ASH WASTES ================= */
@@ -819,13 +983,43 @@ export class WorldV3 {
     this.b('log', 46, y0, 26)
     this.b('log', 46, y0, 27)
 
-    /* the hermit camp — tent, cold fire, a stool (the pyro flame waits here) */
-    this.fill('plank', 31, 31, y0, y0, 11, 13)
-    this.fill('plank', 33, 33, y0, y0, 11, 13)
-    this.fill('plank', 32, 32, y0 + 1, y0 + 1, 11, 13)
-    for (const [fx, fz] of [[31, 17], [33, 17], [31, 19], [33, 19]] as const) this.b('cobble', fx, y0, fz)
-    this.b('coal', 32, y0, 18)
-    this.b('log', 31, y0, 16) // the stool
+    /* the hermit camp — tent, cold fire, a stool (the pyro flame waits
+       nearby). Sits south of the road's east shoulder, never on it. */
+    this.fill('plank', 31, 31, y0, y0, 15, 17)
+    this.fill('plank', 33, 33, y0, y0, 15, 17)
+    this.fill('plank', 32, 32, y0 + 1, y0 + 1, 15, 17)
+    for (const [fx, fz] of [[31, 20], [33, 20], [31, 22], [33, 22]] as const) this.b('cobble', fx, y0, fz)
+    this.b('coal', 32, y0, 21)
+    this.b('log', 31, y0, 19) // the stool
+
+    /* the ruined gate arch, east of the pyromancy flame — its west
+       side has already fallen toward the road */
+    this.col('darkstone', 35, 12, y0, y0 + 3)
+    this.col('darkstone', 35, 15, y0, y0 + 2)
+    this.b('darkstone', 35, y0 + 4, 13) // the surviving lintel stubs
+    this.b('darkstone', 35, y0 + 4, 14)
+    this.b('cobble', 34, y0, 16) // crumbled shoulders
+    this.b('cobble', 36, y0, 17)
+    this.b('cobble', 35, y0, 10)
+
+    /* obsidian spikes — the ground remembers the burning */
+    for (const [sx, sz, sh] of [[40, 4, 3], [42, 12, 4], [47, 24, 3], [26, 28, 2], [50, 5, 3]] as const) {
+      this.col('darkstone', sx, sz, y0, y0 + sh - 1)
+      if (sh >= 3) this.b('coal', sx + 1, y0, sz)
+    }
+
+    /* ember vents — cracks that still breathe heat */
+    for (const [vx, vz] of [[34, 22], [45, 8], [30, 3]] as const) {
+      this.b('coal', vx, y0, vz)
+      this.b('glow', vx, y0 + 1, vz)
+    }
+
+    /* lava light — low suns for the molten pools */
+    for (const [lx, lz] of V3_LAVA_POOLS) {
+      const pl = new THREE.PointLight(0xff5a20, 1.7, 13, 1.6)
+      pl.position.set(lx + 0.5, 8.2, lz + 0.5)
+      this.group.add(pl)
+    }
   }
 
   /* ================= CINDER FORTRESS ================= */
@@ -890,7 +1084,7 @@ export class WorldV3 {
     const brazier = new THREE.PointLight(0xff7830, 1.8, 13, 1.7)
     brazier.position.set(44.5, y0 + 2, -13.5)
     this.group.add(brazier)
-    for (const [rx, rz] of [[24, -12], [42, -22]] as const) {
+    for (const [rx, rz] of [[24, -12], [41, -12]] as const) {
       this.b('log', rx, y0, rz)
       this.b('log', rx + 2, y0, rz)
       this.fill('plank', rx, rx + 2, y0 + 2, y0 + 2, rz, rz)
@@ -898,15 +1092,81 @@ export class WorldV3 {
     this.fill('plank', 30, 31, y0, y0, -25, -26)
     this.b('log', 29, y0, -25)
     this.b('log', 29, y0, -26)
+
+    /* the processional walkway — forecourt (the king waits here), then
+       a raised aisle climbing to the throne. It stops short of the
+       boss's resting spot so nothing is ever spawned inside a block. */
+    this.fill('stonebrick', 33, 35, y0, y0, -26, -16)
+    for (const bz of [-12, -18, -24]) {
+      this.b('cobble', 31, y0, bz)
+      this.b('glow', 31, y0 + 1, bz)
+      this.b('cobble', 37, y0, bz)
+      this.b('glow', 37, y0 + 1, bz)
+    }
+    /* banner poles where the aisle begins */
+    for (const px of [32, 36]) {
+      this.col('log', px, -10, y0, y0 + 1)
+      this.b('gold', px, y0 + 2, -10)
+    }
+
+    /* the barracks ruin against the east wall — roof burned through */
+    for (let z = -22; z <= -15; z++) {
+      if (z !== -19 && z !== -18) this.col('cobble', 41, z, y0, y0 + 2)
+      this.col('cobble', 46, z, y0, y0 + 1)
+      if (z % 2 === 0) this.col('cobble', 44, z, y0, y0)
+    }
+    for (let x = 42; x <= 45; x++) {
+      this.col('cobble', x, -22, y0, y0 + 1)
+      this.b('cobble', x, y0, -15)
+    }
+    this.fill('darkstone', 42, 45, y0 + 3, y0 + 3, -21, -20) // a slumped beam
+    this.b('plank', 43, y0, -18) // crates inside
+    this.b('plank', 44, y0, -17)
+    this.b('coal', 45, y0, -16)
+    this.b('darkstone', 43, y0 + 1, -19) // half-fallen bunk
+
+    /* the garrison well west of the aisle */
+    this.b('cobble', 25, y0, -17)
+    this.b('cobble', 27, y0, -17)
+    this.b('cobble', 25, y0, -15)
+    this.b('cobble', 27, y0, -15)
+    this.b('water', 26, y0, -16)
+    this.col('log', 25, -16, y0, y0 + 1)
+    this.col('log', 27, -16, y0, y0 + 1)
+    this.fill('plank', 25, 27, y0 + 2, y0 + 2, -16, -16)
+
+    /* a raised portcullis gnaws at the gate mouth's crown */
+    for (const bx of [31, 33, 35]) {
+      this.b('darkstone', bx, y0 + 3, -7)
+      this.b('darkstone', bx, y0 + 4, -7)
+    }
+
+    /* arrow slits pierce the gatehouse towers */
+    for (const tx of [29, 38]) {
+      this.clearCol('cobble', tx, y0 + 3, y0 + 4, -8)
+      this.clearCol('cobble', tx, y0 + 3, y0 + 4, -6)
+    }
+
+    /* statues flank the throne dais; gold crowns the poles behind */
+    for (const sx of [31, 38]) {
+      this.b('darkstone', sx, y0, -26)
+      this.fill('darkstone', sx, sx, y0 + 1, y0 + 2, -27, -27)
+      this.b('cobble', sx, y0 + 3, -27)
+    }
+    for (const px of [33, 36]) {
+      this.col('log', px, -30, y0 + 1, y0 + 2)
+      this.b('gold', px, y0 + 3, -30)
+    }
   }
 
   /* ================= meadow dressing ================= */
 
   private buildMeadow() {
-    /* oaks scattered on the grass — never on a road, never near a gate */
+    /* oaks scattered on the grass — never on a road, never near a gate,
+       never inside the pond */
     const trees: [number, number][] = [
-      [-16, 36], [-22, 33], [-14, 12], [12, 38], [20, 32],
-      [16, 10], [-8, 2], [10, 2], [-24, 38], [26, 38], [-12, 22], [14, 22],
+      [-16, 36], [-26, 38], [-14, 12], [12, 38], [20, 32],
+      [16, 10], [-16, 2], [10, 2], [-24, 38], [26, 38], [-12, 22], [14, 22],
     ]
     for (const [tx, tz] of trees) {
       this.oakTree(tx, this.getH(tx, tz) + 1, tz)
@@ -918,6 +1178,21 @@ export class WorldV3 {
     /* a wayside shrine on the east road — a mossy stone + candle */
     this.b('mossy', 20, this.getH(20, 26) + 1, 26)
     this.b('glow', 20, this.getH(20, 26) + 2, 26)
+
+    /* the pond dock — one plank finger over still water */
+    this.fill('plank', -16, -16, 6, 6, 33, 35)
+    this.lantern(-15, this.getH(-15, 37) + 1, 37, true)
+
+    /* the Watchers' Stair — broken gateposts crown the top, a lantern
+       and a waystone wait at the bottom */
+    const t1 = this.getH(-14, -14) + 1
+    this.col('stonebrick', -14, -14, t1, t1 + 2)
+    const t2 = this.getH(-20, -10) + 1
+    this.col('stonebrick', -20, -10, t2, t2 + 2)
+    this.lantern(-16, this.getH(-16, -4) + 1, -4, true)
+    this.lantern(-8, this.getH(-8, 18) + 1, 18, true)
+    this.b('mossy', -8, this.getH(-8, 17) + 1, 17)
+    this.b('glow', -8, this.getH(-8, 17) + 2, 17)
   }
 
   /* ================= fog gates ================= */
@@ -926,12 +1201,87 @@ export class WorldV3 {
     for (const f of this.fogGates) f.mesh.visible = f.which === 1 ? g1 : g2
   }
 
-  /** per-frame: the mist breathes */
+  /** per-frame: the mist breathes, the ash drifts, the embers climb */
   update(dt: number) {
     for (const f of this.fogGates) {
       const mat = f.mesh.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value += dt
     }
+    this.t += dt
+    const t = this.t
+    if (this.motes && this.motesBase && this.motesPhase) {
+      const p = this.motes.geometry.attributes.position.array as Float32Array
+      for (let i = 0; i < this.motesPhase.length; i++) {
+        const ph = this.motesPhase[i]
+        p[i * 3] = this.motesBase[i * 3] + Math.sin(t * 0.35 + ph) * 1.6
+        p[i * 3 + 1] = this.motesBase[i * 3 + 1] + Math.sin(t * 0.22 + ph * 1.7) * 1.1
+        p[i * 3 + 2] = this.motesBase[i * 3 + 2] + Math.cos(t * 0.28 + ph) * 1.6
+      }
+      this.motes.geometry.attributes.position.needsUpdate = true
+    }
+    if (this.embers && this.embersBase && this.embersPhase) {
+      const p = this.embers.geometry.attributes.position.array as Float32Array
+      for (let i = 0; i < this.embersPhase.length; i++) {
+        const rise = (t * (0.9 + this.embersPhase[i] * 0.5) + this.embersPhase[i] * 11) % 10
+        p[i * 3] = this.embersBase[i * 3] + Math.sin(t * 1.3 + this.embersPhase[i] * 9) * 0.35
+        p[i * 3 + 1] = this.embersBase[i * 3 + 1] + rise
+      }
+      this.embers.geometry.attributes.position.needsUpdate = true
+    }
+  }
+
+  /** drifting ash + rising embers — the air itself tells the story */
+  private buildAmbient() {
+    /* pale ash motes over the whole vale */
+    const N = 230
+    const base = new Float32Array(N * 3)
+    const phase = new Float32Array(N)
+    const r = mulberry32(8181)
+    for (let i = 0; i < N; i++) {
+      base[i * 3] = -52 + r() * 104
+      base[i * 3 + 1] = 8 + r() * 20
+      base[i * 3 + 2] = -52 + r() * 104
+      phase[i] = r() * Math.PI * 2
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(base.slice(), 3))
+    this.motes = new THREE.Points(
+      g,
+      new THREE.PointsMaterial({ color: 0xb9c2cf, size: 0.22, transparent: true, opacity: 0.5, depthWrite: false })
+    )
+    this.motes.frustumCulled = false
+    this.group.add(this.motes)
+    this.motesBase = base
+    this.motesPhase = phase
+
+    /* ember columns above the lava pools + the moat */
+    const pools: [number, number][] = [
+      ...V3_LAVA_POOLS.map(([x, z]) => [x, z] as [number, number]),
+      [34, -34.5],
+    ]
+    const E = 100
+    const eb = new Float32Array(E * 3)
+    const ep = new Float32Array(E)
+    for (let i = 0; i < E; i++) {
+      const [px, pz] = pools[i % pools.length]
+      eb[i * 3] = px - 2 + r() * 4
+      eb[i * 3 + 1] = 6.2 + r() * 1.5
+      eb[i * 3 + 2] = pz - 2 + r() * 4
+      ep[i] = r() * Math.PI * 2
+    }
+    const eg = new THREE.BufferGeometry()
+    eg.setAttribute('position', new THREE.BufferAttribute(eb.slice(), 3))
+    this.embers = new THREE.Points(
+      eg,
+      new THREE.PointsMaterial({
+        color: 0xff8a3a, size: 0.3, transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      })
+    )
+    this.embers.frustumCulled = false
+    this.group.add(this.embers)
+    this.embersBase = eb
+    this.embersPhase = ep
   }
 
   private buildFogGates() {
@@ -983,6 +1333,15 @@ export class WorldV3 {
     moon.position.set(-95, 105, -110)
     moon.lookAt(0, 0, 0)
     this.group.add(moon)
+
+    /* the halo — the moon smokes faintly behind thin cloud */
+    const halo = new THREE.Mesh(
+      new THREE.PlaneGeometry(15, 15),
+      new THREE.MeshBasicMaterial({ color: 0xbfd0e8, transparent: true, opacity: 0.14, fog: false, depthWrite: false })
+    )
+    halo.position.set(-95, 105, -110)
+    halo.lookAt(0, 0, 0)
+    this.group.add(halo)
 
     /* faint early stars */
     const starN = 150
