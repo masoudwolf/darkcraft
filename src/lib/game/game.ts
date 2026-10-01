@@ -1,6 +1,17 @@
 import * as THREE from 'three'
 import { Engine } from './engine'
-import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS, MERCHANT } from './world'
+import {
+  WorldV2,
+  V2_BONFIRE as BONFIRE,
+  V2_MERCHANT as MERCHANT,
+  V2_BOSS1_CENTER as BOSS_CENTER,
+  V2_BOSS1_GATE_Z as GATE_Z,
+  V2_GATE2 as GATE2,
+  V2_BOSS2_CENTER as BOSS2_CENTER,
+  V2_PYRO_ITEM as PYRO_ITEM,
+  V2_HALF,
+  V2_SURF_NAMES,
+} from './worldV2'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
@@ -844,9 +855,11 @@ class Arrow {
       )
     }
 
-    // the great ash wall stops arrows outside the gate corridor
-    if (Math.abs(this.pos.x - ASH_WALL_X) < 0.4 && !(this.pos.z > 15.9 && this.pos.z < 20.1)) {
+    // built stone stops arrows — they bite into the masonry and stick
+    if (this.game.world.solidStruct(Math.round(this.pos.x), Math.round(this.pos.y), Math.round(this.pos.z))) {
       this.stuck = true
+      this.game.spawnBurst(this.pos.clone(), 0x9a8b70, 4, 1.4, 0.35, 0.1)
+      if (this.fire) this.game.spawnBurst(this.pos.clone(), 0xff8a3a, 6, 1.7, 0.5, 0.12)
       return true
     }
 
@@ -866,7 +879,7 @@ class Arrow {
       this.game.recoverArrow(this)
       return true
     }
-    if (this.t > 3.2 || Math.abs(this.pos.x) > 29 || Math.abs(this.pos.z) > 29) return false
+    if (this.t > 3.2 || Math.abs(this.pos.x) > V2_HALF - 1 || Math.abs(this.pos.z) > V2_HALF - 1) return false
 
     /* ---- player-fired arrows hunt MOBS ---- */
     if (this.fromPlayer) {
@@ -950,7 +963,7 @@ class Arrow {
 
 /* Fireballs — pyromancy bolts. Friendly ones (the player's) explode on the
    first enemy they graze with splash damage; hostile ones are blockable and
-   roll-dodgeable like arrows. Both burn out on the ground or the ash wall. */
+   roll-dodgeable like arrows. Both burn out on the ground or the masonry. */
 class Fireball {
   private mesh: THREE.Group
   private vel = new THREE.Vector3()
@@ -1004,8 +1017,8 @@ class Fireball {
       this.game.spawnBurst(this.pos.clone(), 0xff8a2a, 1, 0.3, 0.35, 0.09)
     }
 
-    // the great ash wall burns them out outside the corridor
-    if (Math.abs(this.pos.x - ASH_WALL_X) < 0.45 && !(this.pos.z > 15.9 && this.pos.z < 20.1)) {
+    // masonry burns them out mid-flight
+    if (this.game.world.solidStruct(Math.round(this.pos.x), Math.round(this.pos.y), Math.round(this.pos.z))) {
       this.explode(null)
       return false
     }
@@ -1194,7 +1207,7 @@ class LootDrop {
 
 export class Game {
   engine: Engine
-  world: World
+  world: WorldV2
   player: Player
   sfx = new Sfx()
   enemies: Enemy[] = []
@@ -1292,29 +1305,29 @@ export class Game {
     ;(window as unknown as { __minesouls?: Game }).__minesouls = this
     this.loadSettings()
 
-    // scene setup
+    // scene setup — far fog so the parish bell tower stays visible from the hub
     const scene = this.engine.scene
     scene.background = new THREE.Color(0x101720)
-    scene.fog = new THREE.Fog(0x101720, 26, 78)
+    scene.fog = new THREE.Fog(0x101720, 36, 150)
 
     const hemi = new THREE.HemisphereLight(0x38445c, 0x2a1c10, 0.75)
     scene.add(hemi)
     const sun = new THREE.DirectionalLight(0xffd9a0, 1.25)
-    sun.position.set(28, 46, 18)
+    sun.position.set(34, 64, 26)
     sun.castShadow = true
-    sun.shadow.mapSize.set(1024, 1024)
+    sun.shadow.mapSize.set(2048, 2048)
     sun.shadow.autoUpdate = false
     sun.shadow.needsUpdate = true
     this.sun = sun
-    sun.shadow.camera.left = -42
-    sun.shadow.camera.right = 42
-    sun.shadow.camera.top = 42
-    sun.shadow.camera.bottom = -42
-    sun.shadow.camera.far = 130
+    sun.shadow.camera.left = -78
+    sun.shadow.camera.right = 78
+    sun.shadow.camera.top = 78
+    sun.shadow.camera.bottom = -78
+    sun.shadow.camera.far = 280
     sun.shadow.bias = -0.0005
     scene.add(sun)
 
-    this.world = new World()
+    this.world = new WorldV2()
     scene.add(this.world.group)
 
     // bonfire decor: stuck sword + light + flame particles
@@ -1438,9 +1451,14 @@ export class Game {
 
     // enemies
     // the hollows — placed like a director, not a dice roll: they haunt
-    // the village terraces they once raised, one guards the temple road
+    // the aqueduct, the gate square, the burg streets and the ravine
     const spawnPts: [number, number][] = [
-      [-21, 5], [-16, 8], [-19, -3], [-23, -2], [-12, 4], [3, -4],
+      [0, 17],   // under the aqueduct's arches, where the old camp cooled
+      [4, 9],    // the gate square, by the overturned cart
+      [4, -4],   // the main street of the burg
+      [-7, -4],  // the alley mouth
+      [2, -17],  // the upper street, one door from the fog
+      [-20, 4],  // the ravine, wading by the fallen statue head
     ]
     for (const [x, z] of spawnPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1455,9 +1473,11 @@ export class Game {
       this.enemies.push(e)
     }
 
-    // creepers — failed vessels of ember, coiled in the village's veins
+    // creepers — failed vessels of ember, coiled in the world's veins
     const creeperPts: [number, number][] = [
-      [-13, 9], [8, 10], [-24, 6],
+      [2, 13],   // the aqueduct camp — a cold fire and a bad idea
+      [-6, -11], // deep in the back alley
+      [9, -13],  // the upper square, by the well
     ]
     for (const [x, z] of creeperPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1468,16 +1488,18 @@ export class Game {
       this.enemies.push(c)
     }
 
-    // skeleton archers — oath-keepers at their old posts: the wastes'
-    // edge, the graveyard gate, and the last watcher on his rise
-    // (short sight on the rise so the bonfire stays a haven)
+    // skeleton archers — oath-keepers at their old posts: the graveyard
+    // gate, the broken fortress yard, and the road north to the caldera
+    // (short sight on the yard post so the fortress gate stays fair)
     const skelPts: [number, number][] = [
-      [16, 4], [-21, 23], [9, 24],
+      [-22, -21], // outside the graveyard gate, on the parish slope
+      [35, 13],   // the cinder fortress yard
+      [33, 19],   // the wastes road bend
     ]
     for (const [x, z] of skelPts) {
       const p = new THREE.Vector3(x, 0, z)
       p.y = this.world.surfaceAt(x, z)
-      const s = new SkeletonEnemy(scene, p, x === 9 && z === 24 ? 10 : 13.5)
+      const s = new SkeletonEnemy(scene, p, x === 35 && z === 13 ? 10 : 13.5)
       s.world = this.world
       s.game = this
       this.enemies.push(s)
@@ -1486,7 +1508,9 @@ export class Game {
     // wither skeletons — the Ash Wastes guards; their heavy grey blades
     // chew through shields, so roll instead of block
     const witherPts: [number, number][] = [
-      [16, 10], [16, 27], [27, 9],
+      [27, 22], // the cinder gatehouse
+      [31, 11], // the fortress west wall
+      [38, 8],  // the fortress north approach
     ]
     for (const [x, z] of witherPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1497,9 +1521,10 @@ export class Game {
       this.enemies.push(w)
     }
 
-    // blazes — floating sentries spitting fireballs
+    // blazes — floating sentries spitting fireballs over the wastes
     const blazePts: [number, number][] = [
-      [20, 2], [13, 26],
+      [28, 12], // over the ash flats
+      [41, 3],  // above the caldera bridge, by the breach
     ]
     for (const [x, z] of blazePts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1510,14 +1535,14 @@ export class Game {
       this.enemies.push(b)
     }
 
-    // boss 1 — the ancient zombie knight beyond the north fog
+    // boss 1 — the ancient zombie knight beyond the town's fog
     const bossSpawn = new THREE.Vector3(BOSS_CENTER.x, 0, BOSS_CENTER.z)
     bossSpawn.y = this.world.surfaceAt(BOSS_CENTER.x, BOSS_CENTER.z)
     this.boss = new BossEnemy(scene, bossSpawn)
     this.boss.world = this.world
     this.boss.game = this
 
-    // boss 2 — the Flame King of the Ash Wastes, behind the east fog
+    // boss 2 — the Flame King of the caldera, behind the breach fog
     const boss2Spawn = new THREE.Vector3(BOSS2_CENTER.x, 0, BOSS2_CENTER.z)
     boss2Spawn.y = this.world.surfaceAt(BOSS2_CENTER.x, BOSS2_CENTER.z)
     this.boss2 = new BossFlameEnemy(scene, boss2Spawn)
@@ -2275,16 +2300,18 @@ export class Game {
       this.rest()
       return
     }
-    // fog gate 1 — the zombie knight
-    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
+    // fog gate 1 — the zombie knight (the plaza gate, at the top of the town)
+    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 0.4 &&
+      this.player.pos.x > 0.4 && this.player.pos.x < 5.6
+    ) {
       this.fogPassT = 0.75
       this.sfx.bossRoar()
       return
     }
-    // fog gate 2 — the Flame King
+    // fog gate 2 — the Flame King (the caldera breach)
     if (!this.boss2Active && !this.boss2Fell &&
-      this.player.pos.x > GATE2.x - 2.4 && this.player.pos.x < GATE2.x + 2.0 &&
-      this.player.pos.z > 16.2 && this.player.pos.z < 19.8
+      Math.abs(this.player.pos.x - GATE2.x) < 2.3 &&
+      this.player.pos.z < 2.7 && this.player.pos.z > -0.5
     ) {
       this.fogPass2T = 0.75
       this.sfx.bossRoar()
@@ -2911,26 +2938,24 @@ export class Game {
     this.mapCanvas = c
     this.mapCtx = c.getContext('2d')!
 
-    // pre-render the blocky terrain once (1px per block)
+    // pre-render the blocky terrain once (1px per block, V2 world)
     const t = document.createElement('canvas')
-    t.width = t.height = 60
+    const H = V2_HALF * 2
+    t.width = t.height = H
     const tc = t.getContext('2d')!
-    for (let z = -WORLD_HALF; z < WORLD_HALF; z++) {
-      for (let x = -WORLD_HALF; x < WORLD_HALF; x++) {
+    for (let z = -V2_HALF; z < V2_HALF; z++) {
+      for (let x = -V2_HALF; x < V2_HALF; x++) {
         const h = this.world.getH(x, z)
-        const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
-        const dA2 = Math.hypot(x - BOSS2_CENTER.x, z - BOSS2_CENTER.z)
-        const isPath = Math.abs(x) <= 1 && z > GATE_Z && z < BONFIRE.z + 1
-        const isPath2 = z >= 17 && z <= 19 && x >= ASH_WALL_X
-        const lavaCell = LAVA_POOLS.some((p) => x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1)
-        if (x === ASH_WALL_X) tc.fillStyle = '#4a4a4a'
-        else if (lavaCell) tc.fillStyle = '#ff7a1f'
-        else if (dA < 8.5 || dA2 < 8.5) tc.fillStyle = '#828282'
-        else if (isPath) tc.fillStyle = '#8a6440'
-        else if (isPath2) tc.fillStyle = '#7a6a5a'
-        else if (x >= ASH_WALL_X) tc.fillStyle = `rgb(${86 + h * 5},${40 + h * 3},${34 + h * 2})`
-        else tc.fillStyle = `rgb(${52 + h * 7},${98 + h * 13},${36 + h * 5})`
-        tc.fillRect(x + WORLD_HALF, z + WORLD_HALF, 1, 1)
+        const s = V2_SURF_NAMES[this.world.surfAt(x, z)]
+        if (s === 'lava') tc.fillStyle = '#ff7a1f'
+        else if (s === 'water') tc.fillStyle = '#3f6a8a'
+        else if (s === 'nether') tc.fillStyle = `rgb(${74 + h * 4},${30 + h * 2},${24 + h * 2})`
+        else if (s === 'stonebrick' || s === 'stone') tc.fillStyle = `rgb(${88 + h},${88 + h},${82 + h})`
+        else if (s === 'mossy') tc.fillStyle = `rgb(${64 + h * 2},${86 + h * 3},${58 + h * 2})`
+        else if (s === 'cobble') tc.fillStyle = `rgb(${110 + h * 2},${106 + h * 2},${96 + h * 2})`
+        else if (s === 'dirt') tc.fillStyle = `rgb(${100 + h * 4},${72 + h * 3},${44 + h * 2})`
+        else tc.fillStyle = `rgb(${40 + h * 5},${78 + h * 9},${28 + h * 4})`
+        tc.fillRect(x + V2_HALF, z + V2_HALF, 1, 1)
       }
     }
     this.mapTerrain = t
@@ -2946,9 +2971,9 @@ export class Game {
     const ctx = this.mapCtx
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(this.mapTerrain, 0, 0, 132, 132)
-    const S = 132 / (WORLD_HALF * 2)
-    const px = (x: number) => (x + WORLD_HALF) * S
-    const pz = (z: number) => (z + WORLD_HALF) * S
+    const S = 132 / (V2_HALF * 2)
+    const px = (x: number) => (x + V2_HALF) * S
+    const pz = (z: number) => (z + V2_HALF) * S
 
     // bonfire — warm beacon
     ctx.fillStyle = '#ffb347'
@@ -3086,27 +3111,23 @@ export class Game {
 
   private clampPlayer() {
     const p = this.player.pos
-    const lim = 28.4
+    const lim = V2_HALF - 1.6
     p.x = Math.max(-lim, Math.min(lim, p.x))
     p.z = Math.max(-lim, Math.min(lim, p.z))
-    // fog gate 1 blocks entry before trigger — the WHOLE north side is
-    // sealed, no slipping around the mist's soft edges
+    // fog gate 1 blocks the whole plaza width before the trigger — the
+    // arena is sealed, no slipping around the mist's soft edges
     if (!this.bossActive && !this.bossFell && this.fogPassT <= 0 && !this.player.busy) {
-      if (p.z < GATE_Z + 0.55) p.z = GATE_Z + 0.55
+      if (p.z < GATE_Z + 0.55 && p.x > -8.6 && p.x < 8.6) p.z = GATE_Z + 0.55
     }
-    // fog gate 2 corridor blocks entry before trigger
+    // fog gate 2 seals the bridge lane into the caldera
     if (!this.boss2Active && !this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
-      if (p.x > GATE2.x + 0.9) p.x = GATE2.x + 0.9
-    }
-    // the great ash wall is solid — only the gate corridor pierces it
-    if (Math.abs(p.x - ASH_WALL_X) < 0.55 && !(p.z > 16.1 && p.z < 19.9)) {
-      p.x = p.x < ASH_WALL_X ? ASH_WALL_X - 0.55 : ASH_WALL_X + 0.55
+      if (p.z < 0.6 && p.x > GATE2.x - 3.4 && p.x < GATE2.x + 3.4) p.z = 0.6
     }
     // arena barriers while fighting — held just short of the fog so the
     // player can never stand inside the mist
     if (this.bossActiveBarrier && !this.bossFell) {
       p.x = Math.max(BOSS_CENTER.x - 7.6, Math.min(BOSS_CENTER.x + 7.6, p.x))
-      p.z = Math.max(-23.2, Math.min(GATE_Z - 0.8, p.z))
+      p.z = Math.max(-27.2, Math.min(GATE_Z - 0.8, p.z))
     }
     if (this.boss2Barrier && !this.boss2Fell) {
       p.x = Math.max(BOSS2_CENTER.x - 7.2, Math.min(BOSS2_CENTER.x + 7.2, p.x))
@@ -3162,13 +3183,15 @@ export class Game {
     if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 2.7) {
       return 'گفتگو با بازرگان'
     }
-    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
+    if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 0.4 &&
+      this.player.pos.x > 0.4 && this.player.pos.x < 5.6
+    ) {
       return 'عبور از دیوار مه'
     }
     if (
       !this.boss2Active && !this.boss2Fell &&
-      this.player.pos.x > GATE2.x - 2.4 && this.player.pos.x < GATE2.x + 2.0 &&
-      this.player.pos.z > 16.2 && this.player.pos.z < 19.8
+      Math.abs(this.player.pos.x - GATE2.x) < 2.3 &&
+      this.player.pos.z < 2.7 && this.player.pos.z > -0.5
     ) {
       return 'عبور از دیوار مه دوم'
     }
@@ -3366,11 +3389,11 @@ export class Game {
       }
     }
 
-    // fog pass 2 animation — east gate into the Flame King's arena
+    // fog pass 2 animation — the breach into the Flame King's caldera
     if (this.fogPass2T > 0) {
       this.fogPass2T -= dt
-      this.player.pos.x += 5.5 * dt
-      let dY2 = -Math.PI / 2 - this.camYaw
+      this.player.pos.z -= 5.5 * dt
+      let dY2 = -this.camYaw
       while (dY2 > Math.PI) dY2 -= Math.PI * 2
       while (dY2 < -Math.PI) dY2 += Math.PI * 2
       this.camYaw += dY2 * Math.min(1, 5 * dt)
@@ -3384,8 +3407,8 @@ export class Game {
       }
     }
 
-    // ash-wastes ambience — the sky reddens east of the great wall
-    const inAsh = this.player.pos.x > ASH_WALL_X - 0.6
+    // ash-wastes ambience — the sky reddens over the burned east
+    const inAsh = this.player.pos.x > 20.5
     const fog = this.engine.scene.fog as THREE.Fog
     const bg = this.engine.scene.background as THREE.Color
     fog.color.lerp(this.tmpColor.set(inAsh ? 0x261016 : 0x101720), Math.min(1, 2.5 * dt))
@@ -3396,7 +3419,7 @@ export class Game {
     if (this.lavaTick <= 0 && this.player.alive && this.fogPassT <= 0 && this.fogPass2T <= 0) {
       const px = Math.round(this.player.pos.x)
       const pz = Math.round(this.player.pos.z)
-      let inLava = LAVA_POOLS.some((p) => px >= p.x0 && px <= p.x1 && pz >= p.z0 && pz <= p.z1)
+      let inLava = this.world.isLava(px, pz)
       if (!inLava) {
         inLava = this.lavaPools.some(
           (lp) => Math.hypot(this.player.pos.x - lp.x, this.player.pos.z - lp.z) < 2.2
@@ -3660,9 +3683,29 @@ export class Game {
     this.camTarget.set(p.pos.x, p.pos.y + 1.5, p.pos.z)
     const dist = dead ? this.camDist + 2.5 : this.camDist
     const cp = Math.max(0.12, this.camPitch)
-    let cx = this.camTarget.x + Math.sin(this.camYaw) * Math.cos(cp) * dist
-    let cz = this.camTarget.z + Math.cos(this.camYaw) * Math.cos(cp) * dist
-    let cy = this.camTarget.y + Math.sin(cp) * dist
+    // cast from the target toward the desired camera spot; when a rooftop
+    // or wall stands between, pull the camera in close instead of clipping
+    const dirX = Math.sin(this.camYaw) * Math.cos(cp)
+    const dirZ = Math.cos(this.camYaw) * Math.cos(cp)
+    const dirY = Math.sin(cp)
+    let d = dist
+    const csteps = 10
+    for (let i = 1; i <= csteps; i++) {
+      const t = (dist * i) / csteps
+      const sx = this.camTarget.x + dirX * t
+      const sz = this.camTarget.z + dirZ * t
+      const sy = this.camTarget.y + dirY * t
+      const blocked =
+        this.world.solidStruct(Math.round(sx), Math.round(sy - 0.4), Math.round(sz)) ||
+        this.world.surfaceAt(sx, sz) + 0.45 > sy
+      if (blocked) {
+        d = Math.max(1.15, t - dist / csteps)
+        break
+      }
+    }
+    const cx = this.camTarget.x + dirX * d
+    const cz = this.camTarget.z + dirZ * d
+    let cy = this.camTarget.y + dirY * d
     // keep above ground
     const ground = this.world.surfaceAt(cx, cz) + 0.45
     if (cy < ground) cy = ground

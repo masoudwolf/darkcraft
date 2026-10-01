@@ -33,7 +33,12 @@ export const V2_SPAWN = { x: 2.5, z: 37.5 }
 export const V2_BOSS1_CENTER = { x: 0, z: -24.5 }
 export const V2_BOSS1_GATE_Z = -21
 export const V2_BOSS2_CENTER = { x: 40, z: -8 }
-export const V2_WASTES_GATE = { x: 24, z: 26 }
+export const V2_GATE2 = { x: 40, z: 0 } // the caldera fog gate, in the wall breach
+export const V2_PYRO_ITEM = { x: -11.5, z: 6.5 } // the hermit's cold camp, in the ravine
+export const V2_WASTES_GATE = { x: 24, z: 26 } // the cinder gatehouse on the ash road
+
+/** surface-code → material name (also used by the minimap) */
+export const V2_SURF_NAMES = ['grass', 'dirt', 'cobble', 'stonebrick', 'mossy', 'nether', 'lava', 'water', 'stone']
 
 /* ---- surface codes (what the top block is made of) ---- */
 const S_GRASS = 0
@@ -53,16 +58,22 @@ const RAMPS: { x0: number; z0: number; x1: number; z1: number; w: number; h0: nu
   // hub → ash wastes (east stairs down the cliff)
   { x0: 11, z0: 33, x1: 16, z1: 31, w: 2.6, h0: 12, h1: 8 },
   { x0: 16, z0: 31, x1: 24, z1: 29, w: 2.6, h0: 8, h1: 6 },
-  // ash wastes road north to the caldera
-  { x0: 24, z0: 29, x1: 33, z1: 20, w: 3, h0: 6, h1: 6 },
-  { x0: 33, z0: 20, x1: 38, z1: 6, w: 3, h0: 6, h1: 6 },
-  { x0: 38, z0: 6, x1: 40, z1: 4, w: 2.8, h0: 6, h1: 6 },
+  // ash wastes road north to the caldera — it threads the cinder gate
+  { x0: 24, z0: 29, x1: 24, z1: 26, w: 2.4, h0: 6, h1: 6 },
+  { x0: 24, z0: 26, x1: 33, z1: 20, w: 3, h0: 6, h1: 6 },
+  // the road threads the fortress: south gate, dead yard, north gate
+  { x0: 33, z0: 20, x1: 36, z1: 15.5, w: 2.6, h0: 6, h1: 6 },
+  { x0: 36, z0: 15.5, x1: 36, z1: 8, w: 2.6, h0: 6, h1: 6 },
+  { x0: 36, z0: 8, x1: 38, z1: 6, w: 2.6, h0: 6, h1: 6 },
+  { x0: 38, z0: 6, x1: 40, z1: 4, w: 2.8, h0: 6, h1: 8 },
   // boss plaza → parish hill (west steps)
   { x0: -9, z0: -24, x1: -17, z1: -27, w: 3, h0: 24, h1: 22 },
-  // ravine shortcut stairs → town alley (the loop home)
-  { x0: -14, z0: -1, x1: -10, z1: -1, w: 2.6, h0: 2, h1: 8 },
-  { x0: -10, z0: -1, x1: -10, z1: -6, w: 2.6, h0: 8, h1: 17 },
-  { x0: -10, z0: -6, x1: -8, z1: -6, w: 2.6, h0: 17, h1: 19 },
+  // ravine shortcut stairs → town alley (the loop home) — a real switchback,
+  // never steeper than one block per step
+  { x0: -15, z0: 10, x1: -15, z1: 3, w: 2.6, h0: 2, h1: 7 },
+  { x0: -15, z0: 3, x1: -13, z1: -2, w: 2.6, h0: 7, h1: 10 },
+  { x0: -13, z0: -2, x1: -13, z1: -8, w: 2.6, h0: 10, h1: 16 },
+  { x0: -13, z0: -8, x1: -9, z1: -4, w: 2.4, h0: 16, h1: 19 },
   // ravine south stairs → hub base
   { x0: -16, z0: 13, x1: -13, z1: 18, w: 2.6, h0: 2, h1: 7 },
   { x0: -13, z0: 18, x1: -7, z1: 23, w: 2.6, h0: 7, h1: 12 },
@@ -176,6 +187,8 @@ export class WorldV2 {
   mats = blockMaterials()
   private heights = new Int8Array(V2_HALF * 2 * V2_HALF * 2)
   private surf = new Uint8Array(V2_HALF * 2 * V2_HALF * 2)
+  /** occupancy of every BUILT block (structures) — the physics world */
+  private solid = new Uint8Array(64 * V2_HALF * 2 * V2_HALF * 2)
   private clouds: { mesh: THREE.Mesh; speed: number }[] = []
   private rng = mulberry32(2077)
   private fogLayers: { mesh: THREE.Mesh; gate: 1 | 2; t: number }[] = []
@@ -222,6 +235,53 @@ export class WorldV2 {
     return this.getH(x, z) + 1
   }
 
+  /* ================= physics queries (blocky collision) ================= */
+
+  private cellIdx(x: number, z: number, y: number) {
+    const bx = Math.min(V2_HALF * 2 - 1, Math.max(0, x + V2_HALF))
+    const bz = Math.min(V2_HALF * 2 - 1, Math.max(0, z + V2_HALF))
+    const by = Math.min(63, Math.max(0, y))
+    return (by * V2_HALF * 2 + bz) * V2_HALF * 2 + bx
+  }
+
+  /** is there a BUILT block in this cell? */
+  solidStruct(x: number, y: number, z: number): boolean {
+    return this.solid[this.cellIdx(Math.round(x), Math.round(z), Math.round(y))] === 1
+  }
+
+  /** does this column block a body whose feet are at feetY?
+      (terrain cliffs count as walls; one-block steps do not) */
+  wallAt(x: number, z: number, feetY: number): boolean {
+    const bx = Math.round(x)
+    const bz = Math.round(z)
+    if (this.getH(bx, bz) + 1 > feetY + 1.06) return true // cliff step
+    const y0 = Math.floor(feetY + 1.06)
+    const y1 = Math.floor(feetY + 1.55)
+    for (let y = y0; y <= y1; y++) if (this.solid[this.cellIdx(bx, bz, y)] === 1) return true
+    return false
+  }
+
+  /** highest surface this body can stand on near fromY (auto-steps one block) */
+  supportAt(x: number, z: number, fromY: number): number {
+    const bx = Math.round(x)
+    const bz = Math.round(z)
+    const h = this.getH(bx, bz)
+    let best = h + 1
+    const top = Math.min(63, Math.floor(fromY + 0.06))
+    for (let y = top; y > h; y--) {
+      if (this.solid[this.cellIdx(bx, bz, y)] === 1) {
+        best = y + 1
+        break
+      }
+    }
+    return best
+  }
+
+  /** molten ground underfoot? (the caldera lake + the wastes pools) */
+  isLava(x: number, z: number): boolean {
+    return this.surf[this.idx(Math.round(x), Math.round(z))] === S_LAVA
+  }
+
   private genHeightmap() {
     const r = mulberry32(777)
     const o1 = r() * 10, o2 = r() * 10, o3 = r() * 10
@@ -250,7 +310,7 @@ export class WorldV2 {
         }
 
         /* ---- gate square before the town gate (skip the aqueduct lane) ---- */
-        if (x >= -2 && x <= 7 && z >= 9 && z <= 10 && !(x >= -1 && x <= 1)) {
+        if (x >= -4 && x <= 7 && z >= 9 && z <= 10 && !(x >= -1 && x <= 1)) {
           h = 16
         }
 
@@ -278,7 +338,12 @@ export class WorldV2 {
         /* ---- RAVINE (the drowned low road) ---- */
         h = this.plateRect(h, x, z, -30, -10, -14, 14, 2, 2.6)
 
-        /* ---- carved roads & stairs (last: they cut through everything) ---- */
+        /* ---- carved roads & stairs (last: they cut through everything).
+            The CLOSEST centerline wins, so back-to-back ramps never
+            contaminate each other's skirts ---- */
+        let bestD = Infinity
+        let bestW = 0
+        let bestTarget = 0
         for (const rp of RAMPS) {
           const dx = rp.x1 - rp.x0
           const dz = rp.z1 - rp.z0
@@ -288,13 +353,14 @@ export class WorldV2 {
           const px = rp.x0 + dx * t
           const pz = rp.z0 + dz * t
           const d = Math.hypot(x - px, z - pz)
-          if (d <= rp.w) {
-            h = Math.round(lerp(rp.h0, rp.h1, t))
-          } else if (d < rp.w + 1.6) {
-            const target = lerp(rp.h0, rp.h1, t)
-            h = Math.round(lerp(target, h, smoothstep(rp.w, rp.w + 1.6, d)))
+          if (d < bestD) {
+            bestD = d
+            bestW = rp.w
+            bestTarget = lerp(rp.h0, rp.h1, t)
           }
         }
+        if (bestD <= bestW) h = Math.round(bestTarget)
+        else if (bestD < bestW + 1.6) h = Math.round(lerp(bestTarget, h, smoothstep(bestW, bestW + 1.6, bestD)))
 
         /* ---- world rim: low ridges so the edge never shows the void ---- */
         const edge = Math.min(x + V2_HALF, V2_HALF - 1 - x, z + V2_HALF, V2_HALF - 1 - z)
@@ -326,11 +392,11 @@ export class WorldV2 {
         const inWastes = x >= 23
 
         if (dCal <= 7.4) s = S_BRICK // caldera floor
-        else if (dCal <= 14 && h === 6) s = S_LAVA // lava lake
+        else if (dCal <= 14 && h === 6 && !onRamp) s = S_LAVA // lava lake
         else if (inWastes) s = onRamp ? S_STONE : S_NETHER
         else if (inRavine) {
           s = x >= -22 && x <= -17 && z >= -12 && z <= 12 && h <= 2 ? S_WATER : S_STONE
-        } else if (inPlaza || (z >= 9 && z <= 25 && x >= -5 && x <= 5)) s = S_BRICK // plaza + gorge tiles
+        } else if (inPlaza || (z >= 9 && z <= 10 && x >= -4 && x <= 7) || (z >= 11 && z <= 25 && x >= -5 && x <= 5)) s = S_BRICK // plaza + gate square + gorge tiles
         else if (dBon < 11) s = (x * 7 + z * 5) % 11 === 0 ? S_MOSSY : S_BRICK // shrine cracked tiles
         else if (dPar < 9) s = S_BRICK // church plaza
         else if (dPar < 14) s = S_MOSSY // hill slope
@@ -448,6 +514,7 @@ export class WorldV2 {
   private b(mat: string, x: number, y: number, z: number) {
     if (!this.L[mat]) this.L[mat] = []
     this.L[mat].push({ x, y: y + 0.5, z })
+    this.solid[this.cellIdx(x, z, y)] = 1
   }
   /** filled box (inclusive bounds), y = bottoms */
   private fill(mat: string, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) {
@@ -493,7 +560,8 @@ export class WorldV2 {
       if (tall < 3) this.b('cobble', px + 1, y0, pz + 1) // a fallen drum
     }
 
-    /* the temple facade the aqueduct docks into — two towers + arched window */
+    /* the temple facade the aqueduct docks into — two towers + the arched
+       passage the road actually walks through (a gate, not a wall) */
     for (const tx of [-4, 3]) {
       this.fill('stonebrick', tx, tx + 1, y0, y0 + 5, 27, 29)
       this.fill('darkstone', tx, tx + 1, y0 + 6, y0 + 6, 27, 29)
@@ -501,11 +569,18 @@ export class WorldV2 {
       this.crenelX('stone', tx, tx + 1, y0 + 7, 29)
       this.b('glow', tx < 0 ? tx : tx + 1, y0 + 4, 26) // wall lamps on both mouths
     }
-    // wall between the towers with a tall arched window + rose band
-    this.fill('stonebrick', -1, 2, y0, y0 + 3, 28, 28)
-    this.fill('glass', -1, 2, y0 + 4, y0 + 5, 28, 28)
-    this.fill('darkstone', -1, 2, y0 + 6, y0 + 6, 28, 28)
-    this.fill('rose', 0, 1, y0 + 5, y0 + 5, 27, 27)
+    // wall between the towers: solid flanks, an open 3-wide gate, glass band above
+    for (let x = -2; x <= 2; x++) {
+      if (x >= -1 && x <= 1) {
+        this.fill('glass', x, x, y0 + 3, y0 + 4, 28, 28) // the arch window
+      } else {
+        this.fill('stonebrick', x, x, y0, y0 + 3, 28, 28)
+        this.fill('glass', x, x, y0 + 4, y0 + 5, 28, 28)
+        this.fill('darkstone', x, x, y0 + 6, y0 + 6, 28, 28)
+      }
+    }
+    this.fill('darkstone', -1, 1, y0 + 5, y0 + 5, 28, 28) // arch cap over the glass
+    this.fill('rose', 0, 1, y0 + 4, y0 + 4, 28, 28) // the rose, in the wall plane
 
     /* two kneeling statues flank the north path */
     const statue = (sx: number, sz: number) => {
@@ -523,17 +598,12 @@ export class WorldV2 {
     this.b('plank', 0, y0 + 2, 33)
     this.b('plank', 0, y0 + 2, 35)
 
-    /* the merchant's canopy stall — his corner of the world */
-    const mx = -4, mz = 38
-    this.fill('plank', mx, mx + 3, y0, y0, mz, mz + 1) // counter deck
-    this.fill('plank', mx, mx + 3, y0 + 1, y0 + 1, mz - 1, mz - 1) // counter front toward the fire
-    for (const [px, pz] of [[mx, mz], [mx + 3, mz], [mx, mz - 1], [mx + 3, mz - 1]] as const)
-      this.col('log', px, pz, y0, y0 + 2)
-    this.fill('plank', mx - 1, mx + 4, y0 + 3, y0 + 3, mz - 2, mz) // canopy
-    this.b('glow', mx - 1, y0 + 2, mz - 1) // his lantern
-    this.b('log', mx + 4, y0, mz + 1) // barrel
-    this.b('log', mx + 4, y0 + 1, mz + 1)
-    this.b('plank', mx - 1, y0, mz) // crate
+    /* the merchant's camp beside his stall — the beasts of burden rest here */
+    this.b('log', -7, y0, 38) // barrel
+    this.b('log', -7, y0 + 1, 38)
+    this.b('log', -6, y0, 39) // second barrel
+    this.fill('plank', -8, -7, y0, y0, 39, 40) // his bedroll of planks
+    this.b('plank', -6, y0, 37) // a crate of wares
 
     /* scattered faith: sunken slabs + moss */
     for (const [sx, sz] of [[-6, 31], [6, 36], [-5, 37], [5, 30], [0, 40]] as const) {
@@ -545,21 +615,24 @@ export class WorldV2 {
   /* ================= THE AQUEDUCT ================= */
 
   private buildAqueduct() {
-    // deck bottom runs 13 (hub) → 17 (gate); walk surface = bottom+1
-    for (let z = 9; z <= 25; z++) {
-      const yd = 13 + Math.round(((25 - z) * 4) / 16)
+    // deck bottom runs 13 (hub) → 17 (gate); walk surface = bottom+1.
+    // z 26..28 the deck runs THROUGH the facade's arched passage.
+    for (let z = 9; z <= 28; z++) {
+      const yd = z <= 25 ? 13 + Math.round(((25 - z) * 4) / 16) : 13
       this.fill('stonebrick', -1, 1, yd, yd, z, z)
-      // side rails with gaps
-      if (z % 2 === 0) {
-        this.b('cobble', -1, yd + 1, z)
-        this.b('cobble', 1, yd + 1, z)
-      }
-      // arch supports every 3 blocks, down to the gorge floor
-      if ((z - 9) % 3 === 0) {
-        for (const lx of [-1, 1]) this.col('stonebrick', lx, z, 5, yd - 1)
-        if (yd - 2 > 5) {
-          this.fill('stonebrick', -1, 1, yd - 2, yd - 2, z, z) // lintel
-          this.b('stonebrick', 0, yd - 3, z) // arch keystone
+      if (z <= 25) {
+        // side rails with gaps
+        if (z % 2 === 0) {
+          this.b('cobble', -1, yd + 1, z)
+          this.b('cobble', 1, yd + 1, z)
+        }
+        // arch supports every 3 blocks, down to the gorge floor
+        if ((z - 9) % 3 === 0) {
+          for (const lx of [-1, 1]) this.col('stonebrick', lx, z, 5, yd - 1)
+          if (yd - 2 > 5) {
+            this.fill('stonebrick', -1, 1, yd - 2, yd - 2, z, z) // lintel
+            this.b('stonebrick', 0, yd - 3, z) // arch keystone
+          }
         }
       }
     }
@@ -586,25 +659,32 @@ export class WorldV2 {
       this.crenelX('stone', tx, tx + 2, g + 6, 8)
       this.b('glow', tx + 1, g + 3, 9) // lamp faces the square
     }
-    /* arch lintel over the street gap + half-raised portcullis */
+    /* arch lintel over the street gap + portcullis raised clear of the road
+       (it hangs overhead — a warning, not a wall) */
     this.fill('cobble', 3, 3, g + 4, g + 5, 6, 8)
-    this.col('plank', 3, 7, g, g + 1)
-    this.b('plank', 2, g + 1, 7)
-    this.b('plank', 4, g + 1, 7)
-    /* the hanging cage — the gate's old justice */
-    this.col('log', 3, 7, g + 2, g + 3)
-    this.fill('coal', 3, 3, g, g + 1, 7, 7)
-    /* wall stubs flanking the gate */
-    this.fill('cobble', -2, -1, g, g + 2, 6, 7)
-    this.fill('cobble', 7, 8, g, g + 2, 6, 7)
+    this.b('plank', 3, g + 3, 7)
+    /* the town's south wall — the gate is the ONLY way in now */
+    this.fill('cobble', -12, -1, g, g + 2, 7, 7)
+    this.fill('cobble', 7, 14, g, g + 2, 7, 7)
+    this.fill('darkstone', -12, -1, g + 3, g + 3, 7, 7)
+    this.fill('darkstone', 7, 14, g + 3, g + 3, 7, 7)
+    for (let x = -12; x <= -1; x += 2) this.b('stone', x, g + 4, 7)
+    for (let x = 8; x <= 14; x += 2) this.b('stone', x, g + 4, 7)
+    /* the gibbet in the gate courtyard — the gate's old justice */
+    this.col('log', 9, 6, g, g + 3)
+    this.b('log', 8, g + 3, 6)
+    this.b('coal', 8, g + 2, 6)
     /* the overturned cart before the gate (on the square, h16) */
     this.fill('log', 5, 7, 17, 17, 9, 9)
     this.b('cobble', 4, 17, 9)
     this.b('cobble', 8, 17, 9)
     this.b('plank', 6, 18, 9)
-    /* welcome lamp on the square */
-    this.col('log', 7, 11, 17, 19)
-    this.b('glow', 7, 20, 11)
+    /* the square's parapet — nobody slips off into the gorge */
+    for (const [px, pz] of [[-4, 9], [-4, 10], [-3, 10], [2, 10], [3, 10], [4, 10], [5, 10], [7, 10]] as const)
+      this.b('cobble', px, 17, pz)
+    /* welcome lamp on the square, cornered by the parapet */
+    this.col('log', 6, 10, 17, 19)
+    this.b('glow', 6, 20, 10)
     this.flush()
   }
 
@@ -661,18 +741,15 @@ export class WorldV2 {
         for (let z = z0 + 1; z <= z1 - 1; z++) if ((x + z) % 3 !== 0) this.b('plank', x, y0 + wallH - 2, z)
     }
 
-    /* street-side overhang balcony + brackets */
+    /* street-side overhang balcony + rail (no head-high brackets —
+       the street beneath stays fully walkable) */
     if (opts.balcony) {
       const by = y0 + wallH - 2
       if (door === 'E') {
         this.fill('plank', x1 + 1, x1 + 1, by, by, z0 + 1, z1 - 1)
-        this.b('log', x1 + 1, by - 1, z0 + 1)
-        this.b('log', x1 + 1, by - 1, z1 - 1)
         this.fill('plank', x1 + 1, x1 + 1, by + 1, by + 1, z0 + 2, z1 - 2)
       } else if (door === 'W') {
         this.fill('plank', x0 - 1, x0 - 1, by, by, z0 + 1, z1 - 1)
-        this.b('log', x0 - 1, by - 1, z0 + 1)
-        this.b('log', x0 - 1, by - 1, z1 - 1)
         this.fill('plank', x0 - 1, x0 - 1, by + 1, by + 1, z0 + 2, z1 - 2)
       }
     }
@@ -763,13 +840,14 @@ export class WorldV2 {
       this.col('log', lx, lz, y, y + 2)
       this.b('glow', lx, y + 3, lz)
     }
-    /* the rooftop bridge — a plank crossing between two upper floors */
-    const bb = this.surfaceAt(0, -13) + 4
-    this.fill('plank', 2, 5, bb, bb, -11, -11)
-    this.b('plank', 2, bb + 1, -11)
-    this.b('plank', 5, bb + 1, -11)
-    this.col('log', 2, -11, bb - 2, bb - 1)
-    this.col('log', 5, -11, bb - 2, bb - 1)
+    /* the burnt remains of a rooftop bridge — planks that once linked the
+       burg's upper floors hang from the eave; the rest is on the street */
+    const ry = this.surfaceAt(2, -11) + 4
+    this.b('plank', 2, ry, -11) // two charred planks jut from the eave
+    this.b('plank', 3, ry, -11)
+    this.col('log', 2, -11, ry - 2, ry - 1) // one scorched support still holds
+    this.b('plank', 3, this.surfaceAt(3, -10), -10) // a fallen plank on the street
+    this.b('coal', 4, this.surfaceAt(4, -11), -11) // the scorch where the rest burned
     this.flush()
   }
 
@@ -786,16 +864,18 @@ export class WorldV2 {
     this.crenelZ('stone', cz, cz + 2, y0 + 10, cx + 2)
     /* lit watch window facing the street */
     this.b('glow', cx - 2, y0 + 7, cz)
-    /* external spiral stairs winding up the south + east faces */
-    const seq: [number, number][] = [
-      [-2, 4], [-1, 4], [0, 4], [1, 4], [2, 4], [2, 3], [2, 2], [2, 1], [2, 0],
+    /* external stair: solid columns hugging the house wall then the east
+       face, ending flush with the parapet walk — every step reachable */
+    const steps: [number, number][] = [
+      [0, 7], [1, 7], [2, 7], [3, 7],
+      [3, 6], [3, 5], [3, 4], [3, 3], [3, 2], [3, 1], [3, 0], [3, -1],
     ]
-    let sy = y0
-    for (const [dx, dz] of seq) {
-      this.b('cobble', cx + dx, sy, cz + dz)
+    let sy = y0 - 3
+    for (const [dx, dz] of steps) {
       sy++
+      this.col('cobble', cx + dx, cz + dz, y0 - 3, sy) // solid to the ground
     }
-    /* brazier on top */
+    /* the last step (14,-7) tops out level with the cap — step west on */
     this.b('coal', cx, y0 + 10, cz)
     this.b('glow', cx, y0 + 11, cz)
     this.flush()
@@ -841,7 +921,7 @@ export class WorldV2 {
     /* deck runs north from the plaza over open air, then crumbles */
     for (let z = -40; z <= -28; z++) {
       const yd = 24 // deck bottom → walk 25
-      if (z === -33) continue // the breach — the fall
+      if (z >= -35 && z <= -33) continue // the breach — three rows gone
       this.fill('stonebrick', -2, 2, yd, yd, z, z)
       if (z % 2 === 0) {
         this.b('cobble', -2, yd + 1, z)
@@ -855,6 +935,15 @@ export class WorldV2 {
         this.b('stonebrick', 0, yd - 3, z)
       }
     }
+    /* torn stubs hang from both breach lips */
+    this.b('stonebrick', -1, 23, -36)
+    this.b('cobble', 1, 23, -36)
+    this.b('stonebrick', 1, 23, -32)
+    /* rubble where the fallen span landed, far below */
+    this.b('cobble', 0, this.surfaceAt(0, -34), -34)
+    this.b('stone', 1, this.surfaceAt(1, -33), -33)
+    this.b('mossy', -1, this.surfaceAt(-1, -35), -35)
+    this.b('cobble', 2, this.surfaceAt(2, -34), -34)
     /* the crumbled north end: a stub + rubble down the slope */
     this.fill('stonebrick', -1, 1, 24, 24, -41, -41)
     this.b('cobble', -2, this.surfaceAt(-2, -41), -41)
@@ -875,6 +964,7 @@ export class WorldV2 {
       for (const z of [-36, -28]) {
         for (let y = y0; y <= wallTop; y++) {
           const rel = y - y0
+          if (z === -28 && rel <= 1 && (x === -34 || x === -33)) continue // the church door
           if (rel >= 2 && rel <= 4 && (x + 38) % 3 !== 0 && x !== -38 && x !== -27) {
             this.b(rel === 4 ? 'cobble' : 'glass', x, y, z) // tall windows
             continue
@@ -900,8 +990,10 @@ export class WorldV2 {
         }
       }
     }
-    /* buttresses along north + south walls */
+    /* buttresses along north + south walls (the one before the door
+       has fallen — its scar is why the doorway is easy to reach) */
     for (let x = -37; x <= -28; x += 3) {
+      if (x === -34) continue // the fallen buttress at the church door
       for (const bz of [-37, -27]) {
         this.col('darkstone', x, bz, y0, y0 + 4)
         this.b('cobble', x, y0 + 5, bz)
@@ -926,9 +1018,11 @@ export class WorldV2 {
       }
     }
     this.b('gold', -32, wallTop + 6, -32) // the ridge cross
-    /* entrance: south door arch + step */
-    this.fill('darkstone', -34, -32, y0, y0 + 3, -28, -28)
-    this.fill('plank', -34, -33, y0, y0 + 1, -28, -28) // the doors, forever open
+    /* entrance: a real 2-wide doorway in the south wall — the doors
+       themselves were taken or burned; only the leaves remain, pinned */
+    this.b('plank', -35, y0, -27)
+    this.b('plank', -32, y0, -27)
+    this.b('stone', -34, y0, -27)
     this.b('stone', -33, y0, -27)
     /* interior: raised floor, pews, altar, candles */
     for (let x = -37; x <= -28; x++)
@@ -976,9 +1070,13 @@ export class WorldV2 {
   /* ================= GRAVEYARD (around the parish) ================= */
 
   private buildGraveyard() {
-    /* enclosure wall on the south slope of the hill; gate faces east */
+    /* enclosure wall on the south slope of the hill; gate faces east,
+       a gap paths the church door down among the graves */
     for (let x = -38; x <= -24; x++) {
-      for (const z of [-26, -18]) this.b('cobble', x, this.surfaceAt(x, z), z)
+      for (const z of [-26, -18]) {
+        if (z === -26 && x >= -35 && x <= -32) continue // the church-door path
+        this.b('cobble', x, this.surfaceAt(x, z), z)
+      }
     }
     for (let z = -25; z <= -19; z++) {
       if (z === -22) continue // the gate
@@ -1011,11 +1109,19 @@ export class WorldV2 {
     this.b('stonebrick', -31, my + 1, -23)
     this.b('stone', -31, my + 2, -23)
     this.b('stone', -31, my + 2, -22)
-    /* an open crypt — someone broke in long ago */
+    /* an open crypt — someone broke in long ago; hollow walls, a doorway
+       facing the church, a coffin ajar and the lid leaning on the corner */
     const cy = this.surfaceAt(-36, -20)
-    this.fill('darkstone', -37, -35, cy, cy + 1, -21, -19)
-    this.fill('coal', -36, -36, cy, cy, -20, -20)
-    this.b('darkstone', -36, cy + 2, -20) // a half-lifted lid
+    for (let x = -37; x <= -35; x++) {
+      for (let z = -21; z <= -19; z++) {
+        if (x === -36 && z === -20) continue // the hollow
+        if (x === -36 && z === -19) continue // the doorway
+        this.col('darkstone', x, z, cy, cy + 1)
+      }
+    }
+    this.fill('coal', -36, -36, cy, cy, -20, -20) // the earthen floor
+    this.b('plank', -36, cy + 1, -20) // the coffin lid, ajar
+    this.b('darkstone', -35, cy + 2, -21) // the half-lifted slab
     /* dead trees leaning over the fence */
     for (const [tx, tz] of [[-37, -19], [-25, -25]] as const) {
       const ty = this.surfaceAt(tx, tz)
@@ -1030,13 +1136,13 @@ export class WorldV2 {
 
   private buildRavine() {
     /* broken bridge stumps — the old crossing, mid-water */
-    for (const [bx, bz] of [[-26, -1], [-26, 2], [-13, 0], [-13, 3]] as const) {
+    for (const [bx, bz] of [[-26, -1], [-26, 2], [-12, 6], [-12, 9]] as const) {
       this.col('cobble', bx, bz, 3, 6)
     }
     this.b('cobble', -25, 6, -1)
-    this.b('stone', -14, 6, 1)
+    this.b('stone', -11, 6, 6)
     this.b('cobble', -24, 5, 2)
-    this.b('cobble', -15, 5, 2)
+    this.b('cobble', -11, 5, 9)
     /* the toppled statue head in the water, moss-eaten */
     this.b('mossy', -20, 3, 5)
     this.b('mossy', -19, 3, 5)
@@ -1055,14 +1161,15 @@ export class WorldV2 {
   /* ================= THE ASH WASTES ================= */
 
   private buildAshWastes() {
-    /* the cinder gatehouse on the hub road */
+    /* the cinder gatehouse ON the hub road — its arch still spans the way */
     const gy = this.surfaceAt(24, 26)
     this.fill('darkstone', 22, 23, gy, gy + 4, 25, 27)
     this.fill('darkstone', 25, 26, gy, gy + 2, 25, 27) // the half-collapsed twin
+    this.fill('darkstone', 24, 24, gy + 3, gy + 4, 25, 27) // the arch over the road
+    this.b('glow', 24, gy + 2, 26) // one lamp still burns, over the arch
     this.b('darkstone', 26, gy + 1, 24)
     this.b('cobble', 27, gy, 23)
     this.b('darkstone', 27, gy + 1, 22)
-    this.b('glow', 22, gy + 3, 24) // one lamp still burns
 
     /* the broken fortress: jagged walls around a dead yard */
     const fy = this.surfaceAt(34, 12)
@@ -1083,8 +1190,8 @@ export class WorldV2 {
       this.b('darkstone', 43 + (i % 2), fy + Math.floor(i / 3), 13 + (i % 3))
       this.b('cobble', 44, fy + (i % 2), 14 + (i % 2))
     }
-    /* ember vents breathing inside the yard */
-    for (const [ex, ez] of [[33, 11], [38, 13], [36, 10]] as const) {
+    /* ember vents breathing inside the yard, clear of the road */
+    for (const [ex, ez] of [[33, 11], [39, 13], [34, 13]] as const) {
       this.b('coal', ex, fy, ez)
       this.b('glow', ex, fy + 1, ez)
     }
@@ -1104,14 +1211,14 @@ export class WorldV2 {
   /* ================= THE CALDERA (boss 2 arena) ================= */
 
   private buildCaldera() {
-    /* eight fire basins on the wall ring */
+    /* eight fire basins standing ON the wall ring, breathing light */
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2 + 0.39
       const px = Math.round(40 + Math.cos(a) * 8)
       const pz = Math.round(-8 + Math.sin(a) * 8)
       if (px >= 39 && px <= 41 && pz >= -2 && pz <= 1) continue // the breach
-      this.col('darkstone', px, pz, 9, 11)
-      this.b('glow', px, 12, pz)
+      this.col('darkstone', px, pz, 13, 14)
+      this.b('glow', px, 15, pz)
     }
     /* the arena floor: cracked bricks + coal scars */
     for (let x = 34; x <= 46; x++) {
@@ -1134,11 +1241,11 @@ export class WorldV2 {
       }
       if (z === 2) for (const lx of [39, 41]) this.col('stonebrick', lx, z, 6, 7)
     }
-    this.b('stonebrick', 40, 7, 6) // the step up from the wastes road
-    /* the broken cart that never made it back */
-    this.fill('log', 39, 41, 9, 9, 4, 4)
-    this.b('cobble', 38, 9, 4)
-    this.b('plank', 40, 10, 4)
+    /* the broken cart that never made it back — off the road, on the rim */
+    const cy2 = this.surfaceAt(37, 3)
+    this.fill('log', 36, 38, cy2, cy2, 3, 3)
+    this.b('cobble', 35, cy2, 3)
+    this.b('plank', 37, cy2 + 1, 3)
     this.flush()
   }
 

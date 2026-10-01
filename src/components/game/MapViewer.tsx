@@ -304,9 +304,9 @@ export default function MapViewer({ onClose }: Props) {
         <div className="flex items-center gap-3">
           <span className="text-xl" aria-hidden>🗺️</span>
           <div>
-            <h2 className="text-sm font-black text-white">پیش‌نمایش نقشهٔ جدید — نسخهٔ V۲</h2>
+            <h2 className="text-sm font-black text-white">نقشهٔ جهان — دارک‌کرفت</h2>
             <p className="text-[10px] text-white/45">
-              جهان بازسازی‌شده به سبک دارک سولز · هر منطقه را ببین؛ اگر تأیید کنی، وارد بازی می‌شود
+              جهانِ زندهٔ بازی به سبک دارک سولز · هر منطقه را از نزدیک ببین
             </p>
           </div>
         </div>

@@ -4,7 +4,7 @@ import {
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
-import type { World } from './world'
+import type { WorldV2 } from './worldV2'
 import type { Game, PlayerStrikeDef } from './game'
 import type { DmgType, RollTier } from './items'
 
@@ -41,7 +41,7 @@ export interface PlayerCtx {
   input: Input
   camYaw: number
   dt: number
-  world: World
+  world: WorldV2
   game: Game
 }
 
@@ -319,8 +319,7 @@ export class Player {
       const p = this.stateT / ROLL_DUR
       // burden tiers shorten the somersault too
       const sp = 8.8 * this.loadout.rollMult * (1 - 0.5 * p)
-      this.pos.x += this.rollDir.x * sp * dt
-      this.pos.z += this.rollDir.z * sp * dt
+      this.slide(world, this.rollDir.x * sp * dt, this.rollDir.z * sp * dt)
       animRoll(this.h, Math.min(1, p))
       if (p >= 1) {
         this.state = 'idle'
@@ -339,8 +338,7 @@ export class Player {
       // small lunge
       if (p < 0.35) {
         const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw)
-        this.pos.x += fx * 2.1 * dt
-        this.pos.z += fz * 2.1 * dt
+        this.slide(world, fx * 2.1 * dt, fz * 2.1 * dt)
       }
       if (def.variant !== 'heavy' && this.stamina >= STAMINA_COST_LIGHT) {
         if (input.consume('LMB') && p > 0.32 && p < 0.9) this.queued = true
@@ -386,8 +384,7 @@ export class Player {
       }
     } else if (this.state === 'hit') {
       this.stateT += dt
-      this.pos.x += this.kbDir.x * 4.5 * (1 - this.stateT / this.hitDur) * dt
-      this.pos.z += this.kbDir.z * 4.5 * (1 - this.stateT / this.hitDur) * dt
+      this.slide(world, this.kbDir.x * 4.5 * (1 - this.stateT / this.hitDur) * dt, this.kbDir.z * 4.5 * (1 - this.stateT / this.hitDur) * dt)
       animHit(this.h, Math.min(1, this.stateT / this.hitDur))
       if (this.stateT >= this.hitDur) {
         this.state = 'idle'
@@ -425,8 +422,7 @@ export class Player {
         const rgtX = -fwdZ, rgtZ = fwdX
         const mx = rgtX * ax.x + fwdX * ax.z
         const mz = rgtZ * ax.x + fwdZ * ax.z
-        this.pos.x += mx * WALK_SPEED * 0.42 * this.loadout.walkMult * dt
-        this.pos.z += mz * WALK_SPEED * 0.42 * this.loadout.walkMult * dt
+        this.slide(world, mx * WALK_SPEED * 0.42 * this.loadout.walkMult * dt, mz * WALK_SPEED * 0.42 * this.loadout.walkMult * dt)
         this.targetYaw = Math.atan2(mx, mz)
         // the stance keeps the upper body drawn while the legs march underneath
         marching = 1
@@ -475,8 +471,7 @@ export class Player {
         const rgtX = -fwdZ, rgtZ = fwdX
         const mx = rgtX * ax.x + fwdX * ax.z
         const mz = rgtZ * ax.x + fwdZ * ax.z
-        this.pos.x += mx * WALK_SPEED * 0.42 * dt
-        this.pos.z += mz * WALK_SPEED * 0.42 * dt
+        this.slide(world, mx * WALK_SPEED * 0.42 * dt, mz * WALK_SPEED * 0.42 * dt)
         this.targetYaw = Math.atan2(mx, mz)
         // guarding on the move: legs march, shield stays up
         animBlockWalk(this.h, this.animT)
@@ -522,8 +517,7 @@ export class Player {
         const rgtX = -fwdZ, rgtZ = fwdX
         const mx = rgtX * ax.x + fwdX * ax.z
         const mz = rgtZ * ax.x + fwdZ * ax.z
-        this.pos.x += mx * speed * dt
-        this.pos.z += mz * speed * dt
+        this.slide(world, mx * speed * dt, mz * speed * dt)
         this.targetYaw = Math.atan2(mx, mz)
         this.state = 'run'
         if (this.sprinting) {
@@ -649,8 +643,32 @@ export class Player {
     return { dur: 0.95 * s, impact: 0.5, dmg: Math.round(58 * m), range: 2.9, arc: 1.4, cost: STAMINA_COST_HEAVY, variant: 'heavy', heavy: true, knock: 5 }
   }
 
-  private resolveGround(world: World, dt: number, sinking: boolean) {
-    const ground = world.surfaceAt(this.pos.x, this.pos.z)
+  /** axis-separated blocky collision — walls stop the body, one-block
+      steps auto-climb, cliffs are walls but drops are always allowed */
+  private slide(world: WorldV2, dx: number, dz: number) {
+    const r = 0.28
+    if (dx !== 0) {
+      const nx = this.pos.x + dx
+      const edge = nx + Math.sign(dx) * r
+      if (
+        !world.wallAt(edge, this.pos.z - r, this.pos.y) &&
+        !world.wallAt(edge, this.pos.z + r, this.pos.y)
+      )
+        this.pos.x = nx
+    }
+    if (dz !== 0) {
+      const nz = this.pos.z + dz
+      const edge = nz + Math.sign(dz) * r
+      if (
+        !world.wallAt(this.pos.x - r, edge, this.pos.y) &&
+        !world.wallAt(this.pos.x + r, edge, this.pos.y)
+      )
+        this.pos.z = nz
+    }
+  }
+
+  private resolveGround(world: WorldV2, dt: number, sinking: boolean) {
+    const ground = world.supportAt(this.pos.x, this.pos.z, this.pos.y)
     if (this.pos.y > ground + 0.02) {
       this.vy -= 24 * dt
       this.pos.y = Math.max(ground, this.pos.y + this.vy * dt)

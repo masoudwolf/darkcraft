@@ -797,7 +797,7 @@ function MainMenu({
           onClick={onMapPreview}
           className="h-11 w-full border-2 border-black/80 bg-[#1a2a1f] font-bold text-emerald-200 shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-[#24382b]"
         >
-          🗺️ پیش‌نمایش نقشهٔ جدید (V۲)
+          🗺️ نقشهٔ جهان — بازدید مناطق
         </Button>
         <Button
           size="lg"
