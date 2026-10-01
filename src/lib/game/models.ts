@@ -1129,3 +1129,67 @@ export function disposeHumanoid(h: Humanoid) {
   for (const m of h.materials) m.dispose()
   for (const m of h.extras) m.dispose()
 }
+
+/* ================= MERCHANT NPC ================= */
+
+/** the grey merchant of the bonfire — a travelling trader with a walking
+    staff, a satchel on his back and a hood against the ash-fall */
+export function createMerchant(): Humanoid {
+  const h = createHumanoid('merchant', 1.0)
+  // walking staff in the right hand (taller than a sword, blunt tip)
+  const staff = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const wood = lam(0x6e4f30)
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.25, 0.09), wood)
+  shaft.castShadow = true
+  shaft.position.y = -0.45
+  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), lam(0x8a6a3c))
+  knob.castShadow = true
+  knob.position.y = 0.2
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.11), lam(0x4a3620))
+  strap.position.y = -0.1
+  staff.add(shaft, knob, strap)
+  staff.position.set(0, -0.68, 0.05)
+  staff.rotation.x = 0.12
+  h.armR.add(staff)
+  // satchel on the back
+  const pack = new THREE.Group()
+  const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.4, 0.16), lam(0x7a5a34))
+  bag.castShadow = true
+  const flap = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.18), lam(0x4a3620))
+  flap.position.set(0, 0.14, -0.01)
+  pack.add(bag, flap)
+  pack.position.set(0, 0.05, -0.26)
+  h.body.parent!.add(pack) // attach beside the torso (body is inside spin)
+  return h
+}
+
+/** trade-post idle: weight shifts, staff taps, the hood scans for customers */
+export function animMerchantIdle(h: Humanoid, t: number) {
+  resetPose(h)
+  const b = Math.sin(t * 1.9)
+  h.root.position.y = b * 0.015
+  h.root.rotation.z = Math.sin(t * 0.9) * 0.03
+  h.armL.rotation.x = -0.12 + b * 0.06
+  h.armL.rotation.z = 0.1
+  // staff arm rests, occasionally tapping the ground
+  h.armR.rotation.x = -0.08 + Math.max(0, Math.sin(t * 1.9 * 2)) * 0.05
+  h.armR.rotation.z = -0.08
+  h.head.rotation.y = Math.sin(t * 0.55) * 0.3
+  h.head.rotation.x = 0.04
+  h.legL.rotation.x = -0.03
+  h.legR.rotation.x = 0.03
+}
+
+/** a welcoming wave when an unkindled one wanders close */
+export function animMerchantGreet(h: Humanoid, p: number) {
+  resetPose(h)
+  const raise = Math.min(1, p * 3)
+  const wave = Math.sin(p * Math.PI * 5) * (1 - p) * 0.55
+  h.armR.rotation.x = -2.4 * raise
+  h.armR.rotation.z = -0.35 - wave
+  h.armL.rotation.x = -0.1
+  h.armL.rotation.z = 0.1
+  h.head.rotation.z = 0.08 * raise
+  h.head.rotation.x = -0.06 * raise
+}

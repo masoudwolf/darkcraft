@@ -1,11 +1,12 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, createBow, createBlazeRods, setBowDraw, setNocked, bowDrawAmount,
+  createHumanoid, createMerchant, createBow, createBlazeRods, setBowDraw, setNocked, bowDrawAmount,
   animIdle, animWalk, animZombieWalk, animZombieIdle,
   animCreeperWalk, animCreeperIdle, animSkeletonWalk, animBowIdle,
   animWitherWalk, animAttack, animHit, animDead, animRoll, animBlock, animBlockWalk, animDrink, animCast,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
-  animBowDraw, animBowShoot, animPoke, lerp, resetPose, setFlash, setFlashWhite,
+  animBowDraw, animBowShoot, animPoke, animMerchantIdle, animMerchantGreet,
+  lerp, resetPose, setFlash, setFlashWhite,
   type Humanoid,
 } from './models'
 
@@ -240,6 +241,21 @@ export const BESTIARY: BestiaryEntry[] = [
       { id: 'stomp', label: 'لگد زمین‌شکن', dur: 0.9, fn: shot(0.9, (h, p) => animStomp(h, p)) },
       { id: 'stagger', label: 'شکست تعادل', dur: 1.9, fn: (h, t) => animStagger(h, (t % 1.9) / 1.9, t) },
       { id: 'dead', label: 'مرگ سینمایی', dur: 1.7, fn: shot(1.7, (h, p) => animBossDead(h, p)) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+    ],
+  },
+
+  /* ---------------- GREY MERCHANT (NPC) ---------------- */
+  {
+    id: 'merchant',
+    name: 'بازرگان خاکستری',
+    sub: 'NPC — فروشنده‌ی کنار آتش کمپ',
+    dot: '#8fbf6a',
+    scale: 1,
+    build: () => createMerchant(),
+    anims: [
+      { id: 'idle', label: 'ایستادن', fn: (h, t) => animMerchantIdle(h, t) },
+      { id: 'greet', label: 'سلام', dur: 1.3, fn: shot(1.3, (h, p) => animMerchantGreet(h, p)) },
       { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
     ],
   },

@@ -1,15 +1,15 @@
 import * as THREE from 'three'
 import { Engine } from './engine'
-import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS } from './world'
+import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS, MERCHANT } from './world'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
-import { createSword, type Humanoid } from './models'
+import { createSword, createMerchant, animMerchantIdle, animMerchantGreet, type Humanoid } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
 
 /* ================= HUD STATE ================= */
 
-export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused'
+export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop'
 
 export interface HudState {
   phase: Phase
@@ -34,7 +34,56 @@ export interface HudState {
   pyro: number
   maxPyro: number
   pyroUnlocked: boolean
+  /** shop snapshot — null unless the shop panel is open */
+  shop: ShopHud | null
 }
+
+export interface ShopHud {
+  souls: number
+  estusLv: number
+  whetLv: number
+  coalLv: number
+  pyroUnlocked: boolean
+}
+
+/* ================= SHOP ECONOMY ================= */
+
+export interface ShopItemDef {
+  id: 'estus' | 'whet' | 'coal'
+  name: string
+  desc: string
+  icon: string
+  max: number
+  /** price for buying the (level+1)-th one */
+  price: (level: number) => number
+}
+
+export const SHOP_ITEMS: ShopItemDef[] = [
+  {
+    id: 'estus',
+    name: 'شربت‌سنگ',
+    desc: 'ظرفیت شربت استوس +۱ (بازگردایی کامل)',
+    icon: '🧪',
+    max: 3,
+    price: (lv) => 900 + lv * 550,
+  },
+  {
+    id: 'whet',
+    name: 'سنگ تیزکن',
+    desc: 'تیغه‌ی بازی +۸٪ آسیب — همیشگی',
+    icon: '🗡️',
+    max: 5,
+    price: (lv) => 650 + lv * 350,
+  },
+  {
+    id: 'coal',
+    name: 'زغال جادویی',
+    desc: 'ظرفیت جادو +۱ شارژ (نیاز به پیرمانسی)',
+    icon: '🜂',
+    max: 4,
+    price: (lv) => 500 + lv * 300,
+  },
+]
 
 export interface SaveData {
   souls: number
@@ -45,6 +94,9 @@ export interface SaveData {
   estusUp?: boolean
   pyro?: boolean
   ember?: boolean
+  shopEstus?: number
+  shopWhet?: number
+  shopCoal?: number
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -885,6 +937,12 @@ export class Game {
   private boomLights: { light: THREE.PointLight; t: number }[] = []
   private estusShard: { mesh: THREE.Group; light: THREE.PointLight } | null = null
   private estusUp = false
+  /** the bonfire-hub NPC + his shop upgrades (persisted) */
+  private merchant!: Humanoid
+  private merchantLamp!: THREE.PointLight
+  private merchantGreetT = 0
+  private merchantGreetCd = 0
+  private shopLv = { estus: 0, whet: 0, coal: 0 }
   private pyroItem: { mesh: THREE.Group; light: THREE.PointLight } | null = null
   private emberItem: { mesh: THREE.Group; light: THREE.PointLight } | null = null
   private pyroUnlocked = false
@@ -974,6 +1032,53 @@ export class Game {
       })
     )
     scene.add(this.bonfireFlame)
+
+    /* ---- the grey merchant: NPC + stall beside the bonfire ---- */
+    this.merchant = createMerchant()
+    const mY = this.world.surfaceAt(MERCHANT.x, MERCHANT.z)
+    this.merchant.group.position.set(MERCHANT.x, mY, MERCHANT.z)
+    this.merchant.group.rotation.y = Math.PI * 0.75 // facing the bonfire
+    scene.add(this.merchant.group)
+    // stall: two posts, an awning and a glowing lantern
+    const stall = new THREE.Group()
+    const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+    const post = (x: number, z: number, hgt: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.18, hgt, 0.18), lam(0x5c4328))
+      m.position.set(x, hgt / 2, z)
+      m.castShadow = true
+      return m
+    }
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 1.5), lam(0x7a3f34))
+    awning.position.set(0, 2.15, 0)
+    awning.castShadow = true
+    const awningTrim = new THREE.Mesh(new THREE.BoxGeometry(2.14, 0.1, 0.14), lam(0xc9a44a))
+    awningTrim.position.set(0, 2.05, 0.7)
+    const table = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 0.8), lam(0x6e4f30))
+    table.position.set(0, 0.42, 0.2)
+    table.castShadow = true
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), lam(0x8a6a3c))
+    crate.position.set(-0.5, 0.9, 0.2)
+    crate.rotation.y = 0.4
+    crate.castShadow = true
+    const jar = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.3, 0.22), lam(0x9fd89f))
+    jar.position.set(0.45, 0.82, 0.2)
+    const lampGlass = new THREE.Mesh(
+      new THREE.BoxGeometry(0.26, 0.34, 0.26),
+      new THREE.MeshBasicMaterial({ color: 0xffcf6a })
+    )
+    lampGlass.position.set(0.55, 2.05, 0.55)
+    const lampTop = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), lam(0x3a2c1a))
+    lampTop.position.set(0.55, 2.26, 0.55)
+    stall.add(
+      post(-0.9, 0.8, 2.1), post(0.9, 0.8, 2.1), post(-0.9, -0.5, 2.3), post(0.55, -0.5, 2.2),
+      awning, awningTrim, table, crate, jar, lampGlass, lampTop
+    )
+    stall.position.set(MERCHANT.x + 1.3, mY, MERCHANT.z - 0.6)
+    stall.rotation.y = Math.PI * 0.78
+    scene.add(stall)
+    this.merchantLamp = new THREE.PointLight(0xffb050, 1.6, 7, 1.7)
+    this.merchantLamp.position.set(MERCHANT.x + 1.85, mY + 2.1, MERCHANT.z - 0.15)
+    scene.add(this.merchantLamp)
 
     // player
     this.player = new Player(scene)
@@ -1202,6 +1307,57 @@ export class Game {
     if (this.phase !== 'rest') return
     this.phase = 'playing'
     if (!this.engine.input.isTouch) this.engine.input.requestLock()
+    this.wasLocked = false
+    this.emit(true)
+  }
+
+  /* ================= SHOP ================= */
+
+  openShop() {
+    if (this.phase !== 'playing') return
+    this.phase = 'shop'
+    this.engine.input.releaseLock()
+    this.wasLocked = false
+    this.sfx.souls()
+    this.emit(true)
+  }
+
+  closeShop() {
+    if (this.phase !== 'shop') return
+    this.phase = 'playing'
+    if (!this.engine.input.isTouch) this.engine.input.requestLock()
+    this.wasLocked = false
+    this.emit(true)
+  }
+
+  /** buy one level of a shop item — validates souls, applies, persists */
+  buyShopItem(id: 'estus' | 'whet' | 'coal') {
+    if (this.phase !== 'shop') return
+    const def = SHOP_ITEMS.find((i) => i.id === id)
+    if (!def) return
+    const lv = this.shopLv[id]
+    if (lv >= def.max) return
+    if (id === 'coal' && !this.pyroUnlocked) return
+    const cost = def.price(lv)
+    if (this.player.souls < cost) return
+    this.player.souls -= cost
+    this.shopLv[id] = lv + 1
+    if (id === 'estus') {
+      this.player.maxEstus = Math.min(6, this.player.maxEstus + 1)
+      this.player.estus = this.player.maxEstus
+    } else if (id === 'whet') {
+      this.player.gearDmg = this.shopLv.whet * 0.08
+    } else {
+      this.player.maxPyro = Math.min(8, this.player.maxPyro + 1)
+      this.player.pyro = this.player.maxPyro
+    }
+    this.sfx.levelUp()
+    this.spawnText(
+      `${def.name} خریداری شد!`,
+      '#8fd97a',
+      this.player.pos.clone().add(new THREE.Vector3(0, 2.4, 0))
+    )
+    this.save()
     this.emit(true)
   }
 
@@ -1219,8 +1375,14 @@ export class Game {
     this.emit(true)
   }
 
+  /** the F key — world interactions */
   interact() {
     if (this.phase !== 'playing') return
+    // the grey merchant
+    if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 2.7) {
+      this.openShop()
+      return
+    }
     // bloodstain
     if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
       this.player.souls += this.bloodstain.amount
@@ -1342,6 +1504,9 @@ export class Game {
         estusUp: this.estusUp,
         pyro: this.pyroUnlocked,
         ember: this.emberTaken,
+        shopEstus: this.shopLv.estus,
+        shopWhet: this.shopLv.whet,
+        shopCoal: this.shopLv.coal,
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -1374,6 +1539,16 @@ export class Game {
       this.player.maxPyro = 4 + (this.emberTaken ? 2 : 0)
       this.player.pyro = this.player.maxPyro
       if (this.pyroUnlocked) this.removePyroItem()
+      // shop upgrades
+      this.shopLv.estus = Math.max(0, Math.min(3, d.shopEstus ?? 0))
+      this.shopLv.whet = Math.max(0, Math.min(5, d.shopWhet ?? 0))
+      this.shopLv.coal = Math.max(0, Math.min(4, d.shopCoal ?? 0))
+      if (this.shopLv.estus > 0) this.player.maxEstus += this.shopLv.estus
+      this.player.gearDmg = this.shopLv.whet * 0.08
+      if (this.shopLv.coal > 0 && this.pyroUnlocked) {
+        this.player.maxPyro = Math.min(8, this.player.maxPyro + this.shopLv.coal)
+        this.player.pyro = this.player.maxPyro
+      }
     } catch { /* ignore */ }
   }
 
@@ -2047,6 +2222,9 @@ export class Game {
     }
     const bPos = new THREE.Vector3(BONFIRE.x, this.world.surfaceAt(BONFIRE.x, BONFIRE.z), BONFIRE.z)
     if (bPos.distanceTo(this.player.pos) < 2.6) return 'استراحت در آتش کمپ'
+    if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 2.7) {
+      return 'گفتگو با بازرگان'
+    }
     if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
       return 'عبور از دیوار مه'
     }
@@ -2084,6 +2262,7 @@ export class Game {
       this.camYaw += dt * 0.12
       this.world.update(dt)
       this.updateBonfire(dt)
+      this.updateMerchant(dt)
       this.player.h.group.position.copy(this.player.pos)
       this.player.h.group.rotation.y = this.player.yaw
       this.updateCameraMenu(dt)
@@ -2097,6 +2276,7 @@ export class Game {
       this.player.update({ input, camYaw: this.camYaw, dt, world: this.world, game: this })
       this.world.update(dt)
       this.updateBonfire(dt)
+      this.updateMerchant(dt)
       this.updateEffects(dt)
       if (this.deadT > 2.9) {
         this.deadT = 0
@@ -2116,6 +2296,23 @@ export class Game {
       }
       this.world.update(dt)
       this.updateBonfire(dt)
+      this.updateMerchant(dt)
+      this.updateEffects(dt)
+      this.updateCameraFollow(dt, false)
+      this.drawMinimap()
+      this.emit(false)
+      return
+    }
+
+    if (this.phase === 'shop') {
+      // Escape closes the stall
+      if (input.consume('Escape')) {
+        this.closeShop()
+        return
+      }
+      this.world.update(dt)
+      this.updateBonfire(dt)
+      this.updateMerchant(dt)
       this.updateEffects(dt)
       this.updateCameraFollow(dt, false)
       this.drawMinimap()
@@ -2131,6 +2328,7 @@ export class Game {
       }
       this.world.update(dt)
       this.updateBonfire(dt)
+      this.updateMerchant(dt)
       this.updateEffects(dt)
       this.updateCameraFollow(dt, false)
       this.drawMinimap()
@@ -2304,6 +2502,7 @@ export class Game {
     const vig = Math.max(this.hurtFlash, lowHp ? 0.22 + Math.sin(this.time * 5) * 0.08 : 0)
     this.vignette.style.opacity = String(vig)
 
+    this.updateMerchant(dt)
     this.updateCameraFollow(dt, false)
     this.updateReticle()
     this.drawMinimap()
@@ -2328,6 +2527,37 @@ export class Game {
     }
     pos.needsUpdate = true
     void dt
+  }
+
+  /** the grey merchant: idle sway, greets nearby unkindled, lamp flicker */
+  private updateMerchant(dt: number) {
+    this.merchantGreetT = Math.max(0, this.merchantGreetT - dt)
+    this.merchantGreetCd = Math.max(0, this.merchantGreetCd - dt)
+    const dx = this.player.pos.x - MERCHANT.x
+    const dz = this.player.pos.z - MERCHANT.z
+    const near = Math.hypot(dx, dz)
+    if (near < 4.5 && this.merchantGreetCd <= 0 && this.phase === 'playing') {
+      this.merchantGreetT = 1.3
+      this.merchantGreetCd = 11
+    }
+    // face the player when they are close, otherwise face the bonfire
+    if (near < 6) {
+      const target = Math.atan2(dx, dz)
+      let d = target - this.merchant.group.rotation.y
+      while (d > Math.PI) d -= Math.PI * 2
+      while (d < -Math.PI) d += Math.PI * 2
+      this.merchant.group.rotation.y += d * Math.min(1, 3 * dt)
+    } else {
+      this.merchant.group.rotation.y +=
+        (Math.PI * 0.75 - this.merchant.group.rotation.y) * Math.min(1, dt)
+    }
+    if (this.merchantGreetT > 0) {
+      animMerchantGreet(this.merchant, 1 - this.merchantGreetT / 1.3)
+    } else {
+      animMerchantIdle(this.merchant, this.time)
+    }
+    // lantern flicker
+    this.merchantLamp.intensity = 1.5 + Math.sin(this.time * 11) * 0.2 + Math.random() * 0.12
   }
 
   private updateEffects(dt: number) {
@@ -2496,6 +2726,16 @@ export class Game {
       pyro: p.pyro,
       maxPyro: p.maxPyro,
       pyroUnlocked: p.pyroUnlocked,
+      shop:
+        this.phase === 'shop'
+          ? {
+              souls: Math.floor(p.souls),
+              estusLv: this.shopLv.estus,
+              whetLv: this.shopLv.whet,
+              coalLv: this.shopLv.coal,
+              pyroUnlocked: this.pyroUnlocked,
+            }
+          : null,
     }
     const json = JSON.stringify(s)
     if (force || json !== this.lastHudJson) {

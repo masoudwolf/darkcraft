@@ -177,7 +177,7 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
 
 /* ================= CHARACTER TEXTURES ================= */
 
-export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame'
+export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame' | 'merchant'
 
 interface CharTexs {
   skin: THREE.Texture
@@ -218,6 +218,7 @@ function getCharTexs(kind: CharKind): CharTexs {
     wither: [[56, 54, 58], 10],
     blaze: [[236, 176, 52], 24],
     bossflame: [[52, 42, 44], 10],
+    merchant: [[206, 166, 124], 12],
   }
   const [sb, sv] = skinBase[kind]
 
@@ -330,6 +331,20 @@ function getCharTexs(kind: CharKind): CharTexs {
       return
     }
 
+    if (kind === 'merchant') {
+      // a tired, friendly face: warm eyes, grey brows, tidy brown beard
+      px(c, 1, 3, 'rgba(96,96,104,0.85)', 2, 1)
+      px(c, 5, 3, 'rgba(96,96,104,0.85)', 2, 1)
+      px(c, 1, 4, '#2c2013')
+      px(c, 2, 4, '#5a3c1c')
+      px(c, 5, 4, '#5a3c1c')
+      px(c, 6, 4, '#2c2013')
+      px(c, 3, 5, 'rgba(0,0,0,0.14)', 2, 1)
+      px(c, 2, 6, 'rgba(110,79,48,0.95)', 4, 1) // beard body
+      px(c, 3, 7, 'rgba(88,62,38,0.95)', 2, 1) // beard tip
+      return
+    }
+
     // player — classic minecraft eyes + brow + mouth
     px(c, 1, 4, '#ffffff')
     px(c, 2, 4, '#4a4ac0')
@@ -422,6 +437,14 @@ function getCharTexs(kind: CharKind): CharTexs {
         blotch(c, r, s, 'rgba(30,80,30,0.85)', 4, 2, 1)
         return
       }
+      if (kind === 'merchant') {
+        // moss-green hood crown with a stitched rim
+        fillNoise(c, r, s, [62, 96, 58], 12)
+        px(c, 0, 0, 'rgba(40,62,38,0.9)', 8, 1)
+        px(c, 0, 7, 'rgba(40,62,38,0.9)', 8, 1)
+        blotch(c, r, s, 'rgba(88,128,80,0.7)', 3, 2, 1)
+        return
+      }
       fillNoise(c, r, s, [66, 48, 33], 12)
     }),
     body: makeTex(8, 33, (c, r, s) => {
@@ -508,6 +531,18 @@ function getCharTexs(kind: CharKind): CharTexs {
         fillNoise(c, r, s, [0, 148, 148], 14)
         return
       }
+      if (kind === 'merchant') {
+        // travelling cloak: moss green, leather belt, brass clasp, satchel strap
+        fillNoise(c, r, s, [62, 96, 58], 12)
+        blotch(c, r, s, 'rgba(40,62,38,0.75)', 4, 2, 1)
+        blotch(c, r, s, 'rgba(96,136,88,0.7)', 3, 1, 1)
+        // satchel strap runs diagonal across the chest
+        for (let i = 0; i < 8; i++) px(c, i, Math.min(7, Math.max(0, i - 1)), 'rgba(74,54,32,0.95)', 1, 1)
+        px(c, 0, 5, '#4a3826', 8, 1) // belt
+        px(c, 3, 5, '#c9a44a', 2, 1) // brass buckle
+        px(c, 0, 0, 'rgba(40,62,38,0.9)', 8, 1) // hood shadow on the shoulders
+        return
+      }
       fillNoise(c, r, s, sb, sv)
     }),
     arm: makeTex(8, 34, (c, r, s) => {
@@ -560,6 +595,13 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 0, 7, 'rgba(20,14,16,0.9)', 8, 1)
         return
       }
+      if (kind === 'merchant') {
+        // cloak sleeve with a rolled cuff
+        fillNoise(c, r, s, [62, 96, 58], 12)
+        px(c, 0, 6, 'rgba(40,62,38,0.9)', 8, 2)
+        px(c, 0, 0, 'rgba(40,62,38,0.75)', 8, 1)
+        return
+      }
       fillNoise(c, r, s, sb, sv)
       if (kind === 'blaze') {
         blotch(c, r, s, 'rgba(255,224,120,0.9)', 3, 2, 1)
@@ -605,6 +647,13 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 0, 2, 'rgba(20,14,16,0.9)', 8, 1)
         px(c, 4, 4, 'rgba(255,122,30,0.8)', 1, 2)
         px(c, 0, 6, 'rgba(24,18,20,0.95)', 8, 2)
+        return
+      }
+      if (kind === 'merchant') {
+        // dark travelling trousers tucked into boots
+        fillNoise(c, r, s, [58, 48, 40], 10)
+        px(c, 0, 6, 'rgba(34,26,20,0.95)', 8, 2)
+        px(c, 0, 0, 'rgba(44,36,30,0.85)', 8, 1)
         return
       }
       fillNoise(c, r, s, sb, sv)

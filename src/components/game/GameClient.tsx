@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Game, type HudState, type GameSettings } from '@/lib/game/game'
+import { Game, SHOP_ITEMS, type HudState, type GameSettings } from '@/lib/game/game'
 import ModelViewer from '@/components/game/ModelViewer'
 
 /* ================= small pixel icons (inline SVG) ================= */
@@ -225,6 +225,102 @@ function SettingsModal({
   )
 }
 
+/* ================= shop modal (the grey merchant) ================= */
+
+function ShopModal({
+  hud,
+  onBuy,
+  onClose,
+}: {
+  hud: HudState
+  onBuy: (id: 'estus' | 'whet' | 'coal') => void
+  onClose: () => void
+}) {
+  const shop = hud.shop
+  if (!shop) return null
+  const levels: Record<string, number> = {
+    estus: shop.estusLv,
+    whet: shop.whetLv,
+    coal: shop.coalLv,
+  }
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 px-4" dir="rtl">
+      <div className="fadein-anim w-[min(94vw,470px)] rounded-none border-2 border-black bg-zinc-950/95 shadow-[6px_6px_0_rgba(0,0,0,0.6)]">
+        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4">
+          <span className="text-2xl" aria-hidden>🧺</span>
+          <div>
+            <h3 className="text-lg font-black text-emerald-200">بازرگان خاکستری</h3>
+            <p className="text-xs text-white/55">«از خاکستر می‌آیی... اما سول داری؟ دکمه‌ها را ببین.»</p>
+          </div>
+        </div>
+
+        <div className="px-5 py-4">
+          <div className="mb-3 flex items-center justify-between text-sm">
+            <span className="text-white/70">سول‌های تو</span>
+            <span className="flex items-center gap-1.5 font-bold text-emerald-300">
+              <EmeraldIcon size={16} /> {shop.souls.toLocaleString('en-US')}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {SHOP_ITEMS.map((item) => {
+              const lv = levels[item.id] ?? 0
+              const maxed = lv >= item.max
+              const locked = item.id === 'coal' && !shop.pyroUnlocked
+              const price = item.price(lv)
+              const affordable = shop.souls >= price && !locked && !maxed
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between rounded-none border border-white/10 bg-white/5 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-bold text-white">
+                      <span aria-hidden>{item.icon}</span>
+                      {item.name}
+                      <span className="font-pixel text-[9px] text-white/40" dir="ltr">
+                        {lv}/{item.max}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-white/45">
+                      {locked ? 'پیرمانسی هنوز نیاموخته‌ای...' : item.desc}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {maxed ? (
+                      <span className="text-[11px] font-bold text-amber-300">تمام شد</span>
+                    ) : (
+                      <span className={`flex items-center gap-1 text-xs font-bold ${affordable ? 'text-emerald-300' : 'text-white/35'}`}>
+                        <EmeraldIcon size={13} /> {price}
+                      </span>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={!affordable}
+                      onClick={() => onBuy(item.id)}
+                      className="h-8 rounded-none border border-black/60 bg-emerald-800 px-3 font-pixel text-xs hover:bg-emerald-700 disabled:opacity-30"
+                    >
+                      خرید
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <p className="mt-3 text-center text-[11px] leading-4 text-white/40">
+            خریدها همیشگی‌اند و ذخیره می‌شوند — فروشنده جایی نمی‌رود؛ مثل تو، به آتش کمپ پابند است.
+          </p>
+        </div>
+
+        <div className="border-t border-white/10 px-5 py-4">
+          <Button onClick={onClose} className="h-10 w-full rounded-none border-2 border-black/70 bg-zinc-800 font-bold text-white shadow-[3px_3px_0_rgba(0,0,0,0.55)] hover:bg-zinc-700">
+            بستن دکّه (Esc)
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ================= main menu ================= */
 
 type MenuPage = 'root' | 'settings' | 'exit'
@@ -312,8 +408,8 @@ function MainMenu({
         <span><b className="font-pixel text-[10px] text-emerald-300">Esc</b> توقف / منو</span>
       </div>
       <p className="mt-6 text-center text-[11px] leading-5 text-white/35">
-        نسخه ۰.۶ — جدید: منوی کامل، نمایشگر سه‌بعدی موجودات، دروازه‌های مه ترمیم‌شده
-        <br />و انیمیشن حرفه‌ای کماندار با تیر نوک‌شده
+        نسخه ۰.۷ — جدید: بازرگان خاکستری و فروشگاه کنار آتش کمپ، مه‌درازه‌ی شیدری یکدست،
+        <br />گیج‌شدن باس بازطراحی شد و کریپر حالا دشمن‌های اطرافش را هم می‌ترکاند
       </p>
     </div>
   )
@@ -823,6 +919,13 @@ export default function GameClient() {
           hud={hud}
           onLevel={(s) => gameRef.current?.levelUp(s)}
           onLeave={() => gameRef.current?.leaveRest()}
+        />
+      )}
+      {phase === 'shop' && hud && (
+        <ShopModal
+          hud={hud}
+          onBuy={(id) => gameRef.current?.buyShopItem(id)}
+          onClose={() => gameRef.current?.closeShop()}
         />
       )}
       {!isTouch && phase === 'playing' && <HintBar />}

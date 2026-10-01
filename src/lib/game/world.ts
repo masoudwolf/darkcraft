@@ -3,6 +3,8 @@ import { blockMaterials, mulberry32, createFogMaterial } from './textures'
 
 export const WORLD_HALF = 30 // blocks range from -30..29
 export const BONFIRE = { x: 0, z: 14 }
+/** the grey merchant pitches his stall beside the bonfire hub */
+export const MERCHANT = { x: 3.6, z: 14.2 }
 export const BOSS_CENTER = { x: 0, z: -18 }
 export const GATE_Z = -10
 export const BOSS_ARENA = { minX: -8, maxX: 8, minZ: -23.5, maxZ: GATE_Z + 0.2 }

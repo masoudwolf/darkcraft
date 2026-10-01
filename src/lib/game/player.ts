@@ -63,6 +63,8 @@ export class Player {
   vit = 0
   end = 0
   str = 0
+  /** shop-bought weapon sharpening — flat damage multiplier bonus */
+  gearDmg = 0
 
   combo = 0
   queued = false
@@ -92,7 +94,7 @@ export class Player {
   }
 
   get damageMult() {
-    return 1 + this.str * 0.08
+    return 1 + this.str * 0.08 + this.gearDmg
   }
 
   get alive() {
