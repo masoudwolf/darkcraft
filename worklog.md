@@ -553,3 +553,26 @@ Stage Summary:
 - API کلاس Sfx حفظ شد (۳۲ متد قبلی) + متدهای جدید: footstep/bones/unsheathe/coin/click/setMusic/setAmbience/setListener/duck/unlockAudio
 - public/sounds: ۹۷ فایل OGG (~6.7MB) با CREDITS.md (همه CC0)
 - صفر خطای جدید tsc (baseline 47 ثابت)، lint تمیز، تست مرورگر کامل موفق
+
+---
+Task ID: audio-ai-1
+Agent: Z.ai Code (main)
+Task: جایگزینی کامل صداهای دانلودی CC0 با صداهای تولیدشده با هوش مصنوعی (درخواست کاربر: «صداهای دانلود بدترن، با هوش مصنوعی صداها رو جنریت کن»)
+
+Work Log:
+- بررسی SDK: قابلیت مستقیم text-to-SFX وجود ندارد؛ cogvideox-3 با with_audio=true ترک صوتی در خروجی نمی‌دهد (تست واقعی انجام شد)
+- تصمیم معماری: پایپ‌لاین ترکیبی AI = (۱) صدای خام هیولاها با neural TTS + پردازش DSP سنگین، (۲) بقیه SFX با موتور سنتز طراحی‌شده توسط AI، (۳) موسیقی و امبینت الگوریتمی
+- ساخت موتور DSP کامل (ai-sounds/render/synth.ts): Biquad RBJ، modal synthesis (پارشیل‌های اینهارمونیک فلز)، Karplus-Strong، FM bell، membrane drum، granular crackle، Freeverb، waveshaper، pitchShift، loop-crossfade، WAV IO
+- تولید ۲۷ خروجی خام neural TTS (غرش/غرش عمیق/باس/گروئل/غول/ناله/سایه‌روح) با retry خودکار برای 429
+- پردازش وکال‌ها: pitch-down (0.37-0.78)، tanh drive، growl AM، لایه ساب-اکتاو، ریورب → صداهای هیولایی کامل
+- رندر ۹۱ SFX + ۳ موسیقی (explore钢琴/درد/Boss تایکو) + ۳ امبینت (باد/شعله/دونگئون) با loop سیملس
+- محدودسازی طول غرش‌ها به ≤4.4s (قبلاً ۳۷s بود)، کدگذاری OGG vorbis استریو، کل حجم ۳.۱MB (قبلاً سنگین‌تر)
+- جایگزینی کامل فایل‌های public/sounds + بازنویسی CREDITS.md (۱۰۰٪ AI-generated)
+- تست مرورگر: ۹۲ بافر لود شد (صفر missing)، هر ۳۹ متد API صدا بدون خطا، موسیقی explore فعال، امبینت باد فعال، صفر خطای کنسول
+- رفع ۲ خطای lint (no-require-imports) و ۲ خطای tsc (volume type) در اسکریپت‌ها
+
+Stage Summary:
+- کلید نهایی: bfb0e5d pushed به main (8f0c0c4..bfb0e5d)
+- تمام صداها اکنون ۱۰۰٪ AI-generated است: وکال هیولاها = neural TTS پردازش‌شده، افکت‌ها = سنتز فیزیکی طراحی AI، موسیقی = کامپوزیشن الگوریتمی AI
+- اسکریپت‌های پایپ‌لاین در ai-sounds/render/ نگهداری می‌شوند؛ آرتیفکت‌های wav در .gitignore
+- سلف-وریفای مرورگر: ready=true، failed=false، همه خانواده‌های صوتی لود، پخش بدون exception
