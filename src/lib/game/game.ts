@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Engine } from './engine'
 import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS, MERCHANT } from './world'
+import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
 import { createSword, createShield, createMerchant, animMerchantIdle, animMerchantGreet, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createArrowBundle, type SwordStyle } from './models'
@@ -14,7 +15,7 @@ import {
 
 /* ================= HUD STATE ================= */
 
-export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop' | 'inventory'
+export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop' | 'inventory' | 'lore'
 
 export interface HudState {
   phase: Phase
@@ -41,6 +42,11 @@ export interface HudState {
   pyroUnlocked: boolean
   /** shop snapshot — null unless the shop panel is open */
   shop: ShopHud | null
+  /** a memorial stone is being read */
+  lore: LoreHud | null
+  /** memories recovered so far / total stones standing in the Vale */
+  loreCount: number
+  loreTotal: number
   /** equipment/inventory snapshot — null unless the panel is open */
   inv: InvHud | null
   /** transient pickup/switch toast */
@@ -101,8 +107,19 @@ export interface ShopHud {
   whetLv: number
   coalLv: number
   pyroUnlocked: boolean
+  /** the merchant's idle line — he trades to remember what he sold */
+  line: string
   /** what the merchant will buy off you right now */
   sellables: { id: ItemId; name: string; icon: string; n: number; equipped: boolean; sell: number; tier: string }[]
+}
+
+/** a memorial stone being read (phase 'lore') */
+export interface LoreHud {
+  id: string
+  title: string
+  text: string[]
+  /** first reading — the memory is being saved */
+  first: boolean
 }
 
 /* ================= SHOP ECONOMY ================= */
@@ -160,6 +177,8 @@ export interface SaveData {
   eq?: EquippedMap
   rhA?: 1 | 2
   lhA?: 1 | 2
+  /** memorial stones already read */
+  lore?: string[]
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -1234,6 +1253,10 @@ export class Game {
   private castFailT = -9
   private tmpColor = new THREE.Color()
 
+  /* ---- the story: memorial stones of the Vale ---- */
+  private loreStones: { id: string; title: string; group: THREE.Group; light: THREE.PointLight; seen: boolean; justRead: boolean }[] = []
+  private loreOpenId: string | null = null
+
   /* ---- Dark-Souls inventory & equipment ---- */
   /** the bag owns EVERYTHING (DS rule: equipping marks, it never destroys) */
   inv: { id: ItemId; n: number }[] = [{ id: 'worn_sword', n: 1 }, { id: 'wooden_shield', n: 1 }]
@@ -1414,8 +1437,10 @@ export class Game {
     this.player.reset(spawn, Math.PI * 0.85)
 
     // enemies
+    // the hollows — placed like a director, not a dice roll: they haunt
+    // the village terraces they once raised, one guards the temple road
     const spawnPts: [number, number][] = [
-      [6, 8], [-7, 5], [4, -2], [-5, -7], [11, -3], [-12, -1],
+      [-21, 5], [-16, 8], [-19, -3], [-23, -2], [-12, 4], [3, -4],
     ]
     for (const [x, z] of spawnPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1430,9 +1455,9 @@ export class Game {
       this.enemies.push(e)
     }
 
-    // creepers — fast, fuse up and explode; keep your distance or block!
+    // creepers — failed vessels of ember, coiled in the village's veins
     const creeperPts: [number, number][] = [
-      [7, -6], [-14, -9], [9, 12],
+      [-13, 9], [8, 10], [-24, 6],
     ]
     for (const [x, z] of creeperPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -1443,16 +1468,16 @@ export class Game {
       this.enemies.push(c)
     }
 
-    // skeleton archers — hold mid-range and pepper you with arrows;
-    // rush them to force a panicky smack, or block/roll the volleys
-    // (kept well away from the bonfire hub so the shop corner stays quiet)
+    // skeleton archers — oath-keepers at their old posts: the wastes'
+    // edge, the graveyard gate, and the last watcher on his rise
+    // (short sight on the rise so the bonfire stays a haven)
     const skelPts: [number, number][] = [
-      [16, 4], [-17, -4], [9, 3],
+      [16, 4], [-21, 23], [9, 24],
     ]
     for (const [x, z] of skelPts) {
       const p = new THREE.Vector3(x, 0, z)
       p.y = this.world.surfaceAt(x, z)
-      const s = new SkeletonEnemy(scene, p)
+      const s = new SkeletonEnemy(scene, p, x === 9 && z === 24 ? 10 : 13.5)
       s.world = this.world
       s.game = this
       this.enemies.push(s)
@@ -1501,6 +1526,10 @@ export class Game {
 
     // the pyromancy flame, waiting in the wastes' entrance ruins
     this.buildPyroItem()
+
+    // the memorial stones — the world tells its own story
+    this.buildLoreStones()
+    this.restoreLoreSeen()
 
     // DOM overlays (reticle + hurt vignette)
     this.reticle = document.createElement('div')
@@ -1648,6 +1677,93 @@ export class Game {
     this.engine.input.releaseLock()
     this.wasLocked = false
     this.sfx.souls()
+    this.emit(true)
+  }
+
+  /* ================= LORE STONES ================= */
+
+  /** carve the memorial stones into the world — ghost-green runes,
+      brighter and taller-lit until they have been read once */
+  private buildLoreStones() {
+    const scene = this.engine.scene
+    const cobbleMat = this.world.mats.cobble as THREE.Material
+    const brickMat = this.world.mats.stonebrick as THREE.Material
+    const glowMat = this.world.mats.glow as THREE.Material
+    for (const def of LORE_STONES) {
+      const y = this.world.surfaceAt(def.x, def.z)
+      const g = new THREE.Group()
+      g.position.set(def.x, 0, def.z)
+      g.rotation.y = def.yaw
+      // buried footing + standing slab + the glowing rune strip
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.55, 0.75), cobbleMat)
+      base.position.y = y + 0.18
+      base.castShadow = true
+      base.receiveShadow = true
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(0.78, 1.65, 0.26), brickMat)
+      slab.position.y = y + 1.22
+      slab.rotation.z = (Math.sin(def.x * 13.7 + def.z * 7.1) * 0.05)
+      slab.castShadow = true
+      slab.receiveShadow = true
+      const rune = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.95, 0.06), glowMat)
+      rune.position.set(0, y + 1.28, 0.15)
+      g.add(base, slab, rune)
+      const light = new THREE.PointLight(0x9fe8b8, 1.35, 5.5, 1.9)
+      light.position.set(0, y + 1.9, 0)
+      g.add(light)
+      scene.add(g)
+      this.loreStones.push({ id: def.id, title: def.title, group: g, light, seen: false, justRead: false })
+    }
+  }
+
+  loreCount(): number {
+    return this.loreStones.filter((s) => s.seen).length
+  }
+
+  /** read the save on boot so the title screen can show the true memory count */
+  private restoreLoreSeen() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw) as SaveData
+      const readLore = Array.isArray(d.lore) ? d.lore : []
+      for (const st of this.loreStones) {
+        if (readLore.includes(st.id)) {
+          st.seen = true
+          st.light.intensity = 0.5
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  get loreTotal(): number {
+    return this.loreStones.length
+  }
+
+  openLore(id: string) {
+    if (this.phase !== 'playing') return
+    const st = this.loreStones.find((s) => s.id === id)
+    if (!st) return
+    st.justRead = !st.seen
+    if (!st.seen) {
+      st.seen = true
+      st.light.intensity = 0.5
+      this.save()
+    }
+    this.loreOpenId = id
+    this.phase = 'lore'
+    this.engine.input.releaseLock()
+    this.wasLocked = false
+    this.sfx.souls()
+    this.emit(true)
+  }
+
+  closeLore() {
+    if (this.phase !== 'lore') return
+    this.loreOpenId = null
+    for (const s of this.loreStones) s.justRead = false
+    this.phase = 'playing'
+    if (!this.engine.input.isTouch) this.engine.input.requestLock()
+    this.wasLocked = false
     this.emit(true)
   }
 
@@ -2106,6 +2222,13 @@ export class Game {
       this.collectLoot(bestLoot)
       return
     }
+    // a memorial stone — read the Vale's memory
+    for (const s of this.loreStones) {
+      if (Math.hypot(this.player.pos.x - s.group.position.x, this.player.pos.z - s.group.position.z) < 2.1) {
+        this.openLore(s.id)
+        return
+      }
+    }
     // the grey merchant
     if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 2.7) {
       this.openShop()
@@ -2239,6 +2362,7 @@ export class Game {
         eq: this.eq,
         rhA: this.rhActive,
         lhA: this.lhActive,
+        lore: this.loreStones.filter((s) => s.seen).map((s) => s.id),
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -2312,6 +2436,14 @@ export class Game {
       }
       this.rhActive = d.rhA === 2 ? 2 : 1
       this.lhActive = d.lhA === 2 ? 2 : 1
+      // ---- memorial stones already read ----
+      const readLore = Array.isArray(d.lore) ? d.lore : []
+      for (const st of this.loreStones) {
+        if (readLore.includes(st.id)) {
+          st.seen = true
+          st.light.intensity = 0.5
+        }
+      }
       this.refreshLoadout()
     } catch { /* ignore */ }
   }
@@ -2836,6 +2968,12 @@ export class Game {
       ctx.fillRect(px(this.boss2.pos.x) - 2.5, pz(this.boss2.pos.z) - 2.5, 5, 5)
     }
 
+    // memorial stones — unread ones burn bright, read ones dim gold
+    for (const s of this.loreStones) {
+      ctx.fillStyle = s.seen ? '#c9a44a' : '#a5ffc8'
+      ctx.fillRect(px(s.group.position.x) - 1.5, pz(s.group.position.z) - 1.5, 3, 3)
+    }
+
     // enemies — color-coded by breed
     for (const e of this.enemies) {
       if (!e.alive) continue
@@ -2992,6 +3130,12 @@ export class Game {
       const qty = bestLoot.n > 1 ? ` ×${bestLoot.n}` : ''
       return def ? `برداشتن ${def.name}${qty}` : 'برداشتن غنیمت'
     }
+    // memorial stones — seen ones invite a re-reading
+    for (const s of this.loreStones) {
+      if (Math.hypot(this.player.pos.x - s.group.position.x, this.player.pos.z - s.group.position.z) < 2.1) {
+        return (s.seen ? 'خواندن دوباره سنگ‌یاد — ' : 'خواندن سنگ‌یاد — ') + s.title
+      }
+    }
     if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
       return 'بازیابی سول‌ها'
     }
@@ -3125,6 +3269,22 @@ export class Game {
       this.updateMerchant(dt)
       this.updateEffects(dt)
       this.updateLoot(dt)
+      this.updateCameraFollow(dt, false)
+      this.drawMinimap()
+      this.emit(false)
+      return
+    }
+
+    if (this.phase === 'lore') {
+      // Escape closes the stone
+      if (input.consume('Escape')) {
+        this.closeLore()
+        return
+      }
+      this.world.update(dt)
+      this.updateBonfire(dt)
+      this.updateMerchant(dt)
+      this.updateEffects(dt)
       this.updateCameraFollow(dt, false)
       this.drawMinimap()
       this.emit(false)
@@ -3571,6 +3731,7 @@ export class Game {
               whetLv: this.shopLv.whet,
               coalLv: this.shopLv.coal,
               pyroUnlocked: this.pyroUnlocked,
+              line: MERCHANT_LINES[Math.floor(this.time / 9) % MERCHANT_LINES.length],
               sellables: this.inv
                 .filter((e) => ITEMS[e.id])
                 .map((e) => ({
@@ -3585,6 +3746,17 @@ export class Game {
             }
           : null,
       inv: this.phase === 'inventory' ? this.invHud() : null,
+      lore:
+        this.phase === 'lore' && this.loreOpenId
+          ? (() => {
+              const def = LORE_STONES.find((d) => d.id === this.loreOpenId)
+              const st = this.loreStones.find((x) => x.id === this.loreOpenId)
+              if (!def || !st) return null
+              return { id: def.id, title: def.title, text: def.text, first: st.justRead ?? false }
+            })()
+          : null,
+      loreCount: this.loreCount(),
+      loreTotal: this.loreTotal,
       toast: this.toastMsg,
       arrows: this.countOf('arrow_fire') > 0 ? this.countOf('arrow_fire') : this.countOf('arrow_wood'),
       bowEquipped: this.player.loadout.aiming,

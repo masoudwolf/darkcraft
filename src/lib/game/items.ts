@@ -60,171 +60,171 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   /* ---- starter gear ---- */
   worn_sword: I({
     id: 'worn_sword', name: 'شمشیر پوسیده', cat: 'sword', slot: 'rh', weight: 3.0,
-    icon: '🗡️', desc: 'تیغه‌ای که از آتش کمپ با آن برخاستی. ساده، اما وفادار.',
+    icon: '🗡️', desc: 'شمشیری از فولاد آتش‌گاه؛ سازنده‌اش نامش را روی دسته کند. هر دو نام — سازنده و برنده — فراموش شده‌اند، اما تیغه هنوز وفادار است.',
     tier: 'common', dmg: 30, spd: 1, style: 'iron', scale: 1,
   }),
   wooden_shield: I({
     id: 'wooden_shield', name: 'سپر چوبی', cat: 'shield', slot: 'lh', weight: 2.5,
-    icon: '🛡️', desc: 'تخته‌ای با رینگ آهنی. ضربه را منحرف می‌کند، نه بیشتر.',
+    icon: '🛡️', desc: 'تخته‌ای از بلوط درّه با رینگ آهنی. حرفی روی آن کنده‌شده که نصفش ساییده شده؛ بقیه‌اش را می‌توانی حدس بزنی — مثل همه‌ی این جهان.',
     tier: 'common', block: 0.85, tint: 0x8a6437,
   }),
 
   /* ---- hollow (zombie) gear — ragged but real ---- */
   rust_sword: I({
     id: 'rust_sword', name: 'شمشیر زنگ‌زده', cat: 'sword', slot: 'rh', weight: 3.6,
-    icon: '⚔️', desc: 'تیغه‌ی دندانه‌دار هالک‌ها. زنگ، هنوز برنده را برنده می‌کند.',
+    icon: '⚔️', desc: 'تیغه‌ی دندانه‌دار خالی‌ها. زنگ، خاطره‌ی فولاد است؛ همان‌طور که آرام‌آرام این تیغه را می‌خورد، فراموشی هم صاحبش را خورد.',
     tier: 'common', dmg: 34, spd: 0.97, style: 'rust', scale: 1,
   }),
   iron_shield: I({
     id: 'iron_shield', name: 'سپر آهنی', cat: 'shield', slot: 'lh', weight: 4.2,
-    icon: '🛡️', desc: 'پرده‌ی فولادیِ خالص. سنگین است اما ضربه‌ها را می‌خورد.',
+    icon: '🛡️', desc: 'پرده‌ی فولادی نگهبانان آتش‌گاه. بر لبه‌اش نوشته‌اند: «ایستادن، تنها سوگندی است که فراموش نمی‌شود.»',
     tier: 'rare', block: 0.93, tint: 0x9aa0a8,
   }),
   hollow_hood: I({
     id: 'hollow_hood', name: 'کلاه‌پوسیده', cat: 'armor', slot: 'head', weight: 1.2,
-    icon: '🎩', desc: 'کلاهی از چرم خیس و خزه. بوی گور می‌دهد.',
+    icon: '🎩', desc: 'کلاهی از چرم خیس و خزه. صاحبش تا آخرین نفس می‌خواست شکلِ چهره‌اش را به یاد آورد؛ خزه یادگارِ آن تلاش است.',
     tier: 'common', def: 0.05, tint: 0x5a6b4a, tint2: 0x46543c,
   }),
   hollow_tunic: I({
     id: 'hollow_tunic', name: 'تن‌پوش پوسیده', cat: 'armor', slot: 'chest', weight: 2.2,
-    icon: '🥋', desc: 'جامه‌ای کهنه با سوراخ‌های پوسیدگی. عجیب است که هنوز یکپارچه است.',
+    icon: '🥋', desc: 'جامه‌ی یک بنا که خانه‌هایش هنوز سرپا هستند. سوراخ‌هایش با نخ‌هایی وصله شده که خودشان از پوسیدگی بافته شده‌اند.',
     tier: 'common', def: 0.09, tint: 0x4a5940, tint2: 0x3a4634,
   }),
   hollow_wraps: I({
     id: 'hollow_wraps', name: 'نوارهای کهنه', cat: 'armor', slot: 'hands', weight: 0.9,
-    icon: '🧤', desc: 'دست‌هایی پیچیده در نوار خاکستری. چالاکی می‌بخشد.',
+    icon: '🧤', desc: 'نوارهای دستِ یک سازنده‌ی خالی. دست‌ها هنوز حرکتِ چیدنِ بلوک را می‌دانند؛ ساختن را دیگر نه.',
     tier: 'common', def: 0.03, tint: 0x6b6a58, tint2: 0x575648,
   }),
   hollow_trousers: I({
     id: 'hollow_trousers', name: 'شلوار وصله‌دار', cat: 'armor', slot: 'legs', weight: 1.4,
-    icon: '👖', desc: 'شلواری که وصله‌هایش خودش وصله دارند.',
+    icon: '👖', desc: 'شلواری با وصله‌های بی‌شمار. هر وصله یک روز از عمرِ فراموش‌شده‌ی صاحبش است؛ هیچ‌کس نمی‌داند زیر همه‌ی آن‌ها چه چیزی مانده.',
     tier: 'common', def: 0.05, tint: 0x54503e, tint2: 0x453f30,
   }),
 
   /* ---- skeleton archer gear — bone-light ---- */
   bone_bow: I({
     id: 'bone_bow', name: 'کمان استخوانی', cat: 'bow', slot: 'lh', weight: 2.4,
-    icon: '🏹', desc: 'کمانی از استخوان ران. صدای خش‌خش آن نشانه‌ی مرگ از دور است.',
+    icon: '🏹', desc: 'کمانی از استخوان رانِ نگهبان؛ رگه‌هایش هنوز حالتِ ایستادن پشتِ دروازه را دارد. عهد، از گوشت جاودانه‌تر بود.',
     tier: 'rare', bowDmg: 26, tint: 0xd8d2c2,
   }),
   arrow_wood: I({
     id: 'arrow_wood', name: 'تیر چوبی', cat: 'bow', slot: 'lh', weight: 0.05,
-    icon: '➳', desc: 'تیر ساده با پرکاک روشن. مهمات کمان — هنگام شلیک خودکار مصرف می‌شود.',
+    icon: '➳', desc: 'تیرهای ساده‌ی نگهبانان؛ پرکاک از پرهای کلاغ‌های درّه. کلاغ‌ها هنوز می‌آیند — آن‌ها فقط شکل عوض کرده‌اند.',
     tier: 'common', bowDmg: 0, ammo: true, tint: 0xc9b083,
   }),
   arrow_fire: I({
     id: 'arrow_fire', name: 'تیر آتشین', cat: 'bow', slot: 'lh', weight: 0.06,
-    icon: '🔥', desc: 'نوکش آغشته به قیر سوزان. مهمات کمان — می‌سوزد، حتی بعد از برخورد.',
+    icon: '🔥', desc: 'نوکِ آغشته به قیرِ زغالِ نخستین. جایی که می‌افتد، خبرِ آتش‌گاه را می‌رساند؛ حتی بعد از مرگش، هنوز می‌سوزد.',
     tier: 'rare', bowDmg: 7, ammo: true, tint: 0xff8a3a,
   }),
   bone_helm: I({
     id: 'bone_helm', name: 'کاسه‌ی جمجمه', cat: 'armor', slot: 'head', weight: 1.0,
-    icon: '💀', desc: 'نیم‌کاسه‌ای استخوانی. پوشیدنش چیزی از ترس کم نمی‌کند.',
+    icon: '💀', desc: 'نیم‌کاسه‌ای استخوانی از نگهبانان قدیم. پوشیدنش هیچ ترسی را کم نمی‌کند — فقط آن را استخوانی می‌کند.',
     tier: 'common', def: 0.06, tint: 0xd8d2c2, tint2: 0xb8b2a2,
   }),
   bone_chest: I({
     id: 'bone_chest', name: 'قفسه‌ی سینه‌ی استخوانی', cat: 'armor', slot: 'chest', weight: 1.8,
-    icon: '🦴', desc: 'دنده‌های به‌هم‌بافته. سبک مثل باد و سخت مثل استخوان.',
+    icon: '🦴', desc: 'دنده‌های به‌هم‌بافته‌ی نگهبانان. استخوان، آخرین چیزی است که از یک عهد باقی می‌ماند.',
     tier: 'common', def: 0.08, tint: 0xcfc9b8, tint2: 0xb0aa9a,
   }),
   bone_gloves: I({
     id: 'bone_gloves', name: 'مفصل‌های استخوانی', cat: 'armor', slot: 'hands', weight: 0.8,
-    icon: '🦴', desc: 'بند‌های مفصلی از انگشتان بی‌صاحب.',
+    icon: '🦴', desc: 'بندهای مفصلی از انگشتان بی‌صاحب؛ هنوز به شکلِ گرفتنِ کمان خم شده‌اند.',
     tier: 'common', def: 0.04, tint: 0xd8d2c2, tint2: 0xb8b2a2,
   }),
   bone_greaves: I({
     id: 'bone_greaves', name: 'ساق استخوانی', cat: 'armor', slot: 'legs', weight: 1.2,
-    icon: '🦴', desc: 'ساق‌بندی که صدای کلیک استخوان می‌دهد با هر قدم.',
+    icon: '🦴', desc: 'ساق‌بندی از استخوان پا. با هر قدم کلیک می‌کند؛ مثل شمارشِ گام‌های نگهبانی که تمام نمی‌شود.',
     tier: 'common', def: 0.05, tint: 0xcfc9b8, tint2: 0xb0aa9a,
   }),
   tattered_cape: I({
     id: 'tattered_cape', name: 'شنل کهنه', cat: 'armor', slot: 'cape', weight: 0.7,
-    icon: '🧣', desc: 'شنلی که یک تیرانداز مرده پوشیده بود. لبه‌هایش در باد ذوب می‌شود.',
+    icon: '🧣', desc: 'شنلِ تیراندازی که نشست و دیگر برنخاست. شنل هنوز در باد موج می‌زند؛ کسی به آن نگفته که صاحبش تمام است.',
     tier: 'common', def: 0.02, tint: 0x6a5a48, tint2: 0x54463a,
   }),
 
   /* ---- wither skeleton gear — charcoal plate ---- */
   stone_cleaver: I({
     id: 'stone_cleaver', name: 'شمشیر سنگی', cat: 'sword', slot: 'rh', weight: 6.5,
-    icon: '⛏️', desc: 'تیغه‌ای از گرانیت سیاه. سپرها را می‌جَوَد و دست‌ها را خسته می‌کند.',
+    icon: '⛏️', desc: 'تیغه‌ای از گرانیتِ کوره‌گاه؛ سنگی که سازندگان با آن جهان را می‌بریدند. حالا یک خالی آن را می‌کشد و نمی‌پرسد چرا.',
     tier: 'rare', dmg: 46, spd: 0.9, style: 'stone', scale: 1.05,
   }),
   wither_helm: I({
     id: 'wither_helm', name: 'کلاه‌خود زغالی', cat: 'armor', slot: 'head', weight: 1.8,
-    icon: '🎩', desc: 'ذغالی فشرده که هنوز گرمای گور را حفظ کرده.',
+    icon: '🎩', desc: 'ذغالِ فشرده از عمق کوره‌گاه. گرمایش از گورستان‌های خاکستر می‌آید؛ آن‌جا که خاطره‌ها را می‌سوزاندند.',
     tier: 'rare', def: 0.10, tint: 0x3a3a40, tint2: 0x26262c,
   }),
   wither_plate: I({
     id: 'wither_plate', name: 'سینه‌پوش ویسری', cat: 'armor', slot: 'chest', weight: 3.4,
-    icon: '🥋', desc: 'صفحات تیره‌ی نگهبانان خاکستر. سنگین، اما مثل دیوار پشت توست.',
+    icon: '🥋', desc: 'صفحاتِ تیره‌ی نگهبانانِ خاکستر؛ هر صفحه با علامتِ کوره‌ای نشان‌گذاری شده که دیگر روشن نیست. مثل دیوار پشت توست — دیواری که صاحبش را ندیده.',
     tier: 'rare', def: 0.14, tint: 0x33333a, tint2: 0x222228,
   }),
   wither_gauntlets: I({
     id: 'wither_gauntlets', name: 'دستکش ویسری', cat: 'armor', slot: 'hands', weight: 1.4,
-    icon: '🧤', desc: 'دستکش‌هایی سیاه که شمشیر سنگی را تاب داده‌اند.',
+    icon: '🧤', desc: 'دستکش‌های دودی کوره‌بانان. دستِ درونشان دیگر فقط وزنِ تیغه را می‌شناسد؛ همین‌قدر کافی است.',
     tier: 'rare', def: 0.06, tint: 0x3a3a40, tint2: 0x26262c,
   }),
   wither_greaves: I({
     id: 'wither_greaves', name: 'ساق‌بند ویسری', cat: 'armor', slot: 'legs', weight: 2.2,
-    icon: '👖', desc: 'پوشش ساق با تسمه‌های دودی. هر قدم جای پای خاکستر می‌گذارد.',
+    icon: '👖', desc: 'ساق‌بندهایی که در خاکستر راه رفته‌اند؛ هر قدم ردی سیاه بر زمین سوخته می‌گذارد. خاکستر، خاطره‌ی آتش است.',
     tier: 'rare', def: 0.08, tint: 0x33333a, tint2: 0x222228,
   }),
   ashen_cape: I({
     id: 'ashen_cape', name: 'شنل خاکستری', cat: 'armor', slot: 'cape', weight: 1.0,
-    icon: '🧣', desc: 'شنلی از خاکستر فشرده. حرارت شعله را از تن دور نگه می‌دارد.',
+    icon: '🧣', desc: 'شنلی از خاکستر فشرده. کوره‌بانان باور داشتند خاکستر، خاطره‌ی آتش است — به تن‌پوشیدنِ آن، یادِ شعله را می‌پوشی.',
     tier: 'common', def: 0.04, fire: 0.06, tint: 0x4a4440, tint2: 0x38342f,
   }),
 
   /* ---- creeper ---- */
   creeper_hide: I({
     id: 'creeper_hide', name: 'پوست کریپر', cat: 'armor', slot: 'chest', weight: 2.0,
-    icon: '🟩', desc: 'پوستی کهن‌دار و سبز. انفجار را مثل نیش می‌خورد.',
+    icon: '🟩', desc: 'پوست کهن‌دارِ یک نهالِ شکست‌خورده. سازندگان جاندارانی از اخگر زادند که به جای بیدار شدن، ترکیدند؛ این پوست، ترکیدن را مثل نیش می‌خورد.',
     tier: 'rare', def: 0.07, blast: 0.35, tint: 0x4f8f45, tint2: 0x3d7236,
   }),
 
   /* ---- blaze ---- */
   blaze_cape: I({
     id: 'blaze_cape', name: 'شنل اخگری', cat: 'armor', slot: 'cape', weight: 1.2,
-    icon: '🧣', desc: 'پارچه‌ای که در کوره‌ی یک بلِیز جان گرفت. آتش دیگر تو را غریبه نمی‌داند.',
+    icon: '🧣', desc: 'پارچه‌ای که در کوره‌ی یک بلِیز جان گرفت. کوره‌بانان می‌گفتند شعله، روحِ ناتمامِ کوره است؛ حالا روحِ کوره، شانه‌های توست.',
     tier: 'rare', def: 0.03, fire: 0.25, tint: 0xd97a2a, tint2: 0xb05a18,
   }),
 
   /* ---- BOSS 1: the Ancient Zombie Knight ---- */
   knight_helm: I({
     id: 'knight_helm', name: 'کلاه‌خود شوالیه‌ی کهن', cat: 'armor', slot: 'head', weight: 3.0,
-    icon: '👑', desc: 'آهن پرچ‌کاری‌شده با کاکل زرشکی. نگاه سردش هنوز در فرو رفتگی‌هاست.',
+    icon: '👑', desc: 'آهنِ پرچ‌کاری‌شده با کاکل زرشکی؛ زیر آن چشمی بود که حتی در خواب نمی‌لنبد. حالا فقط فرورفتگیِ چشم‌هاست — و هنوز نگاه می‌کند.',
     tier: 'boss', def: 0.13, tint: 0x7c828c, tint2: 0x565a64,
   }),
   knight_chest: I({
     id: 'knight_chest', name: 'سینه‌پوش فولادی', cat: 'armor', slot: 'chest', weight: 4.6,
-    icon: '🥋', desc: 'فولاد صیقلی با خط مرکزی و لکه‌ی خونی که دیگر پاک نمی‌شود.',
+    icon: '🥋', desc: 'فولاد صیقلیِ سرِ سپاهِ آتش‌گاه. لکه‌ی سینه‌اش خونِ خودش است — از شبی که برای اولین بار پشت به دشمن کرد و سوگند خورد دیگر تکرار نشود.',
     tier: 'boss', def: 0.19, tint: 0x7c828c, tint2: 0x565a64,
   }),
   iron_greatsword: I({
     id: 'iron_greatsword', name: 'شمشیر بزرگ آهنی', cat: 'sword', slot: 'rh', weight: 8.0,
-    icon: '⚔️', desc: 'شمشیر عظیم شوالیه‌ی کهن. هر ضربه، قضاوت است.',
+    icon: '⚔️', desc: 'شمشیری عظیم که با دو دست از آتش کشیده شد؛ روی فولادش نام «سپردار» کندند. هر ضربه‌اش قضاوت است — برای هر دو طرف.',
     tier: 'boss', dmg: 58, spd: 0.84, style: 'iron', scale: 1.28,
   }),
 
   /* ---- BOSS 2: the Flame King ---- */
   flame_crown: I({
     id: 'flame_crown', name: 'تاج پادشاه شعله', cat: 'armor', slot: 'head', weight: 2.6,
-    icon: '👑', desc: 'پنج زبان شعله‌ی ابسیدینی که هرگز خاموش نمی‌شوند.',
+    icon: '👑', desc: 'پنج زبان شعله‌ی ابسیدینی که هرگز خاموش نمی‌شوند. پادشاه تاجش را در گودالِ گداخته فراموش کرد؛ شعله‌ها یادشان نرفت.',
     tier: 'boss', def: 0.11, fire: 0.20, tint: 0x241d20, tint2: 0x171114,
   }),
   flame_chest: I({
     id: 'flame_chest', name: 'سینه‌پوش ابسیدین', cat: 'armor', slot: 'chest', weight: 5.0,
-    icon: '🥋', desc: 'صفحات سیاه با رگه‌های گداخته. تن تو کوره می‌شود.',
+    icon: '🥋', desc: 'صفحاتی از شیشه‌ی آتشفشانیِ کفِ گودال؛ زیرشان قلبی می‌تپد که خودش را به زغالِ نخستین بخشید. تن تو کوره می‌شود.',
     tier: 'boss', def: 0.17, fire: 0.14, tint: 0x241d20, tint2: 0x171114,
   }),
   flame_cape: I({
     id: 'flame_cape', name: 'شنل شعله‌ور', cat: 'armor', slot: 'cape', weight: 1.6,
-    icon: '🧣', desc: 'شنل سلطنتیِ آتش. ردپایت در خاکستر داغ می‌ماند.',
+    icon: '🧣', desc: 'شنلِ سلطنتی‌ای که در لحظه‌ی جهش به گودال، از تنِ پادشاه جدا شد. هنوز گرم است؛ هنوز منتظرِ برگشتنش است.',
     tier: 'boss', def: 0.05, fire: 0.30, tint: 0xb03818, tint2: 0x8a2810,
   }),
   obsidian_greatsword: I({
     id: 'obsidian_greatsword', name: 'تیغ ابسیدین', cat: 'sword', slot: 'rh', weight: 8.5,
-    icon: '⚔️', desc: 'تیغه‌ی سیاه با لبه‌ی گداخته. وزنش مثل یک دعوت به مرگ است.',
+    icon: '⚔️', desc: 'تیغه‌ای از ابسیدینِ کفِ گودال؛ آخرین کسی که آن را بلند کرد دیگر انسان نبود. وزنش مثل یک دعوت به مرگ است — دعوتی که ردّش آخرین وظیفه‌ی یک اخگر است.',
     tier: 'boss', dmg: 64, spd: 0.8, style: 'obsidian', scale: 1.32,
   }),
 }

@@ -144,6 +144,33 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
       px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,232,150)', 2, 2)
     }
   })
+  // wooden planks — board seams and grain for roofs, floors and platforms
+  const plankTex = makeTex(16, 25, (c, r, s) => {
+    fillNoise(c, r, s, [148, 112, 66], 14)
+    for (let y = 0; y < s; y += 4) {
+      for (let i = 0; i < s; i++) px(c, i, y, 'rgb(96,70,40)')
+    }
+    for (let b = 0; b < 3; b++) {
+      const x = Math.floor(r() * s)
+      for (let y = 0; y < s; y++) px(c, x, y, 'rgb(112,84,50)')
+    }
+    for (let i = 0; i < 10; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(120,90,54)')
+  })
+  // mossy cobble — the green-eaten stone of forgotten places
+  const mossyTex = makeTex(16, 26, (c, r, s) => {
+    fillNoise(c, r, s, [104, 108, 96], 16)
+    for (let gy = 0; gy < 4; gy++) {
+      for (let gx = 0; gx < 4; gx++) {
+        const ox = gx * 4 + Math.floor(r() * 2)
+        const oy = gy * 4 + Math.floor(r() * 2)
+        for (let i = 0; i < 4; i++) {
+          px(c, (ox + i) % s, oy % s, 'rgb(70,74,64)')
+          px(c, ox % s, (oy + i) % s, 'rgb(76,80,68)')
+        }
+      }
+    }
+    for (let i = 0; i < 26; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(74,112,52)', 1, 2)
+  })
   // netherrack — the bruised red stone of the Ash Wastes
   const netherTex = makeTex(16, 23, (c, r, s) => {
     fillNoise(c, r, s, [98, 44, 38], 22)
@@ -170,6 +197,8 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     coal: lam(coalTex),
     glow: lam(glowTex),
     nether: lam(netherTex),
+    plank: lam(plankTex),
+    mossy: lam(mossyTex),
     lava: new THREE.MeshBasicMaterial({ map: lavaTex }),
   }
   return blockMats

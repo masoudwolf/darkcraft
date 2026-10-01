@@ -994,12 +994,12 @@ export class SkeletonEnemy extends Enemy {
   private mode: 'shoot' | 'poke' = 'shoot'
   private bow: THREE.Group
 
-  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3, aggro = 13.5) {
     super(scene, 'skeleton', spawn, {
       hp: 55,
       dmg: 15,
       speed: 2.9,
-      aggro: 13.5,
+      aggro,
       atkRange: 2.0,
       windup: 0.95,
       recover: 0.55,

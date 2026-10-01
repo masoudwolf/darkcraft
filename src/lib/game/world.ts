@@ -39,6 +39,12 @@ export class World {
     this.buildAshWall()
     this.buildTrees()
     this.buildDeadTrees()
+    this.buildShrine()
+    this.buildVillage()
+    this.buildGraveyard()
+    this.buildArcherRise()
+    this.buildTempleApproach()
+    this.buildAshDecor()
     this.buildRuins()
     this.buildBonfireBase()
     this.buildMerchantSpot()
@@ -68,13 +74,6 @@ export class World {
           Math.sin(x * 0.29 + o2) * Math.sin(z * 0.23 + o3) * 0.9 +
           Math.sin((x + z) * 0.055 + o1) * 1.1
         h = Math.round(h)
-        // flatten bonfire area
-        const dB = Math.hypot(x - BONFIRE.x, z - BONFIRE.z)
-        if (dB < 7) h = Math.round(lerp(2, h, smoothstep(3.5, 7, dB)))
-        // flatten the merchant's shop corner behind the bonfire
-        const dM = Math.hypot(x - MERCHANT.x, z - MERCHANT.z)
-        if (dM < 3.2) h = 2
-        else if (dM < 4.6) h = Math.round(lerp(2, h, smoothstep(3.2, 4.6, dM)))
         // flatten boss arena
         const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
         if (dA < 9.5) h = Math.round(lerp(2, h, smoothstep(6, 9.5, dA)))
@@ -85,6 +84,22 @@ export class World {
         if (x >= ASH_WALL_X - 1 && x <= ASH_WALL_X + 3 && dG < 3) {
           h = Math.round(lerp(2, h, smoothstep(1.5, 3, dG)))
         }
+        /* ---- designed districts: every land keeps its own floor ---- */
+        // the Forgotten Village — two terraces west of the shrine path
+        h = this.plate(x, z, -25, -15, 2, 11, 2, 2.4, h)   // lower terrace
+        h = this.plate(x, z, -25, -15, -6, 0, 3, 2.4, h)   // upper terrace
+        // the Graveyard — a quiet plateau south-west of the shrine
+        // (south of the fog-gate seal, so it is reachable from the start)
+        h = this.plate(x, z, -22, -13, 17, 25, 3, 2.2, h)
+        // the Watcher's Rise — a palisaded shelf south-east
+        h = this.plate(x, z, 4, 10, 18, 24, 4, 2.4, h)
+        // flatten bonfire area LAST so the hub stays clean
+        const dB = Math.hypot(x - BONFIRE.x, z - BONFIRE.z)
+        if (dB < 7) h = Math.round(lerp(2, h, smoothstep(3.5, 7, dB)))
+        // flatten the merchant's shop corner behind the bonfire
+        const dM = Math.hypot(x - MERCHANT.x, z - MERCHANT.z)
+        if (dM < 3.2) h = 2
+        else if (dM < 4.6) h = Math.round(lerp(2, h, smoothstep(3.2, 4.6, dM)))
         this.heights[this.idx(x, z)] = Math.max(0, Math.min(6, h))
       }
     }
@@ -98,6 +113,19 @@ export class World {
         }
       }
     }
+  }
+
+  /** raise a rectangular district to `target` with a soft `feather` skirt */
+  private plate(
+    x: number, z: number, x0: number, x1: number, z0: number, z1: number,
+    target: number, feather: number, h: number
+  ): number {
+    const dx = Math.max(x0 - x, x - x1, 0)
+    const dz = Math.max(z0 - z, z - z1, 0)
+    const d = Math.hypot(dx, dz)
+    if (d <= 0) return target
+    if (d >= feather) return h
+    return lerp(target, h, smoothstep(0, feather, d))
   }
 
   getH(x: number, z: number): number {
@@ -169,14 +197,25 @@ export class World {
         const h = this.heights[this.idx(x, z)]
         const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
         const dA2 = Math.hypot(x - BOSS2_CENTER.x, z - BOSS2_CENTER.z)
+        const dHB = Math.hypot(x - BONFIRE.x, z - BONFIRE.z)
         const isPath = Math.abs(x) <= 1 && z > GATE_Z && z < BONFIRE.z + 1
         const isPath2 = z >= 17 && z <= 19 && x >= ASH_WALL_X
+        const isPathV = z >= 8 && z <= 10 && x >= -14 && x <= -1   // village branch
+        const isPathG = x >= -14 && x <= -2 && z >= 16 && z <= 17 // graveyard branch (south-west)
+        const isPathA = x >= 1 && x <= 5 && z >= 17 && z <= 18      // watcher's rise branch
         const lavaCell = LAVA_POOLS.some((p) => x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1)
+        // the Cinder Shrine floor: cracked tiles with mossy seams
+        const shrineTile = dHB < 6.0 && ((x * 7 + z * 5) % 11) !== 0
+        const shrineRim = dHB >= 6.0 && dHB < 6.9
         if (lavaCell) {
           put2(x, h + 0.51, z, 'lava')
         } else if (dA < 8.5 || dA2 < 8.5) {
           put2(x, h + 0.5, z, 'stonebrick')
-        } else if (isPath) {
+        } else if (shrineTile) {
+          put2(x, h + 0.5, z, 'stonebrick')
+        } else if (shrineRim) {
+          put2(x, h + 0.5, z, 'mossy')
+        } else if (isPath || isPathV || isPathG || isPathA) {
           put2(x, h + 0.5, z, 'dirt')
         } else if (isPath2) {
           put2(x, h + 0.5, z, 'stonebrick')
@@ -267,6 +306,289 @@ export class World {
     this.buildInstanced(this.mats.log, log)
   }
 
+  /* ================= STORY ARCHITECTURE =================
+     every district is a designed set, not noise: the shrine
+     reads as a ruined temple, the village as an abandoned
+     build-site, the graveyard as someone's unfinished work */
+
+  /** the Cinder Shrine — a broken colonnade ring around the last bonfire,
+      with kneeling statues flanking the north exit */
+  private buildShrine() {
+    const stonebrick: Vec3Lite[] = []
+    const glow: Vec3Lite[] = []
+    const stone: Vec3Lite[] = []
+    const mossy: Vec3Lite[] = []
+    // colonnade: 10 pillars on a r=6.6 ring (the shop corner stays open)
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2
+      const px = Math.round(BONFIRE.x + Math.cos(a) * 6.6)
+      const pz = Math.round(BONFIRE.z + Math.sin(a) * 6.6)
+      if (Math.hypot(px - MERCHANT.x, pz - MERCHANT.z) < 4.4) continue
+      const h = this.heights[this.idx(px, pz)]
+      const tall = 2 + Math.floor(this.rng() * 3) // broken tops vary
+      for (let y = 1; y <= tall; y++) this.put(stonebrick, px, h + y - 0.5 + 1, pz)
+      if (i % 3 === 0) this.put(glow, px, h + tall + 0.5 + 1, pz) // lantern caps
+      this.put(mossy, px + (this.rng() < 0.5 ? 1 : -1), h + 1.5, pz) // sunken slab
+    }
+    // two kneeling statues flank the north exit toward the fog gate
+    const statue = (sx: number, sz: number) => {
+      const h = this.heights[this.idx(sx, sz)]
+      this.put(mossy, sx, h + 1.5, sz)       // plinth
+      this.put(stonebrick, sx, h + 2.5, sz)  // torso
+      this.put(stone, sx, h + 3.5, sz)       // bowed head
+    }
+    statue(-2, 8)
+    statue(2, 8)
+    this.buildInstanced(this.mats.stonebrick, stonebrick)
+    this.buildInstanced(this.mats.glow, glow)
+    this.buildInstanced(this.mats.stone, stone)
+    this.buildInstanced(this.mats.mossy, mossy)
+  }
+
+  /** the Forgotten Village — hollow builders kept building until they didn't */
+  private buildVillage() {
+    const cobble: Vec3Lite[] = []
+    const plank: Vec3Lite[] = []
+    const log: Vec3Lite[] = []
+    const coal: Vec3Lite[] = []
+    const leaves: Vec3Lite[] = []
+
+    /** a ruined house: plank floor, crumbling cobble walls around a door
+        hole, a broken half-roof. `ruin` 0..1 = how much of the top is gone */
+    const house = (
+      x0: number, z0: number, w: number, d: number,
+      doorX: number, doorZ: number, ruin: number
+    ) => {
+      const cx = x0 + (w >> 1), cz = z0 + (d >> 1)
+      const h = this.heights[this.idx(cx, cz)]
+      // interior plank floor (raised one step, minecraft-style)
+      for (let x = x0 + 1; x < x0 + w - 1; x++)
+        for (let z = z0 + 1; z < z0 + d - 1; z++) this.put(plank, x, h + 1.5, z)
+      this.put(plank, doorX, h + 1.5, doorZ) // threshold
+      const hasRoof = this.rng() < 0.8
+      const wallTop = hasRoof ? 2 : this.rng() < 0.5 ? 3 : 2
+      // north/south walls
+      for (let x = x0; x < x0 + w; x++) {
+        for (const z of [z0, z0 + d - 1]) {
+          if (x === doorX && z === doorZ) continue
+          for (let y = 1; y <= wallTop; y++) {
+            if (y === 2 && x !== doorX && this.rng() < 0.16) continue // window hole
+            if (y === wallTop && this.rng() < ruin) continue         // crumbled
+            this.put(cobble, x, h + y - 0.5 + 1, z)
+          }
+        }
+      }
+      // west/east walls
+      for (let z = z0 + 1; z < z0 + d - 1; z++) {
+        for (const x of [x0, x0 + w - 1]) {
+          if (x === doorX && z === doorZ) continue
+          for (let y = 1; y <= wallTop; y++) {
+            if (y === 2 && this.rng() < 0.16) continue
+            if (y === wallTop && this.rng() < ruin) continue
+            this.put(cobble, x, h + y - 0.5 + 1, z)
+          }
+        }
+      }
+      // half-collapsed roof along one long edge
+      if (hasRoof) {
+        const rz = z0 + (this.rng() < 0.5 ? 0 : d - 1)
+        const rx0 = x0 + Math.floor(this.rng() * 2)
+        const rx1 = x0 + w - 1 - Math.floor(this.rng() * 2)
+        for (let x = rx0; x <= rx1; x++) this.put(plank, x, h + 3.5, rz)
+      }
+    }
+
+    // lower terrace (h=2): two cottages, a barn, the square
+    house(-24, 3, 4, 4, -21, 6, 0.45)   // westmost cottage
+    house(-18, 3, 4, 4, -15, 5, 0.35)   // corner cottage
+    house(-24, 8, 4, 3, -21, 8, 0.65)   // collapsed barn
+    // upper terrace (h=3): two homes facing the drop
+    house(-24, -5, 4, 4, -21, -2, 0.5)
+    house(-18, -6, 4, 4, -15, -3, 0.55)
+
+    // the well at the square — the bucket rope rotted years ago
+    const wx = -19, wz = 9
+    const hw = this.heights[this.idx(wx, wz)]
+    for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]] as [number, number][])
+      this.put(cobble, wx + dx, hw + 1.5, wz + dz)
+    this.put(coal, wx, hw + 1.2, wz) // the dark, still water
+    this.put(log, wx - 1, hw + 2.5, wz - 1)
+    this.put(log, wx + 1, hw + 2.5, wz - 1)
+    for (let x = wx - 1; x <= wx + 1; x++) this.put(plank, x, hw + 3.6, wz - 1)
+
+    // fence along the terrace's south lip + an extinguished lantern post
+    for (let x = -24; x <= -16; x += 2) this.put(log, x, this.heights[this.idx(x, 11)] + 1.5, 11)
+    this.put(log, -20, this.heights[this.idx(-20, 11)] + 1.5, 11)
+    this.put(log, -20, this.heights[this.idx(-20, 11)] + 2.5, 11)
+    this.put(coal, -20, this.heights[this.idx(-20, 11)] + 3.5, 11) // lantern gone out
+
+    // a toppled cart by the road
+    this.put(log, -13, this.heights[this.idx(-13, 4)] + 1.5, 4)
+    this.put(log, -12, this.heights[this.idx(-12, 4)] + 1.5, 4)
+    this.put(cobble, -14, this.heights[this.idx(-14, 4)] + 1.5, 4) // wheel
+    this.put(cobble, -11, this.heights[this.idx(-11, 4)] + 1.5, 4) // wheel
+
+    // overgrown hedges swallowing the paths
+    const bush: [number, number][] = [[-25, 6], [-15, 10], [-16, 1], [-25, -3], [-14, 12]]
+    for (const [bx, bz] of bush) this.put(leaves, bx, this.heights[this.idx(bx, bz)] + 1.5, bz)
+
+    this.buildInstanced(this.mats.cobble, cobble)
+    this.buildInstanced(this.mats.plank, plank)
+    this.buildInstanced(this.mats.log, log)
+    this.buildInstanced(this.mats.coal, coal)
+    this.buildInstanced(this.mats.leaves, leaves)
+  }
+
+  /** the Graveyard — rows someone kept digging until the stone ran out;
+      it rests south-west of the shrine, where the last builder buried his brother */
+  private buildGraveyard() {
+    const cobble: Vec3Lite[] = []
+    const stonebrick: Vec3Lite[] = []
+    const stone: Vec3Lite[] = []
+    const mossy: Vec3Lite[] = []
+    const log: Vec3Lite[] = []
+
+    // low enclosure wall; stone posts at the corners; gate gap faces the path
+    for (let x = -22; x <= -13; x++) {
+      for (const z of [17, 25]) this.put(cobble, x, this.heights[this.idx(x, z)] + 1.5, z)
+    }
+    for (let z = 17; z <= 25; z++) {
+      if (z >= 19 && z <= 20) continue // the gate
+      this.put(cobble, -13, this.heights[this.idx(-13, z)] + 1.5, z)
+      this.put(cobble, -22, this.heights[this.idx(-22, z)] + 1.5, z)
+    }
+    for (const [cx, cz] of [[-22, 17], [-13, 17], [-22, 25], [-13, 25]] as [number, number][]) {
+      this.put(stonebrick, cx, this.heights[this.idx(cx, cz)] + 1.5, cz)
+      this.put(stonebrick, cx, this.heights[this.idx(cx, cz)] + 2.5, cz)
+    }
+
+    // two rows of graves; some headstones missing, some slabs sunken
+    let gi = 0
+    for (const gz of [19, 22]) {
+      for (const gx of [-20, -18, -16, -14]) {
+        const h = this.heights[this.idx(gx, gz)]
+        this.put(gi % 3 === 0 ? mossy : stone, gx, h + 1.5, gz)
+        if (gi % 4 !== 1) this.put(stonebrick, gx, h + 2.5, gz) // missing sometimes
+        gi++
+      }
+    }
+    // the mourner — a statue that kept vigil here
+    const sx = -17, sz = 21
+    const hs = this.heights[this.idx(sx, sz)]
+    this.put(mossy, sx, hs + 1.5, sz)
+    this.put(stonebrick, sx, hs + 2.5, sz)
+    this.put(stone, sx, hs + 3.5, sz)
+
+    // two bare trees leaning over the fence
+    for (const [tx, tz] of [[-21, 18], [-14, 24]] as [number, number][]) {
+      const h = this.heights[this.idx(tx, tz)]
+      const th = 3 + Math.floor(this.rng() * 2)
+      for (let y = 1; y <= th; y++) this.put(log, tx, h + y - 0.5 + 1, tz)
+      this.put(log, tx + 1, h + th - 0.5 + 1, tz)
+    }
+
+    this.buildInstanced(this.mats.cobble, cobble)
+    this.buildInstanced(this.mats.stonebrick, stonebrick)
+    this.buildInstanced(this.mats.stone, stone)
+    this.buildInstanced(this.mats.mossy, mossy)
+    this.buildInstanced(this.mats.log, log)
+  }
+
+  /** the Watcher's Rise — a palisaded shelf where the last archer keeps an oath */
+  private buildArcherRise() {
+    const log: Vec3Lite[] = []
+    const plank: Vec3Lite[] = []
+    const stone: Vec3Lite[] = []
+    const glow: Vec3Lite[] = []
+
+    // palisade along the north lip; a walking gap (x=6..7) and one arrow slit (x=9)
+    for (let x = 4; x <= 10; x++) {
+      if (x === 6 || x === 7) continue
+      const h = this.heights[this.idx(x, 18)]
+      this.put(log, x, h + 1.5, 18)
+      if (x !== 9) this.put(log, x, h + 2.5, 18) // the slit leaves the bottom open
+    }
+
+    // the watchtower: four legs, a plank platform, a lantern that still burns
+    const tw = this.heights[this.idx(9, 22)]
+    for (const [lx, lz] of [[8, 21], [10, 21], [8, 23], [10, 23]] as [number, number][]) {
+      for (let y = 1; y <= 3; y++) this.put(log, lx, tw + y - 0.5 + 1, lz)
+    }
+    for (let x = 8; x <= 10; x++) for (let z = 21; z <= 23; z++) this.put(plank, x, tw + 4.5, z)
+    for (const [rx, rz] of [[8, 21], [10, 21], [8, 23], [10, 23]] as [number, number][]) {
+      this.put(log, rx, tw + 5.5, rz)
+    }
+    this.put(glow, 9, tw + 5.6, 22) // the oath-fire, kept lit
+
+    // a practice dummy near the palisade, studded with old arrows
+    const dh = this.heights[this.idx(5, 20)]
+    this.put(log, 5, dh + 1.5, 20)
+    this.put(log, 5, dh + 2.5, 20)
+    this.put(stone, 5, dh + 3.4, 20)
+
+    this.buildInstanced(this.mats.log, log)
+    this.buildInstanced(this.mats.plank, plank)
+    this.buildInstanced(this.mats.stone, stone)
+    this.buildInstanced(this.mats.glow, glow)
+  }
+
+  /** the Temple Approach — a broken avenue of columns leading to the knight */
+  private buildTempleApproach() {
+    const stonebrick: Vec3Lite[] = []
+    const cobble: Vec3Lite[] = []
+    const glow: Vec3Lite[] = []
+
+    // two rows of broken columns, heights decay as they near the gate
+    const cols: [number, number, number][] = [
+      [-4, -3, 3], [4, -3, 2], [-4, -5, 1], [4, -5, 3], [-4, -7, 2], [4, -7, 1],
+    ]
+    for (const [cx, cz, hgt] of cols) {
+      const h = this.heights[this.idx(cx, cz)]
+      for (let y = 1; y <= hgt; y++) this.put(stonebrick, cx, h + y - 0.5 + 1, cz)
+      if (hgt >= 3) this.put(glow, cx, h + hgt + 0.5 + 1, cz) // two still burn
+    }
+    // fallen drums scattered in the grass
+    for (const [fx, fz] of [[6, -4], [-6, -6], [5, -8], [-6, -3]] as [number, number][]) {
+      this.put(cobble, fx, this.heights[this.idx(fx, fz)] + 1.5, fz)
+    }
+    // braziers flanking the path before the fog gate
+    for (const bx of [-2, 2]) {
+      const h = this.heights[this.idx(bx, -9)]
+      this.put(stonebrick, bx, h + 1.5, -9)
+      this.put(stonebrick, bx, h + 2.5, -9)
+      this.put(glow, bx, h + 3.5, -9)
+    }
+    this.buildInstanced(this.mats.stonebrick, stonebrick)
+    this.buildInstanced(this.mats.cobble, cobble)
+    this.buildInstanced(this.mats.glow, glow)
+  }
+
+  /** the Ash Wastes' ruins — collapsed forge stacks breathing embers */
+  private buildAshDecor() {
+    const cobble: Vec3Lite[] = []
+    const glow: Vec3Lite[] = []
+    const coal: Vec3Lite[] = []
+    const stack = (x0: number, z0: number, hs: number[]) => {
+      let i = 0
+      for (let dx = 0; dx < 2; dx++) {
+        for (let dz = 0; dz < 2; dz++) {
+          const hgt = hs[i++ % hs.length]
+          const h = this.heights[this.idx(x0 + dx, z0 + dz)]
+          for (let y = 1; y <= hgt; y++) this.put(cobble, x0 + dx, h + y - 0.5 + 1, z0 + dz)
+          if (hgt >= 3) this.put(glow, x0 + dx, h + hgt + 0.5 + 1, z0 + dz)
+        }
+      }
+    }
+    stack(19, 7, [3, 2, 2, 1])
+    stack(25, 25, [2, 2, 1, 0])
+    for (const [cx, cz] of [[14, 12], [22, 7], [27, 17], [22, 29], [15, 22], [26, 12]] as [number, number][]) {
+      this.put(coal, cx, this.heights[this.idx(cx, cz)] + 1.5, cz)
+    }
+    this.buildInstanced(this.mats.cobble, cobble)
+    this.buildInstanced(this.mats.glow, glow)
+    this.buildInstanced(this.mats.coal, coal)
+  }
+
   private buildRuins() {
     const cobble: Vec3Lite[] = []
     const pillar = (x: number, z: number, hgt: number) => {
@@ -277,11 +599,17 @@ export class World {
     pillar(-10, 2, 3); pillar(-10, 3, 1)
     pillar(12, -6, 2); pillar(13, -7, 3)
     pillar(-14, -8, 2); pillar(-13, -8, 3)
-    // fallen blocks
+    // fallen blocks — never inside the designed districts
+    const inDistrict = (x: number, z: number) =>
+      (x >= -25 && x <= -13 && z >= -6 && z <= 12) || // village + road
+      (x >= -22 && x <= -12 && z >= 16 && z <= 25) || // graveyard
+      (x >= 3 && x <= 11 && z >= 17 && z <= 25) || // watcher's rise
+      (Math.abs(x) <= 3 && z >= -10 && z <= 12) // shrine + temple avenue
     for (let i = 0; i < 14; i++) {
       const x = Math.floor(this.rng() * 40) - 20
       const z = Math.floor(this.rng() * 30) - 12
       const h = this.heights[this.idx(x, z)]
+      if (inDistrict(x, z)) continue
       if (Math.hypot(x - BONFIRE.x, z - BONFIRE.z) < 5) continue
       if (Math.abs(x) <= 2) continue
       this.put(cobble, x, h + 0.5 + 1, z)
@@ -322,7 +650,7 @@ export class World {
     const rim: [number, number][] = []
     for (let z = 17; z <= 20; z++) rim.push([-6, z])
     for (let x = -5; x <= -1; x++) rim.push([x, 21])
-    for (const [x, z] of rim) this.put(frame, x, this.getH(x, z) + 1.5)
+    for (const [x, z] of rim) this.put(frame, x, this.getH(x, z) + 1.5, z)
     this.buildInstanced(this.mats.cobble, plaza)
     this.buildInstanced(this.mats.stonebrick, frame)
   }

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Game, SHOP_ITEMS, type HudState, type GameSettings, type InvHud, type InvItemView } from '@/lib/game/game'
+import { Game, SHOP_ITEMS, type HudState, type GameSettings, type InvHud, type InvItemView, type LoreHud } from '@/lib/game/game'
+import { PROLOGUE } from '@/lib/game/lore'
 import ModelViewer from '@/components/game/ModelViewer'
 
 /* ================= small pixel icons (inline SVG) ================= */
@@ -296,7 +297,7 @@ function ShopModal({
           <span className="text-2xl" aria-hidden>🧺</span>
           <div>
             <h3 className="text-lg font-black text-emerald-200">بازرگان خاکستری</h3>
-            <p className="text-xs text-white/55">«از خاکستر می‌آیی... اما سول داری؟ دکمه‌ها را ببین.»</p>
+            <p className="text-xs text-white/55">«{shop.line}»</p>
           </div>
         </div>
 
@@ -612,6 +613,119 @@ function InventoryModal({
   )
 }
 
+/* ================= the story — prologue & lore stones ================= */
+
+/** the opening scroll — shown once at the birth of a new unkindled,
+    re-readable from the menu; every page advances on click */
+function PrologueModal({
+  page,
+  onNext,
+  onClose,
+  closable,
+}: {
+  page: number
+  onNext: () => void
+  onClose: () => void
+  closable: boolean
+}) {
+  const pg = PROLOGUE[Math.min(page, PROLOGUE.length - 1)]
+  const last = page >= PROLOGUE.length - 1
+  return (
+    <div
+      className="absolute inset-0 z-40 flex items-center justify-center bg-black px-4"
+      dir="rtl"
+      onClick={onNext}
+      role="presentation"
+    >
+      <div className="fadein-anim w-[min(94vw,620px)] cursor-pointer select-none py-8 text-center">
+        <p className="font-pixel text-[11px] tracking-[0.35em] text-emerald-700" dir="ltr">
+          {closable ? 'MEMORY' : 'PROLOGUE'} — {page + 1}/{PROLOGUE.length}
+        </p>
+        <h2 className="mt-5 font-pixel text-2xl text-emerald-400 drop-shadow-[2px_2px_0_rgba(0,0,0,1)] sm:text-3xl">
+          {pg.title}
+        </h2>
+        <div className="mx-auto mt-6 max-w-lg space-y-4">
+          {pg.lines.map((ln, i) => (
+            <p key={i} className="text-sm leading-8 text-white/80 sm:text-base">
+              {ln}
+            </p>
+          ))}
+        </div>
+        <div className="mt-8 flex items-center justify-center gap-2">
+          {PROLOGUE.map((_, i) => (
+            <span
+              key={i}
+              className={`h-1.5 w-1.5 rounded-full ${i === page ? 'bg-emerald-400' : 'bg-white/25'}`}
+            />
+          ))}
+        </div>
+        <div className="mt-7 flex justify-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <Button
+            size="lg"
+            onClick={onNext}
+            className={`h-11 border-2 border-black/80 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] ${
+              last ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-zinc-800 hover:bg-zinc-700'
+            }`}
+          >
+            {last ? '🔥 افروز کن' : 'ادامه'}
+          </Button>
+          {closable && (
+            <Button
+              size="lg"
+              onClick={onClose}
+              className="h-11 border-2 border-black/80 bg-zinc-900 font-bold text-white/70 shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-zinc-800"
+            >
+              بازگشت
+            </Button>
+          )}
+        </div>
+        {!closable && !last && (
+          <p className="mt-5 text-[11px] text-white/35">برای رفتن به صفحه‌ی بعد، هر جا کلیک کن</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** reading a memorial stone — the Vale's memory, dark-souls style */
+function LoreModal({ lore, onClose }: { lore: LoreHud; onClose: () => void }) {
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 px-4" dir="rtl">
+      <div className="fadein-anim flex max-h-[92vh] w-[min(94vw,560px)] flex-col overflow-hidden border-2 border-black bg-zinc-950/97 shadow-[6px_6px_0_rgba(0,0,0,0.65)] outline outline-1 outline-emerald-900/60">
+        <div className="border-b border-emerald-900/40 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl" aria-hidden>🗿</span>
+            <div>
+              <p className="font-pixel text-[10px] tracking-[0.3em] text-emerald-700" dir="ltr">MEMORY STONE</p>
+              <h3 className="text-lg font-black text-emerald-200">سنگ‌یاد — {lore.title}</h3>
+            </div>
+          </div>
+          {lore.first && (
+            <p className="mt-2 inline-block rounded border border-emerald-800/60 bg-emerald-950/60 px-2 py-1 text-[11px] text-emerald-300">
+              ✦ خاطره‌ای تازه در حافظه‌ی خاکستر ثبت شد
+            </p>
+          )}
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          {lore.text.map((p, i) => (
+            <p key={i} className="text-sm leading-8 text-white/85">
+              {p}
+            </p>
+          ))}
+        </div>
+        <div className="border-t border-white/10 px-5 py-3.5">
+          <Button
+            onClick={onClose}
+            className="h-10 w-full rounded-none border-2 border-black/70 bg-zinc-800 font-bold text-white shadow-[3px_3px_0_rgba(0,0,0,0.55)] hover:bg-zinc-700"
+          >
+            بستن سنگ‌یاد (Esc)
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ================= main menu ================= */
 
 type MenuPage = 'root' | 'settings' | 'exit'
@@ -622,6 +736,9 @@ function MainMenu({
   onClear,
   onViewer,
   onSettings,
+  onStory,
+  loreCount,
+  loreTotal,
   onExit,
 }: {
   onStart: () => void
@@ -629,6 +746,9 @@ function MainMenu({
   onClear: () => void
   onViewer: () => void
   onSettings: () => void
+  onStory: () => void
+  loreCount: number
+  loreTotal: number
   onExit: () => void
 }) {
   return (
@@ -642,9 +762,9 @@ function MainMenu({
         <PixelSwordIcon size={44} />
       </div>
       <p className="mt-4 max-w-md text-center text-sm text-white/75 sm:text-base">
-        نبردی تاریک در دنیای مکعبی — جایی که پیکسل‌ها به سولز می‌رسند.
+        زغالِ نخستین رو به خاموشی است. سازندگان فراموش شدند؛ تو آخرین اخگری.
         <br />
-        بجنگ، بسوز، در آتش کمپ بیاسای و دوباره برخیز.
+        سنگ‌یادها را بخوان، بجنگ، بسوز، در آتش کمپ بیاسای و دوباره برخیز.
       </p>
 
       <div className="mt-8 flex w-[min(90vw,300px)] flex-col gap-2.5">
@@ -657,8 +777,15 @@ function MainMenu({
         </Button>
         <Button
           size="lg"
+          onClick={onStory}
+          className="h-11 w-full border-2 border-black/80 bg-[#3a2c14] font-bold text-amber-200 shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-[#4a3a1c]"
+        >
+          📖 داستان و خاطرات
+        </Button>
+        <Button
+          size="lg"
           onClick={onViewer}
-          className="h-11 w-full border-2 border-black/80 bg-sky-900 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-sky-800"
+          className="h-11 w-full border-2 border-black/80 bg-zinc-800 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-zinc-700"
         >
           🔬 نمایشگر سه‌بعدی
         </Button>
@@ -677,6 +804,9 @@ function MainMenu({
           خروج
         </Button>
       </div>
+      <p className="mt-3 text-xs text-white/55">
+        خاطرات بازیابی‌شده: <b className="text-emerald-300">{loreCount}</b> از {loreTotal} سنگ‌یاد
+      </p>
       {hasSave && (
         <button
           onClick={onClear}
@@ -695,12 +825,12 @@ function MainMenu({
         <span><b className="font-pixel text-[10px] text-emerald-300">Q</b> قفل هدف</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">E</b> شربت</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">R</b> جادو</span>
-        <span><b className="font-pixel text-[10px] text-emerald-300">F</b> تعامل</span>
+        <span><b className="font-pixel text-[10px] text-emerald-300">F</b> تعامل / سنگ‌یاد</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">Esc</b> توقف / منو</span>
       </div>
-      <p className="mt-6 text-center text-[11px] leading-5 text-white/35">
-        نسخه ۰.۸ — جدید: سیستم لوت و تجهیزات به سبک دارک سولز — زره، سلاح، کمان و بارِ تجهیزات
-        <br />بازرگان پشت آتش کمپ نشسته؛ دشمن‌ها گاهی زره و سلاحشان را جا می‌گذارند
+      <p className="mt-6 max-w-lg text-center text-[11px] leading-5 text-white/35">
+        نسخه ۰.۹ — داستان «زغالِ نخستین»: پرولوگ آغازین، ۷ سنگ‌یاد در درّه، لور آیتم‌ها و دیالوگ بازرگان
+        <br />مناطق طراحی‌شده: آتش‌گاه، دهکده‌ی فراموشی، گورستان، بلندای تیراندازان، معبد شمالی
       </p>
     </div>
   )
@@ -1070,6 +1200,9 @@ export default function GameClient() {
   const [menuPage, setMenuPage] = useState<MenuPage>('root')
   const [viewerOpen, setViewerOpen] = useState(false)
   const [settings, setSettings] = useState<GameSettings>({ sens: 1, volume: 0.8, invertY: false, shadows: true })
+  /** prologue: null = hidden; number = current page. fromMenu = re-reading from the title screen */
+  const [prologuePage, setProloguePage] = useState<number | null>(null)
+  const [prologueFromMenu, setPrologueFromMenu] = useState(false)
 
   useEffect(() => {
     const g = new Game(containerRef.current!)
@@ -1098,8 +1231,25 @@ export default function GameClient() {
   const phase = hud?.phase ?? 'menu'
 
   const start = useCallback(() => {
-    gameRef.current?.startGame()
-  }, [])
+    // a brand-new unkindled gets the opening scroll; a saved one walks straight in
+    if (!hasSave) {
+      setPrologueFromMenu(false)
+      setProloguePage(0)
+    } else {
+      gameRef.current?.startGame()
+    }
+  }, [hasSave])
+
+  const prologueNext = useCallback(() => {
+    setProloguePage((p) => {
+      if (p === null) return null
+      if (p >= PROLOGUE.length - 1) {
+        if (!prologueFromMenu) gameRef.current?.startGame()
+        return null
+      }
+      return p + 1
+    })
+  }, [prologueFromMenu])
 
   const clearSave = useCallback(() => {
     gameRef.current?.clearSave()
@@ -1165,8 +1315,25 @@ export default function GameClient() {
           onClear={clearSave}
           onViewer={openViewer}
           onSettings={() => setMenuPage('settings')}
+          onStory={() => {
+            setPrologueFromMenu(true)
+            setProloguePage(0)
+          }}
+          loreCount={hud?.loreCount ?? 0}
+          loreTotal={hud?.loreTotal ?? 7}
           onExit={exitGame}
         />
+      )}
+      {prologuePage !== null && (
+        <PrologueModal
+          page={prologuePage}
+          onNext={prologueNext}
+          onClose={() => setProloguePage(null)}
+          closable={prologueFromMenu}
+        />
+      )}
+      {phase === 'lore' && hud?.lore && (
+        <LoreModal lore={hud.lore} onClose={() => gameRef.current?.closeLore()} />
       )}
       {phase === 'menu' && menuPage === 'settings' && (
         <SettingsModal settings={settings} onChange={applySettings} onClose={() => setMenuPage('root')} />
