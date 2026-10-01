@@ -81,6 +81,7 @@ export class Enemy {
     })
     this.pos.copy(spawn)
     this.home.copy(spawn)
+    this.spawnHome.copy(spawn)
     scene.add(this.h.group)
     this.syncModel()
   }
@@ -99,7 +100,8 @@ export class Enemy {
   }
 
   reset() {
-    this.pos.copy(this.home)
+    this.pos.copy(this.spawnHome)
+    this.home.copy(this.spawnHome)
     this.hp = this.maxHp
     this.state = 'idle'
     this.stateT = 0
@@ -110,6 +112,10 @@ export class Enemy {
     this.flash = 0
     this.strikeDone = false
     this.staggerBeat = 0
+    this.hugSide = 0
+    this.hugT = 0
+    this.huntT = 0
+    this.homeT = 0
     setOpacity(this.h, 1)
     setFlash(this.h, 0)
     resetPose(this.h)
@@ -137,8 +143,7 @@ export class Enemy {
       const dx = this.pos.x - fromX
       const dz = this.pos.z - fromZ
       const l = Math.hypot(dx, dz) || 1
-      this.pos.x += (dx / l) * kb * 0.12
-      this.pos.z += (dz / l) * kb * 0.12
+      this.slide((dx / l) * kb * 0.12, (dz / l) * kb * 0.12)
     }
   }
 
@@ -205,10 +210,10 @@ export class Enemy {
         const wz = this.wanderTarget.z - this.pos.z
         const wd = Math.hypot(wx, wz)
         if (wd > 0.4) {
-          this.pos.x += (wx / wd) * 1.1 * dt
-          this.pos.z += (wz / wd) * 1.1 * dt
+          const applied = this.slide((wx / wd) * 1.1 * dt, (wz / wd) * 1.1 * dt)
           this.yaw = Math.atan2(wx, wz)
           this.strollAnim(this.animT, 0.5)
+          if (applied < 0.3) this.wanderT = 0 // walled in — pick a fresh spot
         } else {
           this.idleAnim(this.animT)
         }
@@ -230,7 +235,52 @@ export class Enemy {
           this.onWindupStart(game, dist, angDiff)
           break
         }
-        this.chaseMove(dt, dx, dz, dist, angleToPlayer)
+        const preX = this.pos.x
+        const preZ = this.pos.z
+        const want = this.speed() * dt
+        // committed wall-hug hands control back only when the line of sight
+        // to the prey is genuinely open again
+        let hugging = this.hugSide !== 0
+        if (hugging && this.lineClear(dx, dz)) {
+          this.hugSide = 0
+          this.hugT = 0
+          hugging = false
+        }
+        if (hugging) {
+          this.wallFollow(dx, dz, want, preX, preZ)
+        } else {
+          this.chaseMove(dt, dx, dz, dist, angleToPlayer)
+        }
+        let moved = Math.hypot(this.pos.x - preX, this.pos.z - preZ)
+        if (!hugging && this.wantsToClose(dist) && want > 1e-5 && moved < want * 0.3) {
+          // wall dead ahead — commit to hugging it and round the corner
+          hugging = true
+          this.wallFollow(dx, dz, want, preX, preZ)
+          moved = Math.hypot(this.pos.x - preX, this.pos.z - preZ)
+        }
+        if (this.wantsToClose(dist)) {
+          // the hunt clock measures NET displacement over a 1.5s window —
+          // micro-jitter nets zero and can never defeat it
+          if (this.huntT === 0) {
+            this.huntAX = this.pos.x
+            this.huntAZ = this.pos.z
+          }
+          this.huntT += dt
+          if (this.huntT > 1.5) {
+            const net = Math.hypot(this.pos.x - this.huntAX, this.pos.z - this.huntAZ)
+            if (net < 0.6) {
+              // 1.5s of thrashing with nothing to show — abandon the hunt
+              this.hugSide = 0
+              this.hugT = 0
+              this.huntT = 0
+              this.state = 'return'
+              break
+            }
+            this.huntAX = this.pos.x
+            this.huntAZ = this.pos.z
+            this.huntT = 0
+          }
+        }
         break
       }
       case 'return': {
@@ -240,11 +290,53 @@ export class Enemy {
         if (hd < 0.6) {
           this.state = 'idle'
           this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.5)
+          this.homeT = 0
           break
         }
         this.yaw = Math.atan2(hx, hz)
-        this.pos.x += (hx / hd) * this.opts.speed * 0.8 * dt
-        this.pos.z += (hz / hd) * this.opts.speed * 0.8 * dt
+        const want = this.opts.speed * 0.8 * dt
+        const preX = this.pos.x
+        const preZ = this.pos.z
+        let hugging = this.hugSide !== 0
+        if (hugging && this.lineClear(hx, hz)) {
+          this.hugSide = 0
+          this.hugT = 0
+          hugging = false
+        }
+        if (hugging) {
+          this.wallFollow(hx, hz, want, preX, preZ)
+        } else {
+          this.slide((hx / hd) * want, (hz / hd) * want)
+        }
+        let moved = Math.hypot(this.pos.x - preX, this.pos.z - preZ)
+        if (!hugging && want > 1e-5 && moved < want * 0.3) {
+          // wall dead ahead on the walk home — commit to hugging it
+          hugging = true
+          this.wallFollow(hx, hz, want, preX, preZ)
+          moved = Math.hypot(this.pos.x - preX, this.pos.z - preZ)
+        }
+        // the walk-home clock also measures NET displacement over a 2s
+        // window — jitter and hug ping-pong net zero and get caught
+        if (this.homeT === 0) {
+          this.homeAX = this.pos.x
+          this.homeAZ = this.pos.z
+        }
+        this.homeT += dt
+        if (this.homeT > 2) {
+          const net = Math.hypot(this.pos.x - this.homeAX, this.pos.z - this.homeAZ)
+          if (net < 0.5) {
+            // hopelessly walled off from the post — re-anchor, haunt here
+            this.home.copy(this.pos)
+            this.homeT = 0
+            this.hugSide = 0
+            this.hugT = 0
+            this.state = 'idle'
+            break
+          }
+          this.homeAX = this.pos.x
+          this.homeAZ = this.pos.z
+          this.homeT = 0
+        }
         this.strollAnim(this.animT, 0.8)
         break
       }
@@ -325,7 +417,10 @@ export class Enemy {
       }
     }
 
-    // separation from other enemies
+    // separation from other enemies — shoved THROUGH the collision solver,
+    // so a crowd can never squeeze a body into a wall. The push carries a
+    // perpendicular swirl: two hollows walking head-on rotate past each
+    // other instead of pressing chest-to-chest in a jittering stalemate
     for (const other of game.allEnemies) {
       if (other === this || other.dead) continue
       const ox = this.pos.x - other.pos.x
@@ -333,8 +428,11 @@ export class Enemy {
       const od = Math.hypot(ox, oz)
       if (od < 1.1 && od > 0.001) {
         const push = (1.1 - od) * 0.5
-        this.pos.x += (ox / od) * push
-        this.pos.z += (oz / od) * push
+        const rx = (ox / od) * push
+        const rz = (oz / od) * push
+        // 90° CCW of the radial — mirrored automatically for the other body,
+        // so the pair spins apart instead of squaring off
+        this.slide(rx + (-oz / od) * push * 0.6, rz + (ox / od) * push * 0.6)
       }
     }
 
@@ -347,8 +445,7 @@ export class Enemy {
     const pd = Math.hypot(pdx, pdz)
     if (pd < pr && pd > 0.001) {
       const push = (pr - pd) * 0.6
-      this.pos.x += (pdx / pd) * push
-      this.pos.z += (pdz / pd) * push
+      this.slide((pdx / pd) * push, (pdz / pd) * push)
     }
 
     this.clamp()
@@ -369,8 +466,7 @@ export class Enemy {
   /** movement + facing during chase — overridden by ranged enemies (kiting) */
   protected chaseMove(dt: number, dx: number, dz: number, dist: number, angleToPlayer: number) {
     this.yaw = angleToPlayer
-    this.pos.x += (dx / (dist || 1)) * this.speed() * dt
-    this.pos.z += (dz / (dist || 1)) * this.speed() * dt
+    this.slide((dx / (dist || 1)) * this.speed() * dt, (dz / (dist || 1)) * this.speed() * dt)
     this.moveAnim(this.animT, this.isBoss ? 1.25 : 1)
   }
 
@@ -516,6 +612,135 @@ export class Enemy {
     return false
   }
 
+  /** net-displacement anchor for the hunt — immune to micro-jitter that
+      defeats per-frame thresholds (a thrashing body nets ~zero movement
+      over the window even when every single frame “moved”) */
+  private huntAX = 0
+  private huntAZ = 0
+  private huntT = 0
+  /** same anchor for the walk home */
+  private homeAX = 0
+  private homeAZ = 0
+  private homeT = 0
+  /** seconds spent inside the current wall-hug; too long means the hug
+      picked the wrong rotation — flip it and try the other way around */
+  private hugT = 0
+  /** committed wall-hug rotation (+1 CW, −1 CCW, 0 = not hugging). While
+      hugging, the mob follows its wall until the straight line to the goal
+      is genuinely open — re-probing every frame would just jitter it
+      between “step at the wall” and “step away from the wall” forever */
+  private hugSide = 0
+  /** the true spawn post — reset() always returns the mob here, even if
+      its AI anchor `home` drifted after being walled off */
+  private spawnHome = new THREE.Vector3()
+
+  /** is the straight line toward (dx, dz) open for the next few blocks? */
+  private lineClear(dx: number, dz: number): boolean {
+    if (!this.world) return true
+    const l = Math.hypot(dx, dz) || 1
+    const ux = dx / l
+    const uz = dz / l
+    for (let t = 0.6; t <= 2.6; t += 0.5) {
+      if (this.world.wallAt(this.pos.x + ux * t, this.pos.z + uz * t, this.pos.y)) return false
+    }
+    return true
+  }
+
+  /**
+   * Wall-follow (call when the straight line is blocked): walk the goal
+   * direction, then the ±90° hug rotation, then backwards — axis-aligned
+   * probes so the body slides along masonry and rounds corners. The side
+   * is COMMITTED in hugSide until lineClear() hands control back.
+   */
+  private wallFollow(dx: number, dz: number, want: number, preX: number, preZ: number) {
+    if (this.hugSide === 0) this.hugSide = Math.random() < 0.5 ? -1 : 1
+    this.hugT += 1 / 60
+    // stuck circling the wrong way around an obstacle — flip the rotation
+    if (this.hugT > 2.5) {
+      this.hugSide = -this.hugSide
+      this.hugT = 0
+    }
+    const step = want * 0.9
+    const l = Math.hypot(dx, dz) || 1
+    const ux = dx / l
+    const uz = dz / l
+    const cands: [number, number][] = this.hugSide > 0
+      ? [[ux, uz], [uz, -ux], [-ux, -uz], [-uz, ux]]
+      : [[ux, uz], [-uz, ux], [-ux, -uz], [uz, -ux]]
+    for (const [mx, mz] of cands) {
+      this.slide(mx * step, mz * step)
+      if (Math.hypot(this.pos.x - preX, this.pos.z - preZ) >= want * 0.5) break
+    }
+  }
+
+  /** does this mob want to CLOSE the gap right now? Ranged kiting mobs
+      hold their firing band and must never be “unstuck” into drifting */
+  protected wantsToClose(dist: number): boolean {
+    return dist > this.opts.atkRange + 0.4
+  }
+
+  /** would a stance with feet at `sup` in this column cram the body into
+      an overhead built block (low roof, eave, lintel)? */
+  private headBumped(x: number, z: number, sup: number): boolean {
+    if (!this.world) return false
+    const bx = Math.round(x)
+    const bz = Math.round(z)
+    const y0 = Math.floor(sup + 1.06)
+    const y1 = Math.floor(sup + 1.55)
+    for (let y = y0; y <= y1; y++) if (this.world.solidStruct(bx, y, bz)) return true
+    return false
+  }
+
+  /**
+   * axis-separated blocky collision — the SAME physics the player obeys.
+   * Walls stop the body, one-block steps auto-climb, cliffs block, drops
+   * always allowed, and the free axis keeps sliding so mobs flow along a
+   * wall instead of phasing through it. Every point of horizontal movement
+   * (chase, wander, return, knockback, shoves, dashes) goes through here.
+   * Steps that would lift the body INTO an overhead block (eaves, low
+   * roofs) are refused too — no more mobs wedged inside woodpiles.
+   * Returns how much of the intended move actually applied (0..1).
+   */
+  protected slide(dx: number, dz: number): number {
+    if (!this.world) {
+      this.pos.x += dx
+      this.pos.z += dz
+      return 1
+    }
+    const startX = this.pos.x
+    const startZ = this.pos.z
+    const r = this.isBoss ? 0.55 : 0.3
+    const feet = this.pos.y
+    if (dx !== 0) {
+      const nx = this.pos.x + dx
+      const edge = nx + Math.sign(dx) * r
+      if (
+        !this.world.wallAt(edge, this.pos.z - r, feet) &&
+        !this.world.wallAt(edge, this.pos.z, feet) &&
+        !this.world.wallAt(edge, this.pos.z + r, feet)
+      ) {
+        const sup = this.world.supportAt(nx, this.pos.z, feet)
+        if (sup <= feet + 0.5 || !this.headBumped(nx, this.pos.z, sup)) this.pos.x = nx
+      }
+    }
+    if (dz !== 0) {
+      const nz = this.pos.z + dz
+      const edge = nz + Math.sign(dz) * r
+      if (
+        !this.world.wallAt(this.pos.x - r, edge, feet) &&
+        !this.world.wallAt(this.pos.x, edge, feet) &&
+        !this.world.wallAt(this.pos.x + r, edge, feet)
+      ) {
+        const sup = this.world.supportAt(this.pos.x, nz, feet)
+        if (sup <= feet + 0.5 || !this.headBumped(this.pos.x, nz, sup)) this.pos.z = nz
+      }
+    }
+    const intended = Math.hypot(dx, dz)
+    if (intended < 1e-6) return 1
+    const applied = Math.hypot(this.pos.x - startX, this.pos.z - startZ)
+    return Math.min(1, applied / intended)
+  }
+
   protected clamp() {
     const lim = V3_HALF - 1.6
     this.pos.x = Math.max(-lim, Math.min(lim, this.pos.x))
@@ -563,7 +788,12 @@ export class Enemy {
     this.h.group.position.copy(this.pos)
     this.h.group.rotation.y = this.yaw
     if (this.world) {
-      this.h.group.position.y = this.world.surfaceAt(this.pos.x, this.pos.z)
+      // feet ride whatever supports the body — terrain AND built floors
+      // (bridges, house decks, courtyard slabs) — and pos.y stays truthful
+      // so every wall check this frame knows how tall the next step is
+      const ground = this.world.supportAt(this.pos.x, this.pos.z, this.pos.y)
+      this.pos.y = ground
+      this.h.group.position.y = ground
     }
   }
 }
@@ -784,8 +1014,7 @@ export class BossEnemy extends Enemy {
   protected strikeMove(dt: number, p: number, player: Player, game: Game) {
     if (this.pick !== 'charge') return
     const sp = 15.5 * (1 - 0.35 * p)
-    this.pos.x += this.dashDir.x * sp * dt
-    this.pos.z += this.dashDir.z * sp * dt
+    this.slide(this.dashDir.x * sp * dt, this.dashDir.z * sp * dt)
     // dust trail
     this.dustT -= dt
     if (this.dustT <= 0) {
@@ -1063,6 +1292,11 @@ export class SkeletonEnemy extends Enemy {
     return this.mode === 'shoot' ? 0.22 : 0.4
   }
 
+  /* ranged: inside the band it is HOLDING ground, not failing to close */
+  protected wantsToClose(dist: number): boolean {
+    return dist > 11.5
+  }
+
   /* ---- kiting AI: hold the 6..11m band, backpedal when crowded ---- */
   protected chaseMove(dt: number, dx: number, dz: number, dist: number, angleToPlayer: number) {
     this.yaw = angleToPlayer
@@ -1070,19 +1304,16 @@ export class SkeletonEnemy extends Enemy {
     const uz = dz / (dist || 1)
     if (dist < 5.6) {
       // backpedal away, still facing the player (bone-rattling hurry)
-      this.pos.x -= ux * this.speed() * 0.85 * dt
-      this.pos.z -= uz * this.speed() * 0.85 * dt
+      this.slide(-ux * this.speed() * 0.85 * dt, -uz * this.speed() * 0.85 * dt)
       animSkeletonWalk(this.h, this.animT, 1.15)
     } else if (dist > 11.5) {
       // close the gap to firing range
-      this.pos.x += ux * this.speed() * dt
-      this.pos.z += uz * this.speed() * dt
+      this.slide(ux * this.speed() * dt, uz * this.speed() * dt)
       animSkeletonWalk(this.h, this.animT, 1)
     } else {
       // hold ground + a lazy side-strafe so it never feels frozen
       const sway = Math.sin(this.animT * 1.7) * 0.55
-      this.pos.x += -uz * sway * dt
-      this.pos.z += ux * sway * dt
+      this.slide(-uz * sway * dt, ux * sway * dt)
       animBowIdle(this.h, this.animT)
     }
   }
@@ -1321,8 +1552,11 @@ export class BlazeEnemy extends Enemy {
     this.h.group.position.copy(this.pos)
     this.h.group.rotation.y = this.yaw
     if (this.world) {
-      this.h.group.position.y =
-        this.world.surfaceAt(this.pos.x, this.pos.z) + 1.02 + Math.sin(this.animT * 2.3) * 0.12
+      // the core floats, but its FEET stay truthful on the ash below —
+      // the wall checks read pos.y every frame
+      const ground = this.world.surfaceAt(this.pos.x, this.pos.z)
+      this.pos.y = ground
+      this.h.group.position.y = ground + 1.02 + Math.sin(this.animT * 2.3) * 0.12
     }
   }
 
@@ -1334,21 +1568,23 @@ export class BlazeEnemy extends Enemy {
     return dist <= 13
   }
 
+  /* ranged: inside the band it is HOLDING ground, not failing to close */
+  protected wantsToClose(dist: number): boolean {
+    return dist > 11.5
+  }
+
   /** hovering drift — holds the 6.5..11.5m firing band */
   protected chaseMove(dt: number, dx: number, dz: number, dist: number, angleToPlayer: number) {
     this.yaw = angleToPlayer
     const ux = dx / (dist || 1)
     const uz = dz / (dist || 1)
     if (dist < 6.5) {
-      this.pos.x -= ux * this.speed() * 0.7 * dt
-      this.pos.z -= uz * this.speed() * 0.7 * dt
+      this.slide(-ux * this.speed() * 0.7 * dt, -uz * this.speed() * 0.7 * dt)
     } else if (dist > 11.5) {
-      this.pos.x += ux * this.speed() * dt
-      this.pos.z += uz * this.speed() * dt
+      this.slide(ux * this.speed() * dt, uz * this.speed() * dt)
     } else {
       const sway = Math.sin(this.animT * 1.4) * 0.5
-      this.pos.x += -uz * sway * dt
-      this.pos.z += ux * sway * dt
+      this.slide(-uz * sway * dt, ux * sway * dt)
     }
     this.h.root.rotation.x = 0.1
   }
@@ -1595,8 +1831,7 @@ export class BossFlameEnemy extends Enemy {
   protected strikeMove(dt: number, p: number, player: Player, game: Game) {
     if (this.pick !== 'dash') return
     const sp = 13.5 * (1 - 0.35 * p)
-    this.pos.x += this.dashDir.x * sp * dt
-    this.pos.z += this.dashDir.z * sp * dt
+    this.slide(this.dashDir.x * sp * dt, this.dashDir.z * sp * dt)
     this.dustT -= dt
     if (this.dustT <= 0) {
       this.dustT = 0.06

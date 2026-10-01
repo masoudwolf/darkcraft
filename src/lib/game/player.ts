@@ -643,8 +643,21 @@ export class Player {
     return { dur: 0.95 * s, impact: 0.5, dmg: Math.round(58 * m), range: 2.9, arc: 1.4, cost: STAMINA_COST_HEAVY, variant: 'heavy', heavy: true, knock: 5 }
   }
 
+  /** would a stance with feet at `sup` in this column cram the body into
+      an overhead built block (low roof, eave, lintel)? */
+  private headBumped(world: WorldV3, x: number, z: number, sup: number): boolean {
+    const bx = Math.round(x)
+    const bz = Math.round(z)
+    const y0 = Math.floor(sup + 1.06)
+    const y1 = Math.floor(sup + 1.55)
+    for (let y = y0; y <= y1; y++) if (world.solidStruct(bx, y, bz)) return true
+    return false
+  }
+
   /** axis-separated blocky collision — walls stop the body, one-block
-      steps auto-climb, cliffs are walls but drops are always allowed */
+      steps auto-climb, cliffs are walls but drops are always allowed;
+      steps that would lift the body INTO an overhead block (eaves, low
+      roofs) are refused, so nothing ever stands wedged inside masonry */
   private slide(world: WorldV3, dx: number, dz: number) {
     const r = 0.28
     if (dx !== 0) {
@@ -653,8 +666,11 @@ export class Player {
       if (
         !world.wallAt(edge, this.pos.z - r, this.pos.y) &&
         !world.wallAt(edge, this.pos.z + r, this.pos.y)
-      )
-        this.pos.x = nx
+      ) {
+        const sup = world.supportAt(nx, this.pos.z, this.pos.y)
+        if (sup <= this.pos.y + 0.5 || !this.headBumped(world, nx, this.pos.z, sup))
+          this.pos.x = nx
+      }
     }
     if (dz !== 0) {
       const nz = this.pos.z + dz
@@ -662,8 +678,11 @@ export class Player {
       if (
         !world.wallAt(this.pos.x - r, edge, this.pos.y) &&
         !world.wallAt(this.pos.x + r, edge, this.pos.y)
-      )
-        this.pos.z = nz
+      ) {
+        const sup = world.supportAt(this.pos.x, nz, this.pos.y)
+        if (sup <= this.pos.y + 0.5 || !this.headBumped(world, this.pos.x, nz, sup))
+          this.pos.z = nz
+      }
     }
   }
 
