@@ -183,6 +183,52 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     for (let i = 0; i < 26; i++) px(c, Math.floor(r() * (s - 2)), Math.floor(r() * (s - 2)), 'rgb(255,208,64)', 2, 2)
     for (let i = 0; i < 18; i++) px(c, Math.floor(r() * (s - 2)), Math.floor(r() * (s - 2)), 'rgb(150,44,10)', 2, 1)
   })
+  /* ---- V2 map materials — the gothic townsfolk palette ---- */
+  // dark shingle roof — stepped gable roofs of the dead town
+  const roofTex = makeTex(16, 30, (c, r, s) => {
+    fillNoise(c, r, s, [112, 68, 46], 12)
+    for (let y = 0; y < s; y += 4) {
+      for (let i = 0; i < s; i++) px(c, i, y, 'rgb(64,36,24)')
+      for (let i = 0; i < s; i += 2) px(c, (i + (y % 8 === 0 ? 0 : 1)) % s, (y + 2) % s, 'rgb(84,52,34)')
+    }
+    for (let i = 0; i < 8; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(52,28,18)', 2, 1)
+  })
+  // near-black cathedral brick — parish walls that swallow the moonlight
+  const darkBrickTex = makeTex(16, 31, (c, r, s) => {
+    fillNoise(c, r, s, [62, 60, 66], 10)
+    for (let y = 0; y < s; y += 8) for (let i = 0; i < s; i++) px(c, i, y, 'rgb(38,37,42)')
+    for (let y = 4; y < s; y += 8) for (let i = 0; i < s; i++) px(c, (i + 4) % s, y, 'rgb(40,39,44)')
+    for (let x = 0; x < s; x += 8) for (let y = 0; y < 8; y++) px(c, x, y, 'rgb(44,43,48)')
+  })
+  // pale cathedral glass — moonlit windows of the parish
+  const glassTex = makeTex(16, 32, (c, r, s) => {
+    fillNoise(c, r, s, [168, 196, 214], 16)
+    for (let i = 0; i < s; i++) { px(c, i, 0, 'rgb(210,228,240)'); px(c, i, s - 1, 'rgb(120,146,164)') }
+    for (let i = 0; i < 5; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(220,238,250)', 2, 2)
+  })
+  const glass = new THREE.MeshLambertMaterial({ map: glassTex, transparent: true, opacity: 0.82 })
+  // rose glass — the shattered faith of the parish window
+  const roseTex = makeTex(16, 33, (c, r, s) => {
+    fillNoise(c, r, s, [172, 64, 84], 18)
+    for (let i = 0; i < s; i++) { px(c, i, 0, 'rgb(214,120,136)'); px(c, i, s - 1, 'rgb(110,32,48)') }
+    for (let i = 0; i < 6; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(238,150,160)', 2, 2)
+  })
+  const rose = new THREE.MeshLambertMaterial({ map: roseTex, transparent: true, opacity: 0.85 })
+  // gold — the parish bell, forever calling nobody
+  const goldTex = makeTex(16, 34, (c, r, s) => {
+    fillNoise(c, r, s, [212, 172, 64], 16)
+    for (let i = 0; i < s; i++) { px(c, i, 0, 'rgb(244,214,120)'); px(c, i, s - 1, 'rgb(150,116,38)') }
+    for (let i = 0; i < 7; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(248,224,140)', 2, 1)
+  })
+  // still water — the drowned ravine keeps its secrets
+  const waterTex = makeTex(16, 35, (c, r, s) => {
+    fillNoise(c, r, s, [44, 74, 108], 14)
+    for (let i = 0; i < 10; i++) {
+      const y = Math.floor(r() * s)
+      for (let x = 0; x < 4; x++) px(c, (Math.floor(r() * s) + x) % s, y, 'rgb(70,110,150)')
+    }
+  })
+  const water = new THREE.MeshLambertMaterial({ map: waterTex, transparent: true, opacity: 0.86 })
 
   const grassSide = lam(grassSideTex)
   blockMats = {
@@ -200,6 +246,12 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     plank: lam(plankTex),
     mossy: lam(mossyTex),
     lava: new THREE.MeshBasicMaterial({ map: lavaTex }),
+    roof: lam(roofTex),
+    darkstone: lam(darkBrickTex),
+    glass,
+    rose,
+    gold: lam(goldTex),
+    water,
   }
   return blockMats
 }

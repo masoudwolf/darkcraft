@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Game, SHOP_ITEMS, type HudState, type GameSettings, type InvHud, type InvItemView, type LoreHud } from '@/lib/game/game'
 import { PROLOGUE } from '@/lib/game/lore'
 import ModelViewer from '@/components/game/ModelViewer'
+import MapViewer from '@/components/game/MapViewer'
 
 /* ================= small pixel icons (inline SVG) ================= */
 
@@ -735,6 +736,7 @@ function MainMenu({
   hasSave,
   onClear,
   onViewer,
+  onMapPreview,
   onSettings,
   onStory,
   loreCount,
@@ -745,6 +747,7 @@ function MainMenu({
   hasSave: boolean
   onClear: () => void
   onViewer: () => void
+  onMapPreview: () => void
   onSettings: () => void
   onStory: () => void
   loreCount: number
@@ -788,6 +791,13 @@ function MainMenu({
           className="h-11 w-full border-2 border-black/80 bg-zinc-800 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-zinc-700"
         >
           🔬 نمایشگر سه‌بعدی
+        </Button>
+        <Button
+          size="lg"
+          onClick={onMapPreview}
+          className="h-11 w-full border-2 border-black/80 bg-[#1a2a1f] font-bold text-emerald-200 shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-[#24382b]"
+        >
+          🗺️ پیش‌نمایش نقشهٔ جدید (V۲)
         </Button>
         <Button
           size="lg"
@@ -1199,6 +1209,7 @@ export default function GameClient() {
   const [ready, setReady] = useState(false)
   const [menuPage, setMenuPage] = useState<MenuPage>('root')
   const [viewerOpen, setViewerOpen] = useState(false)
+  const [mapPreviewOpen, setMapPreviewOpen] = useState(false)
   const [settings, setSettings] = useState<GameSettings>({ sens: 1, volume: 0.8, invertY: false, shadows: true })
   /** prologue: null = hidden; number = current page. fromMenu = re-reading from the title screen */
   const [prologuePage, setProloguePage] = useState<number | null>(null)
@@ -1268,6 +1279,18 @@ export default function GameClient() {
     setViewerOpen(false)
   }, [])
 
+  const openMapPreview = useCallback(() => {
+    const g = gameRef.current
+    if (g) g.frozen = true
+    setMapPreviewOpen(true)
+  }, [])
+
+  const closeMapPreview = useCallback(() => {
+    const g = gameRef.current
+    if (g) g.frozen = false
+    setMapPreviewOpen(false)
+  }, [])
+
   const applySettings = useCallback((patch: Partial<GameSettings>) => {
     const g = gameRef.current
     if (g) {
@@ -1314,6 +1337,7 @@ export default function GameClient() {
           hasSave={hasSave}
           onClear={clearSave}
           onViewer={openViewer}
+          onMapPreview={openMapPreview}
           onSettings={() => setMenuPage('settings')}
           onStory={() => {
             setPrologueFromMenu(true)
@@ -1356,6 +1380,7 @@ export default function GameClient() {
         />
       )}
       {viewerOpen && <ModelViewer onClose={closeViewer} />}
+      {mapPreviewOpen && <MapViewer onClose={closeMapPreview} />}
       {phase === 'dead' && <YouDied />}
       {hud?.banner === 'bossfell' && phase === 'playing' && (
         <BossFell
