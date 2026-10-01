@@ -518,6 +518,9 @@ export class Game {
     this.world.setFogGateVisible(!this.bossFell)
     this.save()
     this.sfx.bonfire()
+    // free the cursor! pointer lock retargets every click to the canvas,
+    // which made the rest menu (level-up / arise) unclickable on desktop
+    this.engine.input.releaseLock()
     this.emit(true)
   }
 
@@ -534,6 +537,9 @@ export class Game {
     if (this.player.souls < cost) return
     this.player.souls -= cost
     this.player.applyLevel(stat)
+    // resting heals — a fresh level-up tops up the new maximum too
+    this.player.hp = this.player.maxHp
+    this.player.stamina = this.player.maxStamina
     this.save()
     this.sfx.levelUp()
     this.emit(true)
@@ -668,12 +674,19 @@ export class Game {
     let hits = 0
     for (const e of this.allEnemies) {
       if (!e.alive) continue
+      // melee geometry is horizontal — blocky terrain height steps must not
+      // inflate the distance or the arc vector
       const to = e.pos.clone().sub(this.player.pos)
+      to.y = 0
       const d = to.length()
       if (d > def.range + (e.isBoss ? 1.2 : 0.3)) continue
-      to.y = 0
-      to.normalize()
-      if (to.dot(fwd) < Math.cos(def.arc)) continue
+      // point-blank auto-hit: when the target is this close the direction
+      // vector degenerates (enemy hugging the player), so the arc check
+      // would randomly fail and make hugging enemies unhittable
+      if (d > 0.9 + (e.isBoss ? 1.2 : 0)) {
+        to.normalize()
+        if (to.dot(fwd) < Math.cos(def.arc)) continue
+      }
       const dmg = Math.max(1, Math.round(def.dmg * (0.92 + Math.random() * 0.16)))
       e.takeDamage(dmg, this, this.player.pos.x, this.player.pos.z)
       hits++
@@ -1094,6 +1107,11 @@ export class Game {
     }
 
     if (this.phase === 'rest') {
+      // Escape also leaves the bonfire menu
+      if (input.consume('Escape')) {
+        this.leaveRest()
+        return
+      }
       this.world.update(dt)
       this.updateBonfire(dt)
       this.updateEffects(dt)

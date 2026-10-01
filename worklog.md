@@ -105,3 +105,37 @@ Stage Summary:
 - مینی‌مپ ناوبری دنیا را کامل حل کرد؛ تکه‌ی استوس اولین لوت دائمی بازی است (حس پیشرفت سولزلایک).
 - فایل‌ها: textures.ts، models.ts (+۶۵ خط)، sfx.ts (+۲۰)، enemy.ts (+۱۵۰)، game.ts (+۲۸۰)، GameClient.tsx.
 - گام بعد پیشنهادی: باس دوم / منطقه‌ی جدید، جادوی بازیکن (آتش/اذیت)، NPC و فروشگاه، گیم‌پد.
+
+---
+Task ID: 1
+Agent: main (Z.ai Code)
+Task: Push project to GitHub repo masoudwolf/darkcraft using user's fine-grained PAT
+
+Work Log:
+- Configured remote origin with user's token: https://github.com/masoudwolf/darkcraft.git
+- Verified remote access (git ls-remote OK, repo was empty)
+- Pushed main branch (51fc951 "Phase 4: skeleton archer + arrows + minimap + estus shard loot") as first push
+
+Stage Summary:
+- GitHub workflow established; every future update must be committed & pushed to origin/main
+
+---
+Task ID: 2
+Agent: main (Z.ai Code)
+Task: Broad playtest & mechanical review of the whole game (boss power check, enemy AI, combat mechanics, UI flows) — fix bugs, improve what needs improving
+
+Work Log:
+- Playtested in a real browser via agent-browser + a synchronous game-time stepper (drive onFrame directly to bypass headless RAF throttling) + an input-driven player-AI
+- Verified working: intro roar, 4 boss moves (slam 39-48dmg, sweep 33, stomp 34-39+16wave, charge ~32 w/ 15.5u/s dash), anti-kite charge trigger (cd expiring >7.5m), phase 2 (speed x1.35, windups x0.72, combo chains), poise/stagger (150dmg -> 1.9s punish), arena barrier, shockwaves, i-frames, block arcs, creeper fuse/explosion/self-destruct, skeleton kiting band 6-11m + arrows 14-17dmg, bloodstain death loop, save/load, minimap, victory flow (+3000 souls, banner, shard)
+- BUG FIX A (enemy.ts): added player personal-space separation — enemies used to walk INSIDE the player (dist ~0), degenerating every direction-based check (blocks failed with dot~0, strikes whiffed, camera clipped). Humanoids pushed to 0.72, boss 1.5
+- BUG FIX B (game.ts playerStrike): melee geometry now horizontal (blocky terrain height steps inflated 3D distance) + point-blank auto-hit bypass (d <= 0.9 skips the arc check) — hugging enemies are hittable again
+- BUG FIX C (enemy.ts BossEnemy.takeDamage): boss roar now TAKES damage (feedback/numbers) without interrupting the cinematic or refreshing roarT
+- BUG FIX D (player.ts ROLL_IFRAME 0.34 -> 0.42): boss slam impact lands 0.33s after strike start; old i-frames made dodging frame-perfect. Reaction rolls now reliably cover impacts (verified: full AI boss kill, 0 direct hits taken)
+- BUG FIX E (game.ts rest/levelUp): released pointer lock on rest — pointer lock retargeted every click to the canvas, making the rest menu (level-up/arise) UNCLICKABLE on desktop; Escape now also leaves rest; level-up tops up new max HP/stamina
+- BUG FIX F (player.ts block): standing guard anchors the shield to camera-forward (stale last-move yaw let hits sneak through); chip damage (15%) now actually applies on successful blocks (was computed but never applied)
+- Boss power verdict: balanced for a leveled player — AI fight at level ~10: killed in 60.5s, 101/191 HP left, only shockwave chips taken; at level 1 it is a deliberate 2-hit-kill wall (souls gating via bonfire loop)
+
+Stage Summary:
+- 6 gameplay bugs fixed (separation, point-blank whiff, roar feedback, i-frame timing, pointer-lock UI trap, block arc/chip)
+- All mechanics re-verified in browser after fixes; boss kill run through real input pipeline
+- Boss numbers kept (mechanics fixes already make the fight ~2x fairer)

@@ -306,6 +306,19 @@ export class Enemy {
       }
     }
 
+    // personal-space separation from the PLAYER — without this, enemies
+    // walk inside the player's body: block arcs degenerate (dot ≈ 0),
+    // strike cones whiff at point-blank, and the camera clips through them
+    const pr = this.isBoss ? 1.5 : 0.72
+    const pdx = this.pos.x - player.pos.x
+    const pdz = this.pos.z - player.pos.z
+    const pd = Math.hypot(pdx, pdz)
+    if (pd < pr && pd > 0.001) {
+      const push = (pr - pd) * 0.6
+      this.pos.x += (pdx / pd) * push
+      this.pos.z += (pdz / pd) * push
+    }
+
     this.clamp()
     this.syncModel()
   }
@@ -491,12 +504,21 @@ export class BossEnemy extends Enemy {
     }
   }
 
-  /** phase 2: damage taken no longer breaks posture (already enraged) */
+  /** poise/stagger works in every phase — sustained aggression is always
+      rewarded with a posture break; roar windows keep the cinematic */
   takeDamage(dmg: number, game: Game, fromX: number, fromZ: number) {
-    if (this.state === 'roar') return // cinematic window — untouchable
+    const wasRoar = this.state === 'roar'
+    const roarT = this.stateT
     const wasStaggered = this.state === 'stagger'
     super.takeDamage(dmg, game, fromX, fromZ)
     if (this.dead) return
+    if (wasRoar) {
+      // cinematic window — damage lands (so attacks feel responsive and
+      // show numbers) but the roar is never interrupted or re-staggered
+      this.state = 'roar'
+      this.stateT = roarT
+      return
+    }
     if (wasStaggered) {
       // keep soaking hits without re-staggering, stay slumped
       this.state = 'stagger'

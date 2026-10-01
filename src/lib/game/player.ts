@@ -10,7 +10,9 @@ import type { Game, PlayerStrikeDef } from './game'
 export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead' | 'block'
 
 const ROLL_DUR = 0.48
-const ROLL_IFRAME = 0.34
+// i-frames must comfortably cover a react-to-swing dodge AND an anticipatory
+// late-windup roll: boss slam impact lands ~0.33s after the strike begins
+const ROLL_IFRAME = 0.42
 const STAMINA_COST_ROLL = 22
 const STAMINA_COST_LIGHT = 18
 const STAMINA_COST_HEAVY = 32
@@ -175,9 +177,16 @@ export class Player {
         if (this.stamina >= cost) {
           this.stamina -= cost
           this.staminaDelay = 0.7
+          // even a clean guard bleeds a little — blocking is a tool,
+          // not a wall (chip was computed but never applied before)
+          this.hp -= chip
           this.pos.x += aX * 0.3
           this.pos.z += aZ * 0.3
           game?.onPlayerBlock(dmg)
+          if (this.hp <= 0) {
+            this.hp = 0
+            this.die()
+          }
         } else {
           // guard broken!
           this.stamina = 0
@@ -316,6 +325,11 @@ export class Player {
         this.pos.x += mx * WALK_SPEED * 0.42 * dt
         this.pos.z += mz * WALK_SPEED * 0.42 * dt
         this.targetYaw = Math.atan2(mx, mz)
+      } else {
+        // standing guard: anchor the shield to the camera's forward — the
+        // block arc then reliably covers whatever the player is looking at
+        // (stale last-move yaw made hits sneak "through" the shield)
+        this.targetYaw = Math.atan2(-Math.sin(camYaw), -Math.cos(camYaw))
       }
       animBlock(this.h, this.animT)
       // stale attack input is discarded while guarding
