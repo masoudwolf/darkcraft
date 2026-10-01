@@ -3,7 +3,7 @@ import { Engine } from './engine'
 import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS, MERCHANT } from './world'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
-import { createSword, createShield, createMerchant, animMerchantIdle, animMerchantGreet, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, type SwordStyle } from './models'
+import { createSword, createShield, createMerchant, animMerchantIdle, animMerchantGreet, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createArrowBundle, type SwordStyle } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
 import {
@@ -47,6 +47,12 @@ export interface HudState {
   toast: string | null
   /** arrows remaining for the equipped quiver */
   arrows: number
+  /** a bow is in the active left hand (show the quiver chip) */
+  bowEquipped: boolean
+  /** the player is currently drawing the bow (crosshair visible) */
+  aiming: boolean
+  /** draw power 0..1 while aiming */
+  draw: number
 }
 
 export interface InvHud {
@@ -75,6 +81,7 @@ export interface InvItemView {
   equipped: boolean
   tier: string
   desc: string
+  ammo?: boolean
   dmg?: number
   spd?: number
   block?: number
@@ -726,12 +733,19 @@ class BossDeathFX {
 }
 
 
+/* A loosed arrow — real ballistic arc, fletching spin, a faint trail,
+   proper impact FX, and missed shots stick in the ground long enough to
+   be recovered (a chance, like Dark Souls' tinier pickings). */
 class Arrow {
   private mesh: THREE.Group
   private vel = new THREE.Vector3()
   private t = 0
   private stuck = false
   private stuckT = 0
+  private trailT = 0
+  private spin = (Math.random() * 2 - 1) * 14
+  /** ground-stuck arrows linger so the player can walk over and reclaim */
+  private static STICK_LIFE = 7
 
   constructor(
     private game: Game,
@@ -739,7 +753,8 @@ class Arrow {
     target: THREE.Vector3,
     private dmg: number,
     private fromPlayer = false,
-    fire = false
+    private fire = false,
+    power = 1
   ) {
     const g = new THREE.Group()
     const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
@@ -752,7 +767,7 @@ class Arrow {
     fl2.rotation.z = Math.PI / 2
     g.add(shaft, tip, fl1, fl2)
     if (fire) {
-      // a small burning head glow so fire arrows read at night
+      // a burning head glow so fire arrows read at night
       const glow = new THREE.Mesh(
         new THREE.BoxGeometry(0.16, 0.16, 0.16),
         new THREE.MeshBasicMaterial({ color: 0xff7a1e, transparent: true, opacity: 0.4, depthWrite: false })
@@ -763,23 +778,46 @@ class Arrow {
     g.position.copy(pos)
     game.engine.scene.add(g)
     this.mesh = g
-    // flat-ish shot with a loft so it arcs gently over small bumps
-    this.vel.subVectors(target, pos)
-    const dist = this.vel.length()
-    this.vel.normalize().multiplyScalar(fromPlayer ? 19 : 15.5)
-    this.vel.y += dist * (fromPlayer ? 0.18 : 0.42)
+    if (fromPlayer) {
+      // TRUE ballistic solve — the arrow lands where the crosshair points.
+      // Flight time scales with distance so far shots arc higher.
+      const dx = target.x - pos.x, dy = target.y - pos.y, dz = target.z - pos.z
+      const dh = Math.hypot(dx, dz)
+      const T = 0.3 + dh / 26
+      const eff = 0.7 + power * 0.3 // a rushed release falls short & stings less
+      this.vel.set((dx / T) * eff, dy / T + 0.5 * 6.5 * T, (dz / T) * eff)
+    } else {
+      // enemy shots: flat-ish with a loft so they crest small bumps
+      this.vel.subVectors(target, pos)
+      const dist = this.vel.length()
+      this.vel.normalize().multiplyScalar(15.5)
+      this.vel.y += dist * 0.42
+    }
   }
 
   update(dt: number): boolean {
     if (this.stuck) {
       this.stuckT += dt
-      return this.stuckT < 1.3
+      return this.stuckT < Arrow.STICK_LIFE
     }
     this.t += dt
     this.vel.y -= 6.5 * dt
     this.pos.addScaledVector(this.vel, dt)
     this.mesh.position.copy(this.pos)
     this.mesh.lookAt(this.pos.x + this.vel.x, this.pos.y + this.vel.y, this.pos.z + this.vel.z)
+    // fletching roll — arrows spin gently around their flight axis
+    this.mesh.rotateZ(this.spin * dt)
+
+    // trail — a whisper for wood, embers for fire
+    this.trailT -= dt
+    if (this.trailT <= 0) {
+      this.trailT = 0.045
+      this.game.spawnBurst(
+        this.pos.clone(),
+        this.fireTrail(),
+        1, this.fire ? 0.5 : 0.28, this.fire ? 0.5 : 0.25, 0.06
+      )
+    }
 
     // the great ash wall stops arrows outside the gate corridor
     if (Math.abs(this.pos.x - ASH_WALL_X) < 0.4 && !(this.pos.z > 15.9 && this.pos.z < 20.1)) {
@@ -787,11 +825,20 @@ class Arrow {
       return true
     }
 
-    // ground impact — stick in with a dust puff
+    // ground impact — stick in at an angle, puff dust, maybe leave a reclaim
     const ground = this.game.world.surfaceAt(this.pos.x, this.pos.z)
     if (this.pos.y <= ground + 0.06) {
       this.stuck = true
+      this.pos.y = ground + 0.1
+      this.mesh.position.copy(this.pos)
+      // nose-down settle: keep the flight direction but tip the tail up
+      this.mesh.rotateX(-0.5)
       this.game.spawnBurst(this.pos.clone(), 0x9a8b70, 5, 1.5, 0.4, 0.1)
+      if (this.fire) {
+        // embers scatter where the burning head bit the dirt
+        this.game.spawnBurst(this.pos.clone(), 0xff8a3a, 7, 1.8, 0.6, 0.12)
+      }
+      this.game.recoverArrow(this)
       return true
     }
     if (this.t > 3.2 || Math.abs(this.pos.x) > 29 || Math.abs(this.pos.z) > 29) return false
@@ -811,7 +858,13 @@ class Arrow {
           e.takeDamage(Math.max(1, Math.round(this.dmg * (0.92 + Math.random() * 0.16))), this.game,
             this.pos.x - (this.vel.x / vl) * 1.5, this.pos.z - (this.vel.z / vl) * 1.5)
           this.game.sfx.arrowHit()
-          this.game.spawnBurst(this.pos.clone(), 0xffe9a0, 8, 2.2, 0.4, 0.1)
+          if (this.fire) {
+            // burning impact — flame + embers
+            this.game.spawnBurst(this.pos.clone(), 0xffd23d, 10, 2.4, 0.55, 0.12)
+            this.game.spawnBurst(this.pos.clone(), 0xff5a10, 8, 2.0, 0.7, 0.14)
+          } else {
+            this.game.spawnBurst(this.pos.clone(), 0xffe9a0, 8, 2.2, 0.4, 0.1)
+          }
           this.stuck = true
           return true
         }
@@ -839,6 +892,26 @@ class Arrow {
       return true
     }
     return true
+  }
+
+  private fireTrail() {
+    return this.fire ? (Math.random() < 0.5 ? 0xffd23d : 0xff8a3a) : 0xd8e8ff
+  }
+
+  /** true when the arrow is from the player (reclaimable) */
+  get reclaimable() {
+    return this.fromPlayer
+  }
+
+  /** where the arrow currently sits (for the reclaim drop) */
+  get groundPos(): THREE.Vector3 {
+    return this.pos.clone()
+  }
+
+  /** what the player reclaims when they pick this one back up */
+  get ammoId(): ItemId {
+    if (!this.fromPlayer) return 'arrow_wood'
+    return this.fire ? 'arrow_fire' : 'arrow_wood'
   }
 
   dispose(scene: THREE.Scene) {
@@ -981,37 +1054,41 @@ class LootDrop {
   light: THREE.PointLight
   private t = Math.random() * 10
   private baseY: number
+  private sparkT = 0
 
   constructor(
     private game: Game,
     public id: ItemId,
     public n: number,
-    pos: THREE.Vector3
+    pos: THREE.Vector3,
+    quiet = false
   ) {
     const def = ITEMS[id]
     const y = game.world.surfaceAt(pos.x, pos.z)
-    this.baseY = y + 0.55
+    this.baseY = y + 0.5
 
-    /* ---- the item itself ---- */
+    /* ---- the item itself — a real miniature, not a placeholder ---- */
     const inner = new THREE.Group()
-    if (def.cat === 'sword') {
+    if (def.ammo) {
+      const bundle = createArrowBundle(n, id === 'arrow_fire')
+      inner.add(bundle)
+    } else if (def.cat === 'sword') {
       const s = createSword(0.85, def.style ?? 'iron')
-      s.rotation.z = 0.7
+      s.rotation.z = 0.85
+      s.rotation.x = 0.22
       inner.add(s)
     } else if (def.cat === 'shield') {
       const sh = createShield(def.id === 'iron_shield' ? 'iron' : 'wood')
       sh.rotation.y = Math.PI / 2
+      sh.rotation.x = -0.18
       inner.add(sh)
     } else if (def.cat === 'bow') {
       const b = createBow()
       b.rotation.z = 0.5
       inner.add(b)
     } else {
-      // armor pieces drop as a small tinted block — the Minecraft way
-      const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
-      const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), lam(def.tint ?? 0x9a8b70))
-      const band = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.09, 0.37), lam(def.tint2 ?? 0x6a5a48))
-      inner.add(box, band)
+      const slot = def.slot as 'head' | 'chest' | 'hands' | 'legs' | 'cape'
+      inner.add(createArmorDrop(slot, def.tint ?? 0x9a8b70, def.tint2))
     }
     inner.castShadow = true
     this.group.add(inner)
@@ -1019,18 +1096,18 @@ class LootDrop {
     /* ---- the loot beam (Dark-Souls beacon, blocky style) ---- */
     const beamColor = def.tier === 'boss' ? 0xffb347 : def.tier === 'rare' ? 0x59ff6a : 0xd8e8ff
     const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.14, 0.2, 3.4, 6, 1, true),
+      new THREE.CylinderGeometry(0.14, quiet ? 0.16 : 0.2, quiet ? 1.7 : 3.4, 6, 1, true),
       new THREE.MeshBasicMaterial({
-        color: beamColor, transparent: true, opacity: 0.24,
+        color: beamColor, transparent: true, opacity: quiet ? 0.13 : 0.24,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
       })
     )
-    beam.position.y = 1.7
+    beam.position.y = quiet ? 0.85 : 1.7
     this.group.add(beam)
 
     this.group.position.set(pos.x, this.baseY, pos.z)
     game.engine.scene.add(this.group)
-    this.light = new THREE.PointLight(beamColor, 1.1, 4.5, 1.6)
+    this.light = new THREE.PointLight(beamColor, quiet ? 0.5 : 1.1, quiet ? 2.6 : 4.5, 1.6)
     this.light.position.y = 0.4
     this.group.add(this.light)
   }
@@ -1039,7 +1116,19 @@ class LootDrop {
     this.t += dt
     this.group.rotation.y += dt * 1.4
     this.group.position.y = this.baseY + Math.sin(this.t * 2.2) * 0.09
-    this.light.intensity = 0.9 + Math.sin(this.t * 3.1) * 0.25
+    this.light.intensity = (this.light.distance > 3 ? 0.9 : 0.35) + Math.sin(this.t * 3.1) * 0.25
+    // rare & boss gear occasionally sheds a drifting spark — attention bait
+    const def = ITEMS[this.id]
+    if (def && (def.tier === 'boss' || def.tier === 'rare')) {
+      this.sparkT -= dt
+      if (this.sparkT <= 0) {
+        this.sparkT = def.tier === 'boss' ? 0.5 : 1.1
+        this.game.spawnBurst(
+          this.group.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.2, (Math.random() - 0.5) * 0.3)),
+          def.tier === 'boss' ? 0xffd23d : 0x8affa0, 2, 1.2, 0.55, 0.07
+        )
+      }
+    }
   }
 
   dispose(scene: THREE.Scene) {
@@ -1123,7 +1212,7 @@ export class Game {
   private loots: LootDrop[] = []
   private toastMsg: string | null = null
   private toastT = 0
-  private playerBow: THREE.Group | null = null
+  playerBow: THREE.Group | null = null
 
   private reticle: HTMLDivElement
   private vignette: HTMLDivElement
@@ -1711,6 +1800,11 @@ export class Game {
   equipItem(id: ItemId) {
     const def = ITEMS[id]
     if (!def) return
+    // arrows are ammo — they ride in the quiver, never in a hand
+    if (def.ammo) {
+      this.showToast(`${def.name} مهمات است — با کمان شلیک می‌شود`)
+      return
+    }
     // must own it — in the bag, or already worn somewhere (move semantics)
     const worn = ALL_SLOTS.some((s) => this.eq[s] === id)
     if (this.countOf(id) <= 0 && !worn) return
@@ -1736,8 +1830,14 @@ export class Game {
     const id = this.eq[slot]
     if (!id) return
     const def = ITEMS[id]
-    // never unequip the last usable weapon or shield — the unkindled goes unarmed
-    if (def.slot === 'rh' && this.eq.rh1 === id && this.eq.rh2 === id) return
+    // never go unarmed — the unkindled always keeps one blade ready
+    if (def.slot === 'rh') {
+      const other: ItemId | null | undefined = slot === 'rh1' ? this.eq.rh2 : this.eq.rh1
+      if (!other || !ITEMS[other] || ITEMS[other].slot !== 'rh') {
+        this.showToast('نمی‌توانی بی‌سلاح بمانی')
+        return
+      }
+    }
     this.eq[slot] = null
     this.sfx.levelUp()
     this.showToast(`${def.name} برداشته شد`)
@@ -1778,11 +1878,13 @@ export class Game {
     return null
   }
 
-  /** the archer moment — called by the player's aim state on release */
+  /** the archer moment — called by the player's aim state on release.
+      draw (0..1) gates the shot AND scales its speed & damage, so a
+      rushed snap barely stings while a full anchor bites. */
   firePlayerArrow(p: Player, draw: number) {
     const lhId = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
     const bow = lhId ? ITEMS[lhId] : null
-    if (!bow || bow.cat !== 'bow') return
+    if (!bow || bow.cat !== 'bow' || bow.ammo) return
     const ammo = this.arrowState()
     if (!ammo) {
       this.showToast('تیر تمام شد!')
@@ -1791,26 +1893,34 @@ export class Game {
     this.removeItem(ammo.id, 1)
     const arrowDef = ITEMS[ammo.id]
     const from = p.pos.clone().add(new THREE.Vector3(Math.sin(p.yaw) * 0.4, 1.45, Math.cos(p.yaw) * 0.4))
-    // aim along the camera's forward — what you see is what you shoot
-    const target = p.pos
-      .clone()
-      .add(new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw)).multiplyScalar(13))
-      .add(new THREE.Vector3(0, 1.35, 0))
-    const dmg = Math.round((bow.bowDmg ?? 20) + (arrowDef.bowDmg ?? 0))
-    this.arrows.push(new Arrow(this, from, target, dmg, true, ammo.id === 'arrow_fire'))
+    // aim along the camera's true ray (yaw + pitch) — the crosshair IS the target
+    const cp = this.camPitch
+    const aim = new THREE.Vector3(
+      -Math.sin(this.camYaw) * Math.cos(cp),
+      -Math.sin(cp),
+      -Math.cos(this.camYaw) * Math.cos(cp)
+    )
+    const target = p.pos.clone().add(new THREE.Vector3(0, 1.45, 0)).add(aim.multiplyScalar(14))
+    const base = (bow.bowDmg ?? 20) + (arrowDef.bowDmg ?? 0)
+    const dmg = Math.max(1, Math.round(base * (0.55 + 0.45 * draw)))
+    this.arrows.push(new Arrow(this, from, target, dmg, true, ammo.id === 'arrow_fire', draw))
     this.sfx.arrowShoot()
     // the bow string snaps on the model too
     if (this.playerBow) {
-      setBowDraw(this.playerBow, draw)
+      setBowDraw(this.playerBow, 0)
       setNocked(this.playerBow, false)
-      setTimeout(() => {
-        if (this.playerBow) {
-          setBowDraw(this.playerBow, 0)
-          setNocked(this.playerBow, true)
-        }
-      }, 240)
     }
     this.emit(true)
+  }
+
+  /** a missed arrow sticks in the dirt — walk over and reclaim it (a
+      chance: some shafts snap, Dark-Souls style). Spawns a quiet loot
+      drop without the tall beacon so it reads as litter, not treasure. */
+  recoverArrow(a: Arrow) {
+    if (!a.reclaimable) return
+    const chance = a.ammoId === 'arrow_fire' ? 0.5 : 0.65
+    if (Math.random() > chance) return
+    this.loots.push(new LootDrop(this, a.ammoId, 1, a.groundPos, true))
   }
 
   /** DS-style item-attained banner, fired on pickup */
@@ -1827,6 +1937,14 @@ export class Game {
     this.emit(true)
   }
 
+  /** debug/QA helper — drop a specific item in front of the player */
+  debugLoot(id: ItemId, n = 1) {
+    if (!ITEMS[id]) return
+    const pos = this.player.pos.clone().add(new THREE.Vector3(Math.sin(this.player.yaw) * 2, 0, Math.cos(this.player.yaw) * 2))
+    this.loots.push(new LootDrop(this, id, n, pos))
+    this.emit(true)
+  }
+
   /** build the React-side snapshot of slots + bag */
   private invHud(): InvHud {
     const view = (id: ItemId | null | undefined, slot?: EquipSlot): InvItemView | null => {
@@ -1836,7 +1954,7 @@ export class Game {
         id: it.id, name: it.name, icon: it.icon, cat: it.cat,
         weight: it.weight, n: slot ? 1 : Math.max(1, this.countOf(id)),
         equipped: slot ? this.eq[slot] === id : ALL_SLOTS.some((s) => this.eq[s] === id),
-        tier: it.tier, desc: it.desc,
+        tier: it.tier, desc: it.desc, ammo: !!it.ammo,
         dmg: it.dmg, spd: it.spd, block: it.block, bowDmg: it.bowDmg,
         def: it.def, fire: it.fire, blast: it.blast,
       }
@@ -2070,6 +2188,11 @@ export class Game {
           if (seen.has(id)) this.eq[s] = null
           else seen.add(id)
         }
+      }
+      // ammo never lives in a slot (older saves could hold an arrow there)
+      for (const s of ALL_SLOTS) {
+        const id = this.eq[s]
+        if (id && ITEMS[id]?.ammo) this.eq[s] = null
       }
       // every equipped piece must exist in the bag too (DS: nothing is lost)
       for (const s of ALL_SLOTS) {
@@ -3338,6 +3461,9 @@ export class Game {
       inv: this.phase === 'inventory' ? this.invHud() : null,
       toast: this.toastMsg,
       arrows: this.countOf('arrow_fire') > 0 ? this.countOf('arrow_fire') : this.countOf('arrow_wood'),
+      bowEquipped: this.player.loadout.aiming,
+      aiming: this.player.state === 'aim' && this.player.aimRelease <= 0,
+      draw: Math.min(1, this.player.aimT / 0.55),
     }
     const json = JSON.stringify(s)
     if (force || json !== this.lastHudJson) {

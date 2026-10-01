@@ -116,11 +116,37 @@ function Hud({ hud }: { hud: HudState }) {
         </div>
       )}
 
-      {/* arrows chip — visible when a bow is equipped */}
-      {hud.arrows > 0 && (
-        <div className="absolute right-4 bottom-20 flex items-center gap-1.5 border border-black/80 bg-black/60 px-2.5 py-1" dir="rtl">
+      {/* arrows chip — visible when a bow is equipped (or arrows held) */}
+      {(hud.bowEquipped || hud.arrows > 0) && (
+        <div
+          className={`absolute right-4 bottom-20 flex items-center gap-1.5 border bg-black/60 px-2.5 py-1 ${hud.arrows > 0 ? 'border-black/80' : 'border-red-900/80'}`}
+          dir="rtl"
+        >
           <span aria-hidden>🏹</span>
-          <span className="font-pixel text-xs text-amber-200" dir="ltr">×{hud.arrows}</span>
+          <span className={`font-pixel text-xs ${hud.arrows > 0 ? 'text-amber-200' : 'text-red-400'}`} dir="ltr">×{hud.arrows}</span>
+        </div>
+      )}
+
+      {/* bow crosshair — pixel reticle + draw-power bar, only while aiming */}
+      {hud.aiming && (
+        <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
+          <div className="relative h-10 w-10" aria-hidden>
+            <span className="absolute left-1/2 top-1/2 h-[6px] w-[6px] -translate-x-1/2 -translate-y-1/2 bg-white/90 shadow-[0_0_3px_rgba(0,0,0,0.9)]" />
+            <span className="absolute left-1/2 top-0 h-[10px] w-[2px] -translate-x-1/2 bg-white/70" />
+            <span className="absolute bottom-0 left-1/2 h-[10px] w-[2px] -translate-x-1/2 bg-white/70" />
+            <span className="absolute left-0 top-1/2 h-[2px] w-[10px] -translate-y-1/2 bg-white/70" />
+            <span className="absolute right-0 top-1/2 h-[2px] w-[10px] -translate-y-1/2 bg-white/70" />
+          </div>
+          {/* draw power — fills as the string pulls home; green when shot-ready */}
+          <div className="mt-1 h-[5px] w-14 -translate-x-0 border border-black/80 bg-black/60 p-[1px]">
+            <div
+              className={`h-full transition-[width] duration-75 ${hud.draw >= 0.35 ? 'bg-gradient-to-b from-[#8ae06a] to-[#3f8a24]' : 'bg-gradient-to-b from-[#d9c26a] to-[#8a6a1c]'}`}
+              style={{ width: `${Math.round(hud.draw * 100)}%` }}
+            />
+          </div>
+          {hud.arrows <= 0 && (
+            <div className="mt-1 text-center font-pixel text-[9px] text-red-400">بدون تیر</div>
+          )}
         </div>
       )}
 
@@ -150,6 +176,7 @@ function HintBar() {
     ['F', 'تعامل'],
     ['I', 'کوله‌پشتی'],
     ['1/2', 'سلاح / کمان'],
+    ['RMB+LMB', 'کمان: نشانه و شلیک'],
     ['Esc', 'توقف'],
   ]
   return (
@@ -351,8 +378,8 @@ function ItemStatLine({ it }: { it: InvItemView }) {
   if (it.dmg) bits.push(`آسیب ${it.dmg}`)
   if (it.spd && it.spd !== 1) bits.push(`سرعت ${Math.round(it.spd * 100)}٪`)
   if (it.block) bits.push(`دفاع سپر ${Math.round(it.block * 100)}٪`)
-  if (it.cat === 'bow') bits.push(`آسیب تیر ${it.bowDmg ?? 0}`)
-  if (it.cat !== 'bow' && it.bowDmg) bits.push(`آسیب تیر +${it.bowDmg}`)
+  if (it.cat === 'bow' && !it.ammo) bits.push(`آسیب تیر ${it.bowDmg ?? 0}`)
+  if (it.ammo && it.bowDmg) bits.push(`آسیب +${it.bowDmg}`)
   if (it.def) bits.push(`جسم‌ساز +${Math.round(it.def * 100)}٪`)
   if (it.fire) bits.push(`آتش‌بند +${Math.round(it.fire * 100)}٪`)
   if (it.blast) bits.push(`انفجارگریز +${Math.round(it.blast * 100)}٪`)
@@ -486,7 +513,8 @@ function InventoryModal({
                 <button
                   key={it.id}
                   onMouseEnter={() => setSel(it)}
-                  onClick={() => onEquip(it.id)}
+                  onClick={() => (it.ammo ? setSel(it) : onEquip(it.id))}
+                  title={it.ammo ? 'مهمات — هنگام شلیک خودکار مصرف می‌شود' : 'تجهیز کردن'}
                   className={`w-full border px-3 py-2 text-right transition-colors ${
                     it.equipped
                       ? 'border-amber-400/60 bg-amber-950/30'
@@ -497,6 +525,7 @@ function InventoryModal({
                     <span className="text-lg" aria-hidden>{it.icon}</span>
                     <span className={`text-xs font-bold ${TIER_STYLE[it.tier]}`}>{it.name}</span>
                     {it.n > 1 && <span className="font-pixel text-[9px] text-white/60">×{it.n}</span>}
+                    {it.ammo && <span className="rounded-sm border border-sky-700/60 bg-sky-950/50 px-1 py-px font-pixel text-[8px] text-sky-300">مهمات</span>}
                     {it.equipped && <span className="mr-auto font-pixel text-[9px] text-amber-300/90">تجهیز شده</span>}
                   </div>
                   <div className="mt-0.5 pr-7"><ItemStatLine it={it} /></div>

@@ -41,6 +41,8 @@ export interface ItemDef {
   block?: number // 0..1 — fraction of damage soaked by a clean guard
   /* bow */
   bowDmg?: number
+  /** ammo (arrows) — never equipped, consumed automatically when loosing */
+  ammo?: boolean
   /* armor */
   def?: number // physical reduction fraction (0..0.2 per piece)
   fire?: number
@@ -107,13 +109,13 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   }),
   arrow_wood: I({
     id: 'arrow_wood', name: 'تیر چوبی', cat: 'bow', slot: 'lh', weight: 0.05,
-    icon: '➳', desc: 'تیر ساده با پرکاک روشن. مهمات کمان.',
-    tier: 'common', bowDmg: 0, tint: 0xc9b083,
+    icon: '➳', desc: 'تیر ساده با پرکاک روشن. مهمات کمان — هنگام شلیک خودکار مصرف می‌شود.',
+    tier: 'common', bowDmg: 0, ammo: true, tint: 0xc9b083,
   }),
   arrow_fire: I({
     id: 'arrow_fire', name: 'تیر آتشین', cat: 'bow', slot: 'lh', weight: 0.06,
-    icon: '🔥', desc: 'نوکش در آغشته به قیر سوزان. سوزد، حتی بعد از برخورد.',
-    tier: 'rare', bowDmg: 7, tint: 0xff8a3a,
+    icon: '🔥', desc: 'نوکش آغشته به قیر سوزان. مهمات کمان — می‌سوزد، حتی بعد از برخورد.',
+    tier: 'rare', bowDmg: 7, ammo: true, tint: 0xff8a3a,
   }),
   bone_helm: I({
     id: 'bone_helm', name: 'کاسه‌ی جمجمه', cat: 'armor', slot: 'head', weight: 1.0,
@@ -363,3 +365,6 @@ export function defaultEquip(): EquippedMap {
 export function slotGroupOf(it: ItemDef): 'rh' | 'lh' | ArmorSlot {
   return it.slot
 }
+
+/** the quiver order — fire arrows are loosed first while present */
+export const QUIVER_ORDER: ItemId[] = ['arrow_fire', 'arrow_wood']

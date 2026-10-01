@@ -1349,3 +1349,115 @@ export function setPlayerBow(h: Humanoid, bow: THREE.Group | null) {
     h.armorParts.push(bow)
   }
 }
+
+/* ============================================================
+   LOOT-DROP MODELS — tiny hand-built voxel props so every
+   fallen item reads as what it is, not a tinted cube.
+   ============================================================ */
+
+/** a single voxel arrow (also reused by the ground bundle) */
+export function createArrowMesh(fire = false): THREE.Group {
+  const g = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.5), lam(fire ? 0x6a4020 : 0xa8845a))
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.12), lam(fire ? 0xffb03a : 0xb8bec8))
+  tip.position.z = 0.3
+  const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.12, 0.11), lam(fire ? 0xffc23d : 0xe8e4d8))
+  fl1.position.z = -0.2
+  const fl2 = fl1.clone()
+  fl2.rotation.z = Math.PI / 2
+  g.add(shaft, tip, fl1, fl2)
+  if (fire) {
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.1, 0.1),
+      new THREE.MeshBasicMaterial({ color: 0xff7a1e, transparent: true, opacity: 0.55, depthWrite: false })
+    )
+    glow.position.z = 0.3
+    g.add(glow)
+  }
+  return g
+}
+
+/** a fanned bundle of arrows — how ammo actually looks on the ground */
+export function createArrowBundle(n: number, fire = false): THREE.Group {
+  const g = new THREE.Group()
+  const count = Math.max(3, Math.min(5, Math.ceil(n / 2)))
+  for (let i = 0; i < count; i++) {
+    const a = createArrowMesh(fire)
+    // arrows lie crossed like a small faggot, tips pointing outward
+    a.rotation.y = (i / count) * Math.PI * 2
+    a.rotation.x = 0.12 * (i % 2 ? 1 : -1)
+    a.position.y = 0.035 + (i % 2) * 0.05
+    a.castShadow = true
+    g.add(a)
+  }
+  // a binding wrap holding the bundle together
+  const band = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.07, 0.16),
+    new THREE.MeshLambertMaterial({ color: fire ? 0x7a3418 : 0x6a5a3a })
+  )
+  band.position.y = 0.07
+  g.add(band)
+  return g
+}
+
+/** real miniatures for every armor slot — no more anonymous tinted cube */
+export function createArmorDrop(slot: 'head' | 'chest' | 'hands' | 'legs' | 'cape', tint: number, tint2?: number): THREE.Group {
+  const g = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const m1 = lam(tint)
+  const m2 = lam(tint2 ?? tint)
+  const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rz = 0) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+    mesh.position.set(x, y, z)
+    mesh.rotation.z = rz
+    mesh.castShadow = true
+    g.add(mesh)
+    return mesh
+  }
+
+  if (slot === 'head') {
+    // helmet: dome, brow band, nose guard, crest — sits open like on a stand
+    mk(0.4, 0.14, 0.4, m1, 0, 0.2, 0)
+    mk(0.34, 0.12, 0.34, m2, 0, 0.32, 0)
+    mk(0.44, 0.07, 0.44, m2, 0, 0.12, 0)                 // brim
+    mk(0.08, 0.16, 0.06, m2, 0, 0.08, 0.19)              // nose guard
+    mk(0.06, 0.12, 0.4, m1, 0, 0.4, 0)                   // crest ridge
+  } else if (slot === 'chest') {
+    // cuirass: shell + shoulder flanges + ridge + belt, displayed leaning back
+    mk(0.4, 0.34, 0.2, m1, 0, 0.26, 0)
+    mk(0.12, 0.1, 0.22, m1, -0.24, 0.4, 0)               // shoulder L
+    mk(0.12, 0.1, 0.22, m1, 0.24, 0.4, 0)                // shoulder R
+    mk(0.08, 0.3, 0.22, m2, 0, 0.26, 0.01)               // center ridge
+    mk(0.42, 0.08, 0.22, m2, 0, 0.08, 0)                 // belt
+    mk(0.3, 0.1, 0.16, m2, 0, -0.02, 0)                  // skirt plate
+    g.rotation.x = -0.16
+  } else if (slot === 'hands') {
+    // a pair of gauntlets laid side by side, palms down
+    for (const s of [-1, 1]) {
+      mk(0.16, 0.12, 0.2, m1, s * 0.13, 0.08, 0)
+      mk(0.18, 0.05, 0.1, m2, s * 0.13, 0.15, 0)         // cuff
+      mk(0.05, 0.04, 0.14, m2, s * 0.13, 0.03, 0.14)     // fingers hint
+    }
+  } else if (slot === 'legs') {
+    // greaves: two shin plates with boot feet, standing at ease
+    for (const s of [-1, 1]) {
+      mk(0.15, 0.3, 0.15, m1, s * 0.11, 0.17, 0)
+      mk(0.17, 0.06, 0.17, m2, s * 0.11, 0.34, 0)        // knee cop
+      mk(0.16, 0.08, 0.26, m2, s * 0.11, 0.04, 0.04)     // boot
+    }
+  } else {
+    // cape: folded cloth with a draped fold line and a hem band
+    const cloth = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.4, 0.05), m1)
+    cloth.position.set(0, 0.22, 0)
+    cloth.rotation.x = 0.1
+    cloth.castShadow = true
+    const fold = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.07, 0.07), m2)
+    fold.position.set(0, 0.24, 0.06)
+    const hem = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.06), m2)
+    hem.position.set(0, 0.03, 0.02)
+    g.add(cloth, fold, hem)
+    g.rotation.x = -0.5 // leans back so the cloth faces the camera
+  }
+  return g
+}

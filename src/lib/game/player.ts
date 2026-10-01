@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock, animBlockWalk, animCast, animBowDraw, animBowShoot, bowDrawAmount,
+  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock, animBlockWalk, animCast, animBowDraw, animBowShoot, bowDrawAmount, setBowDraw, setNocked,
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
@@ -99,7 +99,7 @@ export class Player {
   loadout: Loadout = { ...DEFAULT_LOADOUT }
   /** bow draw while aiming (0..1); LMB fires once it has nocked enough */
   aimT = 0
-  private aimRelease = 0
+  aimRelease = 0
   private aimDrawPrev = 0
 
   combo = 0
@@ -402,6 +402,7 @@ export class Player {
         this.aimT = 0
       } else {
       this.stateT += dt
+      let marching = 0 // how far the legs march while creeping
       if (this.aimRelease > 0) {
         this.aimRelease -= dt
         animBowShoot(this.h, Math.min(1, 1 - this.aimRelease / 0.22))
@@ -409,7 +410,14 @@ export class Player {
         this.aimT = Math.min(0.55, this.aimT + dt)
         const draw = this.aimT / 0.55
         animBowDraw(this.h, bowDrawAmount(draw))
+        // the bow itself bends with the draw and carries a nocked arrow —
+        // synced every frame so string, arrow and arms move as one
+        if (game.playerBow) {
+          setNocked(game.playerBow, true)
+          setBowDraw(game.playerBow, bowDrawAmount(draw))
+        }
       }
+      if (game.playerBow && this.aimRelease > 0) setNocked(game.playerBow, false)
       // aiming gait — a slow careful creep; standing, the body squares up
       // to the camera so the arrow truly flies where the player looks
       if (moving) {
@@ -420,8 +428,16 @@ export class Player {
         this.pos.x += mx * WALK_SPEED * 0.42 * this.loadout.walkMult * dt
         this.pos.z += mz * WALK_SPEED * 0.42 * this.loadout.walkMult * dt
         this.targetYaw = Math.atan2(mx, mz)
+        // the stance keeps the upper body drawn while the legs march underneath
+        marching = 1
+        this.animT += dt * 7.5
       } else {
         this.targetYaw = Math.atan2(-Math.sin(camYaw), -Math.cos(camYaw))
+      }
+      if (marching) {
+        const swing = Math.sin(this.animT) * 0.5
+        this.h.legL.rotation.x += swing
+        this.h.legR.rotation.x -= swing
       }
       // loose the arrow!
       if (this.aimRelease <= 0 && this.aimT / 0.55 >= 0.35 && input.consume('LMB')) {
@@ -432,6 +448,7 @@ export class Player {
       if (input.consume('Space') && this.stamina >= STAMINA_COST_ROLL) {
         game.sfx.roll()
         this.aimT = 0
+        if (game.playerBow) setBowDraw(game.playerBow, 0)
         if (moving) {
           const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw)
           const rgtX = -fwdZ, rgtZ = fwdX
@@ -443,6 +460,10 @@ export class Player {
         this.state = 'idle'
         this.stateT = 0
         this.aimT = 0
+        if (game.playerBow) {
+          setBowDraw(game.playerBow, 0)
+          setNocked(game.playerBow, false)
+        }
         resetPose(this.h)
       }
       }
