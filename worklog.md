@@ -530,3 +530,26 @@ Stage Summary:
 - فیزیک دشمن‌ها حالا دقیقاً همان قوانین بازیکن را دارد: دیوار می‌ایستد، پلهٔ ۱بلوکه خودکار بالا می‌رود، پرتگاه دیوار است، سقفِ کوتاه رد نمی‌شود، هُل‌ها هرگز بدنه را در دیوار نمی‌فشارند
 - حرکت هوشمند: دشمن‌ها به‌جای فاز‌کردن از دیوار، کنار آن راه می‌روند و گوشه را می‌گیرند؛ اگر مسیر واقعاً بسته باشد شکار را رها می‌کنند — رفتار سولزی
 - فایل‌ها: enemy.ts (slide/wallFollow/ساعت‌ها/تمام حرکت‌ها)، player.ts (headBumped برای پلیر)
+
+---
+Task ID: audio-overhaul-1
+Agent: Z.ai Code (main)
+Task: بازسازی کامل سیستم صدای بازی — جایگزینی صداهای سنتز شده با کد (WebAudio oscillator/noise) با نمونه‌های واقعی دانلود شده (CC0) در تمام بخش‌ها
+
+Work Log:
+- موجودیت‌سنجی: کلاس Sfx قدیمی (sfx.ts) با ۳۲ متد سنتزی؛ ۳۲+ نقطه استفاده در game.ts/enemy.ts/player.ts
+- دانلود از OpenGameArt (همه CC0): پک‌های شمشیر StarNinjas (۱۰ ضربه + ۱۰ برخورد)، Swishes (۱۳ ویز)، Monster Sound Pack v2 (۱۸ هیولا)، troll roars (۱۱ رُاه که با silencedetect جدا شدند)، 80 CC0 RPG SFX، RPG Sound Pack (Lithas)، Bones rattle، Footsteps Leather/Cloth/Armor، fireplace loop، Epic Boss Battle (Juhani Junkala, seamless)، Cathedral in the Forest، Ambient Horror Track 01، Dungeon Ambience، wind loop
+- پردازش ffmpeg: برش سکوت، کمپرسور + لیمیتر (punchy)، تبدیل به OGG q3/q4 مونو برای افکت‌ها — ۹۱ افکت + ۳ موسیقی + ۳ اتمسفر = ~6.7MB در public/sounds/{sfx,music,amb} + CREDITS.md
+- بازنویسی کامل sfx.ts: AudioManager جدید با بافر پول، واریاسیون تصادفی (jitter pitch)، لایه‌بندی کمپوزیت در زمان پخش (hit=clash+thump, boom=thump+firebig, inferno=۳ لایه+cascade...)، پن استریو + تضعیف فاصله (نصف صدا در ۱۴ بلوک)، موسیقی crossfade (explore/dread/boss/off)، duck برای منوها، اتمسفر سه‌کاناله (wind/fire-crackle/dungeon) با متغیر پیوسته
+- اتصال‌ها در game.ts: متد updateAudio() در حلقه اصلی (listener=pos player + camYaw، حالت موسیقی بر اساس bossActive/inAsh، اتمسفر بر اساس فاصله آتش‌خانه/سردابه/خاکستر)، صدای موقعیتی برای همه رویدادهای Boss (intro/phase2/slam/stomp/stagger/collapse/inferno)، برخورد arrow/fireball/creeperBoom موقعیتی، click() برای UI (شروع/توقف/منو/انوانتوری)، coin() برای فروشگاه، unsheathe() برای تعویض سلاح
+- player.ts: صدای قدم آگاه از جنس زمین (چمن/خاک=cloth، سنگ/سنگ‌آجر/ک cobble/نیند=leather) با فاصله گام وابسته به دویدن + واریاسیون
+- enemy.ts: dash/hiss/fireShoot همه موقعیتی شدند؛ اسکلت‌ها صدای خرد شدن استخوان (bones) هنگام windup گرفتند
+- GameClient.tsx: unlockAudio() روی اولین pointerdown/keydown (سیاست autoplay مرورگر) → موسیقی منو شروع می‌شود
+- تست مرورگر کامل: لود ۹۷ فایل (ready=true failed=false)، موسیقی explore→dread→explore با تلپورت، زنجیره دروازه مه→bossActive→موسیقی boss، بازگشت explore در منو، پخش همه کمپوزیت‌ها بدون خطا، صفر خطای کنسول
+- اصلاح حین تست: بافر 'wind' به pool one-shot اضافه شد (منبع hiss)
+
+Stage Summary:
+- سیستم صدا کاملاً حرفه‌ای شد: نمونه واقعی + واریاسیون + لایه‌بندی + پن/فاصله + موسیقی دینامیک + اتمسفر منطقه‌ای
+- API کلاس Sfx حفظ شد (۳۲ متد قبلی) + متدهای جدید: footstep/bones/unsheathe/coin/click/setMusic/setAmbience/setListener/duck/unlockAudio
+- public/sounds: ۹۷ فایل OGG (~6.7MB) با CREDITS.md (همه CC0)
+- صفر خطای جدید tsc (baseline 47 ثابت)، lint تمیز، تست مرورگر کامل موفق

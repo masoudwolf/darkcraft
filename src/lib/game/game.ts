@@ -897,7 +897,7 @@ class Arrow {
           const vl = Math.hypot(this.vel.x, this.vel.z) || 1
           e.takeDamage(Math.max(1, Math.round(this.dmg * (0.92 + Math.random() * 0.16))), this.game,
             this.pos.x - (this.vel.x / vl) * 1.5, this.pos.z - (this.vel.z / vl) * 1.5)
-          this.game.sfx.arrowHit()
+          this.game.sfx.arrowHit(this.pos)
           if (this.fire) {
             // burning impact — flame + embers
             this.game.spawnBurst(this.pos.clone(), 0xffd23d, 10, 2.4, 0.55, 0.12)
@@ -924,7 +924,7 @@ class Arrow {
       const wasBlocking = p.state === 'block'
       if (p.takeDamage(this.dmg, fromX, fromZ, this.game)) {
         this.game.onPlayerHit(this.dmg)
-        this.game.sfx.arrowHit()
+        this.game.sfx.arrowHit(this.pos)
       } else if (wasBlocking) {
         this.game.onArrowBlocked()
       }
@@ -1590,8 +1590,14 @@ export class Game {
 
   /* ================= PUBLIC API (for React) ================= */
 
+  /** arm the AudioContext on the first user gesture — menu music may then start */
+  unlockAudio() {
+    this.sfx.resume()
+  }
+
   startGame() {
     this.sfx.resume()
+    this.sfx.click()
     this.loadSave()
     this.player.fullRestore()
     this.refreshLoadout()
@@ -1605,6 +1611,7 @@ export class Game {
   pause() {
     if (this.phase !== 'playing') return
     this.phase = 'paused'
+    this.sfx.click()
     this.wasLocked = false
     this.engine.input.releaseLock()
     this.emit(true)
@@ -1613,6 +1620,7 @@ export class Game {
   resume() {
     if (this.phase !== 'paused') return
     this.phase = 'playing'
+    this.sfx.click()
     if (!this.engine.input.isTouch) this.engine.input.requestLock()
     this.emit(true)
   }
@@ -1691,6 +1699,7 @@ export class Game {
   leaveRest() {
     if (this.phase !== 'rest') return
     this.phase = 'playing'
+    this.sfx.click()
     if (!this.engine.input.isTouch) this.engine.input.requestLock()
     this.wasLocked = false
     this.emit(true)
@@ -1703,7 +1712,7 @@ export class Game {
     this.phase = 'shop'
     this.engine.input.releaseLock()
     this.wasLocked = false
-    this.sfx.souls()
+    this.sfx.coin()
     this.emit(true)
   }
 
@@ -1853,14 +1862,15 @@ export class Game {
   openInventory() {
     if (this.phase !== 'playing') return
     this.phase = 'inventory'
+    this.sfx.click()
     this.engine.input.releaseLock()
     this.wasLocked = false
-    this.sfx.souls()
     this.emit(true)
   }
 
   closeInventory() {
     if (this.phase !== 'inventory') return
+    this.sfx.click()
     this.phase = 'playing'
     if (!this.engine.input.isTouch) this.engine.input.requestLock()
     this.wasLocked = false
@@ -2025,6 +2035,7 @@ export class Game {
   /** Digit1 — swap which right-hand weapon is live */
   switchRight() {
     this.rhActive = this.rhActive === 1 ? 2 : 1
+    this.sfx.unsheathe()
     const id = this.eq[this.rhActive === 1 ? 'rh1' : 'rh2']
     this.showToast(id ? `${ITEMS[id].name} به دست گرفتید` : 'دست راست خالی')
     this.refreshLoadout()
@@ -2034,6 +2045,7 @@ export class Game {
   /** Digit2 — swap the left hand (shield ⇄ bow) */
   switchLeft() {
     this.lhActive = this.lhActive === 1 ? 2 : 1
+    this.sfx.unsheathe()
     const id = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
     this.showToast(id ? `${ITEMS[id].name} آماده شد` : 'دست چپ خالی')
     this.refreshLoadout()
@@ -2501,14 +2513,14 @@ export class Game {
     }
     if (hits > 0) {
       this.hitstop = def.heavy ? 0.09 : 0.06
+      // spark burst at first victim (found first so the impact can be positional)
+      const victim = this.allEnemies.find((e) => e.alive && e.pos.distanceTo(this.player.pos) < def.range + 1.4)
       if (def.heavy) {
-        this.sfx.heavy()
+        this.sfx.heavy(victim?.pos)
         this.shake = Math.max(this.shake, 0.18)
       } else {
-        this.sfx.hit()
+        this.sfx.hit(victim?.pos)
       }
-      // spark burst at first victim
-      const victim = this.allEnemies.find((e) => e.alive && e.pos.distanceTo(this.player.pos) < def.range + 1.4)
       if (victim) this.spawnBurst(victim.pos.clone().add(new THREE.Vector3(0, 1.3, 0)), 0xffe08a, 8, 2.2, 0.4)
     }
   }
@@ -2542,7 +2554,7 @@ export class Game {
 
   onCreeperBoom(pos: THREE.Vector3) {
     this.shake = Math.max(this.shake, 0.5)
-    this.sfx.boom()
+    this.sfx.boom(pos)
     const at = pos.clone().add(new THREE.Vector3(0, 1, 0))
     this.spawnBurst(at, 0xffb347, 30, 6, 0.5, 0.22)
     this.spawnBurst(at, 0x9fd89f, 20, 3.6, 0.85, 0.3)
@@ -2671,7 +2683,7 @@ export class Game {
   }
 
   onBossPhase2() {
-    this.sfx.phaseRoar()
+    this.sfx.phaseRoar(this.boss.pos)
     this.shake = Math.max(this.shake, 0.5)
     const c = this.boss.pos.clone().add(new THREE.Vector3(0, 2.4, 0))
     this.spawnBurst(c, 0xff5533, 34, 4.5)
@@ -2679,14 +2691,14 @@ export class Game {
   }
 
   onBossIntro(pos: THREE.Vector3) {
-    this.sfx.bossRoar()
+    this.sfx.bossRoar(pos)
     this.shake = Math.max(this.shake, 0.42)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 2.6, 0)), 0xb04a2a, 24, 3.4)
   }
 
   onBossSlam(pos: THREE.Vector3) {
     this.shake = Math.max(this.shake, 0.5)
-    this.sfx.heavy()
+    this.sfx.heavy(pos)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xb0a080, 24, 4.5, 0.6, 0.22)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.25, 0)), 0x8a7a5c, 14, 2.4, 0.8, 0.28)
     this.waves.push(new Shockwave(this, pos.clone(), 4.8, 14))
@@ -2694,13 +2706,13 @@ export class Game {
 
   onBossStomp(pos: THREE.Vector3) {
     this.shake = Math.max(this.shake, 0.45)
-    this.sfx.stomp()
+    this.sfx.stomp(pos)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 0xb0a080, 26, 5, 0.55, 0.24)
     this.waves.push(new Shockwave(this, pos.clone(), 4.0, 16, 0xc9b48a))
   }
 
   onBossStagger(pos: THREE.Vector3) {
-    this.sfx.stagger()
+    this.sfx.stagger(pos)
     this.shake = Math.max(this.shake, 0.32)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 2.2, 0)), 0xffe08a, 18, 3, 0.5)
     this.spawnText('تعادلش شکست!', '#ffd54a', pos.clone().add(new THREE.Vector3(0, 4.4, 0)))
@@ -2715,13 +2727,13 @@ export class Game {
   /* ================= BOSS 2 / PYROMANCY EVENTS ================= */
 
   onBoss2Intro(pos: THREE.Vector3) {
-    this.sfx.bossRoar()
+    this.sfx.bossRoar(pos)
     this.shake = Math.max(this.shake, 0.42)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 3, 0)), 0xff7a2a, 26, 3.6)
   }
 
   onBoss2Phase2() {
-    this.sfx.phaseRoar()
+    this.sfx.phaseRoar(this.boss2.pos)
     this.shake = Math.max(this.shake, 0.5)
     const c = this.boss2.pos.clone().add(new THREE.Vector3(0, 2.6, 0))
     this.spawnBurst(c, 0xff6a1a, 34, 4.5)
@@ -2730,7 +2742,7 @@ export class Game {
 
   onBoss2Slam(pos: THREE.Vector3) {
     this.shake = Math.max(this.shake, 0.5)
-    this.sfx.heavy()
+    this.sfx.heavy(pos)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff8a3a, 24, 4.5, 0.6, 0.22)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.25, 0)), 0xc25a1a, 14, 2.4, 0.8, 0.28)
     this.waves.push(new Shockwave(this, pos.clone(), 4.6, 14, 0xff9a4a))
@@ -2755,7 +2767,7 @@ export class Game {
   /** the ancient knight bursts into tumbling voxels while his souls stream skyward */
   onBossCollapse(pos: THREE.Vector3, body: Humanoid) {
     this.deathFx.push(new BossDeathFX(this, pos.clone(), 'collapse', body))
-    this.sfx.soulCollapse()
+    this.sfx.soulCollapse(pos)
     this.hitstop = 0.22
     this.shake = Math.max(this.shake, 0.55)
   }
@@ -2763,7 +2775,7 @@ export class Game {
   /** the Flame King combusts — white-hot flash, a pillar of fire and an ember whirl */
   onBossInferno(pos: THREE.Vector3, body: Humanoid) {
     this.deathFx.push(new BossDeathFX(this, pos.clone(), 'inferno', body))
-    this.sfx.inferno()
+    this.sfx.inferno(pos)
     this.hitstop = 0.26
     this.shake = Math.max(this.shake, 0.72)
   }
@@ -2802,7 +2814,7 @@ export class Game {
   }
 
   onFireballBoom(pos: THREE.Vector3, friendly: boolean) {
-    this.sfx.fireBoom()
+    this.sfx.fireBoom(pos)
     this.shake = Math.max(this.shake, friendly ? 0.14 : 0.2)
     const at = pos.clone()
     this.spawnBurst(at, 0xffd23d, 16, 3.4, 0.45, 0.16)
@@ -3200,8 +3212,37 @@ export class Game {
     return null
   }
 
+  /** per-frame audio direction — music state, ambience mix, listener position */
+  private updateAudio() {
+    const p = this.player.pos
+    this.sfx.setListener(p.x, p.z, this.camYaw)
+    if (this.phase === 'menu') {
+      this.sfx.setMusic('explore')
+      this.sfx.setAmbience(0.16, 0, 0)
+      return
+    }
+    if (this.phase === 'dead') {
+      this.sfx.setMusic('off')
+      this.sfx.setAmbience(0.1, 0, 0)
+      return
+    }
+    const bossFight = (this.bossActive && !this.bossFell) || (this.boss2Active && !this.boss2Fell)
+    const inAsh = p.x > 20.5
+    if (bossFight) this.sfx.setMusic('boss')
+    else if (inAsh) this.sfx.setMusic('dread')
+    else this.sfx.setMusic('explore')
+    const inCrypt = p.x < -28.5 && p.z < -33
+    const bd = Math.hypot(p.x - BONFIRE.x, p.z - BONFIRE.z)
+    const fire = bd < 16 ? (1 - bd / 16) * 0.5 : 0
+    const wind = inCrypt ? 0.04 : inAsh ? 0.34 : 0.16
+    this.sfx.setAmbience(wind, fire, inCrypt ? 0.38 : 0)
+    // menus hover above the action — duck the soundtrack a touch
+    this.sfx.duck(this.phase !== 'playing')
+  }
+
   private loop(rawDt: number) {
     if (this.frozen) return
+    this.updateAudio()
     // periodic shadow map refresh (big perf win)
     this.shadowTimer += rawDt
     if (this.shadowTimer > 0.15) {
