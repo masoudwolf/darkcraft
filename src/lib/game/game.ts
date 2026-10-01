@@ -939,6 +939,7 @@ export class Game {
   private estusUp = false
   /** the bonfire-hub NPC + his shop upgrades (persisted) */
   private merchant!: Humanoid
+  private merchantYaw = Math.PI * 0.75
   private merchantLamp!: THREE.PointLight
   private merchantGreetT = 0
   private merchantGreetCd = 0
@@ -1033,13 +1034,18 @@ export class Game {
     )
     scene.add(this.bonfireFlame)
 
-    /* ---- the grey merchant: NPC + stall beside the bonfire ---- */
+    /* ---- the grey merchant: NPC + stall pitched behind the bonfire ---- */
     this.merchant = createMerchant()
     const mY = this.world.surfaceAt(MERCHANT.x, MERCHANT.z)
+    // home yaw — he faces the bonfire hub and watches approaching players
+    const mYaw = Math.atan2(BONFIRE.x - MERCHANT.x, BONFIRE.z - MERCHANT.z)
+    this.merchantYaw = mYaw
     this.merchant.group.position.set(MERCHANT.x, mY, MERCHANT.z)
-    this.merchant.group.rotation.y = Math.PI * 0.75 // facing the bonfire
+    this.merchant.group.rotation.y = mYaw
     scene.add(this.merchant.group)
-    // stall: two posts, an awning and a glowing lantern
+    // stall pitched right in front of him — counter toward the bonfire
+    const fwdX = Math.sin(mYaw)
+    const fwdZ = Math.cos(mYaw)
     const stall = new THREE.Group()
     const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
     const post = (x: number, z: number, hgt: number) => {
@@ -1073,12 +1079,39 @@ export class Game {
       post(-0.9, 0.8, 2.1), post(0.9, 0.8, 2.1), post(-0.9, -0.5, 2.3), post(0.55, -0.5, 2.2),
       awning, awningTrim, table, crate, jar, lampGlass, lampTop
     )
-    stall.position.set(MERCHANT.x + 1.3, mY, MERCHANT.z - 0.6)
-    stall.rotation.y = Math.PI * 0.78
+    // wares: two barrels + a goods sack beside the counter
+    const barrel = (x: number, z: number, s: number) => {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.5 * s, 0.68 * s, 0.5 * s), lam(0x77522e))
+      b.position.set(x, 0.34 * s, z)
+      b.rotation.y = x * 1.7
+      b.castShadow = true
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.54 * s, 0.08, 0.54 * s), lam(0x3d3d3d))
+      band.position.set(x, 0.34 * s, z)
+      band.rotation.y = b.rotation.y
+      stall.add(b, band)
+    }
+    barrel(-1.42, 0.05, 1)
+    barrel(-1.38, -0.62, 0.8)
+    const sack = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.42), lam(0xb09858))
+    sack.position.set(1.45, 0.17, -0.35)
+    sack.rotation.y = 0.9
+    sack.castShadow = true
+    stall.add(sack)
+    // a worn rug in front of the counter where customers stand
+    const rug = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 0.05, 1.05),
+      lam(0x8a3b30)
+    )
+    rug.position.set(0.1, 0.035, 1.45)
+    rug.receiveShadow = true
+    stall.add(rug)
+    stall.position.set(MERCHANT.x + fwdX * 1.25, mY, MERCHANT.z + fwdZ * 1.25)
+    stall.rotation.y = mYaw
     scene.add(stall)
+    // lantern rides on the stall frame so it always tracks the counter
     this.merchantLamp = new THREE.PointLight(0xffb050, 1.6, 7, 1.7)
-    this.merchantLamp.position.set(MERCHANT.x + 1.85, mY + 2.1, MERCHANT.z - 0.15)
-    scene.add(this.merchantLamp)
+    this.merchantLamp.position.set(0.55, 2.1, 0.55)
+    stall.add(this.merchantLamp)
 
     // player
     this.player = new Player(scene)
@@ -1118,8 +1151,9 @@ export class Game {
 
     // skeleton archers — hold mid-range and pepper you with arrows;
     // rush them to force a panicky smack, or block/roll the volleys
+    // (kept well away from the bonfire hub so the shop corner stays quiet)
     const skelPts: [number, number][] = [
-      [16, 4], [-17, -4], [7, 16],
+      [16, 4], [-17, -4], [9, 3],
     ]
     for (const [x, z] of skelPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -2104,6 +2138,12 @@ export class Game {
       ctx.fillRect(px(sp.x) - 1.5, pz(sp.z) - 1.5, 3, 3)
     }
 
+    // merchant — gold coin marker at his stall behind the bonfire
+    ctx.fillStyle = Math.sin(this.time * 4) > 0 ? '#ffd75a' : '#c9a44a'
+    ctx.fillRect(px(MERCHANT.x) - 2, pz(MERCHANT.z) - 2, 4, 4)
+    ctx.fillStyle = '#7a5a18'
+    ctx.fillRect(px(MERCHANT.x) - 1, pz(MERCHANT.z) - 1, 2, 2)
+
     // player — white block + facing notch
     const ppx = px(this.player.pos.x)
     const ppz = pz(this.player.pos.z)
@@ -2549,7 +2589,7 @@ export class Game {
       this.merchant.group.rotation.y += d * Math.min(1, 3 * dt)
     } else {
       this.merchant.group.rotation.y +=
-        (Math.PI * 0.75 - this.merchant.group.rotation.y) * Math.min(1, dt)
+        (this.merchantYaw - this.merchant.group.rotation.y) * Math.min(1, dt)
     }
     if (this.merchantGreetT > 0) {
       animMerchantGreet(this.merchant, 1 - this.merchantGreetT / 1.3)

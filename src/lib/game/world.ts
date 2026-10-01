@@ -3,8 +3,9 @@ import { blockMaterials, mulberry32, createFogMaterial } from './textures'
 
 export const WORLD_HALF = 30 // blocks range from -30..29
 export const BONFIRE = { x: 0, z: 14 }
-/** the grey merchant pitches his stall beside the bonfire hub */
-export const MERCHANT = { x: 3.6, z: 14.2 }
+/** the grey merchant pitches his stall behind the bonfire — south side,
+    inside the safe ring and far from every patrol route */
+export const MERCHANT = { x: -2.7, z: 18.4 }
 export const BOSS_CENTER = { x: 0, z: -18 }
 export const GATE_Z = -10
 export const BOSS_ARENA = { minX: -8, maxX: 8, minZ: -23.5, maxZ: GATE_Z + 0.2 }
@@ -40,6 +41,7 @@ export class World {
     this.buildDeadTrees()
     this.buildRuins()
     this.buildBonfireBase()
+    this.buildMerchantSpot()
     this.buildBossArena()
     this.buildBoss2Arena()
     this.buildFogGate()
@@ -69,6 +71,10 @@ export class World {
         // flatten bonfire area
         const dB = Math.hypot(x - BONFIRE.x, z - BONFIRE.z)
         if (dB < 7) h = Math.round(lerp(2, h, smoothstep(3.5, 7, dB)))
+        // flatten the merchant's shop corner behind the bonfire
+        const dM = Math.hypot(x - MERCHANT.x, z - MERCHANT.z)
+        if (dM < 3.2) h = 2
+        else if (dM < 4.6) h = Math.round(lerp(2, h, smoothstep(3.2, 4.6, dM)))
         // flatten boss arena
         const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
         if (dA < 9.5) h = Math.round(lerp(2, h, smoothstep(6, 9.5, dA)))
@@ -297,6 +303,28 @@ export class World {
     this.put(coal, BONFIRE.x, h + 0.5, BONFIRE.z)
     this.buildInstanced(this.mats.cobble, cobble)
     this.buildInstanced(this.mats.coal, coal)
+  }
+
+  /** the merchant's shop corner behind the bonfire — paved plaza, wall
+      stones framing it, lantern posts and stacked wares for atmosphere */
+  private buildMerchantSpot() {
+    const plaza: Vec3Lite[] = []
+    const frame: Vec3Lite[] = []
+    const h = this.heights[this.idx(MERCHANT.x, MERCHANT.z)]
+    // paved floor: a 5x4 stone patch under the whole stall area
+    for (let x = Math.floor(MERCHANT.x) - 2; x <= Math.floor(MERCHANT.x) + 2; x++) {
+      for (let z = Math.floor(MERCHANT.z) - 2; z <= Math.floor(MERCHANT.z) + 2; z++) {
+        if (Math.abs(x - MERCHANT.x) > 2.4 || Math.abs(z - MERCHANT.z) > 2.2) continue
+        this.put(plaza, x, h + 0.5, z)
+      }
+    }
+    // low stone-brick rim framing the shop corner's west + south edges
+    const rim: [number, number][] = []
+    for (let z = 17; z <= 20; z++) rim.push([-6, z])
+    for (let x = -5; x <= -1; x++) rim.push([x, 21])
+    for (const [x, z] of rim) this.put(frame, x, this.getH(x, z) + 1.5)
+    this.buildInstanced(this.mats.cobble, plaza)
+    this.buildInstanced(this.mats.stonebrick, frame)
   }
 
   private buildBossArena() {

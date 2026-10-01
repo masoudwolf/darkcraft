@@ -434,6 +434,28 @@ export class Enemy {
 
   protected staggerAnim(_p: number) {}
 
+  /** fires ground-dust exactly once at the two physical beats of the
+      stagger — the knee slam and the rally push-off — for any boss
+      (lives on the base class so EVERY boss shares the choreography) */
+  protected staggerBeats(p: number, dustColor: number) {
+    const g = this.game
+    if (!g) {
+      this.staggerBeat = 0
+      return
+    }
+    if (p < this.staggerBeat) this.staggerBeat = 0 // a fresh stagger began
+    if (this.staggerBeat < 0.36 && p >= 0.36) {
+      // right knee slams the ground
+      g.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), dustColor, 16, 2.6, 0.55, 0.24)
+      g.bumpShake(0.22)
+    }
+    if (this.staggerBeat < 0.74 && p >= 0.74) {
+      // pushing back up — small kick of dust off the knee
+      g.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 0.25, 0)), dustColor, 9, 2.0, 0.5, 0.2)
+    }
+    this.staggerBeat = Math.max(this.staggerBeat, p)
+  }
+
   protected deathDur() {
     return 0.9
   }
@@ -801,27 +823,6 @@ export class BossEnemy extends Enemy {
   protected staggerAnim(p: number) {
     animStagger(this.h, p, this.animT)
     this.staggerBeats(p, 0x9a8b70)
-  }
-
-  /** fires ground-dust exactly once at the two physical beats of the
-      stagger — the knee slam and the rally push-off — for any boss */
-  protected staggerBeats(p: number, dustColor: number) {
-    const g = this.game
-    if (!g) {
-      this.staggerBeat = 0
-      return
-    }
-    if (p < this.staggerBeat) this.staggerBeat = 0 // a fresh stagger began
-    if (this.staggerBeat < 0.36 && p >= 0.36) {
-      // right knee slams the ground
-      g.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), dustColor, 16, 2.6, 0.55, 0.24)
-      g.bumpShake(0.22)
-    }
-    if (this.staggerBeat < 0.74 && p >= 0.74) {
-      // pushing back up — small kick of dust off the knee
-      g.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 0.25, 0)), dustColor, 9, 2.0, 0.5, 0.2)
-    }
-    this.staggerBeat = Math.max(this.staggerBeat, p)
   }
 
   /* ---- cinematic death ---- */
