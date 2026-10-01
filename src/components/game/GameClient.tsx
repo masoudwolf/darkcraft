@@ -74,6 +74,12 @@ function Hud({ hud }: { hud: HudState }) {
             <EstusIcon size={18} />
             <span className="text-sm font-bold text-amber-300">{hud.estus}/{hud.maxEstus}</span>
           </div>
+          {hud.pyroUnlocked && (
+            <div className="flex items-center gap-1 bg-black/55 px-1.5 py-0.5 border border-black/70">
+              <span className="text-sm leading-none" aria-hidden>🔥</span>
+              <span className="text-sm font-bold text-orange-300">{hud.pyro}/{hud.maxPyro}</span>
+            </div>
+          )}
           <div className="bg-black/55 px-1.5 py-0.5 border border-black/70 text-xs text-white/85">
             سطح <span className="font-pixel text-[10px] text-emerald-300">{hud.level}</span>
           </div>
@@ -124,6 +130,7 @@ function HintBar() {
     ['کلیک راست', 'دفاع (نگه‌دار)'],
     ['Q', 'قفل روی دشمن'],
     ['E', 'شربت'],
+    ['R', 'جادو'],
     ['F', 'تعامل'],
   ]
   return (
@@ -180,9 +187,10 @@ function MainMenu({ onStart, hasSave, onClear }: { onStart: () => void; hasSave:
         <span><b className="font-pixel text-[10px] text-emerald-300">RMB</b> دفاع (نگه‌دار)</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">Q</b> قفل هدف</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">E</b> شربت</span>
+        <span><b className="font-pixel text-[10px] text-emerald-300">R</b> جادو</span>
         <span><b className="font-pixel text-[10px] text-emerald-300">F</b> تعامل</span>
       </div>
-      <p className="mt-6 text-[11px] text-white/35">نسخه ۰.۳ — جدید: اسکلت تیرانداز، مینی‌مپ و تکه‌ی استوس | به‌زودی: باس دوم، جادو و مناطق جدید</p>
+      <p className="mt-6 text-[11px] text-white/35">نسخه ۰.۴ — جدید: منطقه‌ی خاکسترگاه، باس دوم «پادشاه شعله»، جادوی پیرمانسی، شمشیرزن ویسری و شعله‌ی سرگردان</p>
     </div>
   )
 }
@@ -200,14 +208,24 @@ function YouDied() {
   )
 }
 
-function BossFell() {
+function BossFell({
+  title,
+  sub,
+  sub2,
+  accent,
+}: {
+  title: string
+  sub: string
+  sub2: string
+  accent: string
+}) {
   return (
     <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/45" dir="rtl">
-      <h2 className="fadein-anim text-3xl font-black tracking-wide text-amber-300 sm:text-5xl" style={{ textShadow: '0 0 34px rgba(255,190,60,0.55)' }}>
-        دشمن بزرگ نابود شد!
+      <h2 className="fadein-anim text-3xl font-black tracking-wide sm:text-5xl" style={{ color: accent, textShadow: `0 0 34px ${accent}99` }}>
+        {title}
       </h2>
-      <p className="fadein-anim mt-4 text-sm text-white/70">۳۰۰۰ سول به دست آمد</p>
-      <p className="fadein-anim mt-1 text-xs text-amber-200/80">تکه‌ای استوس کنار جسدش بر زمین افتاده است...</p>
+      <p className="fadein-anim mt-4 text-sm text-white/70">{sub}</p>
+      <p className="fadein-anim mt-1 text-xs" style={{ color: `${accent}cc` }}>{sub2}</p>
     </div>
   )
 }
@@ -394,6 +412,7 @@ function TouchControls({
             ['Block', '🛡️', 'دفاع'],
             ['LMB', '⚔️', 'حمله'],
             ['HEAVY', '💥', 'سنگین'],
+            ['Cast', '☄️', 'جادو'],
             ['KeyQ', '🎯', 'قفل'],
             ['Space', '💨', 'غلتک'],
             ['KeyF', '🔥', 'تعامل'],
@@ -504,7 +523,22 @@ export default function GameClient() {
       )}
       {phase === 'menu' && <MainMenu onStart={start} hasSave={hasSave} onClear={clearSave} />}
       {phase === 'dead' && <YouDied />}
-      {hud?.banner === 'bossfell' && phase === 'playing' && <BossFell />}
+      {hud?.banner === 'bossfell' && phase === 'playing' && (
+        <BossFell
+          title="دشمن بزرگ نابود شد!"
+          sub="۳۰۰۰ سول به دست آمد"
+          sub2="تکه‌ای استوس کنار جسدش بر زمین افتاده است..."
+          accent="#ffc44d"
+        />
+      )}
+      {hud?.banner === 'bossfell2' && phase === 'playing' && (
+        <BossFell
+          title="پادشاه شعله نابود شد!"
+          sub="۴۵۰۰ سول به دست آمد"
+          sub2="اخگری بزرگ کنار خاکسترش بر زمین افتاده است..."
+          accent="#ff8a3a"
+        />
+      )}
       {phase === 'rest' && hud && (
         <RestModal
           hud={hud}

@@ -1,11 +1,11 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, createBow, animIdle, animWalk, animZombieWalk, animAttack, animHit, animDead,
+  createHumanoid, createBow, createBlazeRods, animIdle, animWalk, animZombieWalk, animAttack, animHit, animDead,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
-  animBowDraw, animBowShoot, animPoke,
+  animBowDraw, animBowShoot, animPoke, lerp,
   resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
 } from './models'
-import { BONFIRE, type World } from './world'
+import { ASH_WALL_X, BONFIRE, type World } from './world'
 import type { Game } from './game'
 import type { Player } from './player'
 
@@ -52,14 +52,14 @@ export class Enemy {
   private stunDur = 0.38
   world?: World
 
-  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper' | 'skeleton', spawn: THREE.Vector3, opts: EnemyOpts) {
+  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame', spawn: THREE.Vector3, opts: EnemyOpts) {
     this.opts = opts
     this.hp = opts.hp
     this.maxHp = opts.hp
     this.isBoss = !!opts.isBoss
     this.name = opts.name ?? 'Hollow'
     this.h = createHumanoid(kind, opts.scale, {
-      sword: kind === 'zombie' || kind === 'boss',
+      sword: kind === 'zombie' || kind === 'boss' || kind === 'wither',
       swordScale: kind === 'boss' ? 1.9 : 1,
     })
     this.pos.copy(spawn)
@@ -422,6 +422,10 @@ export class Enemy {
     const lim = 28.4
     this.pos.x = Math.max(-lim, Math.min(lim, this.pos.x))
     this.pos.z = Math.max(-lim, Math.min(lim, this.pos.z))
+    // the great ash wall is solid — only the fog-gate corridor pierces it
+    if (Math.abs(this.pos.x - ASH_WALL_X) < 0.6 && !(this.pos.z > 15.8 && this.pos.z < 20.2)) {
+      this.pos.x = this.pos.x < ASH_WALL_X ? ASH_WALL_X - 0.6 : ASH_WALL_X + 0.6
+    }
   }
 
   protected syncModel() {
@@ -959,5 +963,478 @@ export class SkeletonEnemy extends Enemy {
     this.h.armR.rotation.z = -0.75 * p
     this.h.legL.rotation.x = 0.5 * p
     this.h.legR.rotation.x = -0.35 * p
+  }
+}
+
+/* ================= WITHER SKELETON ================= */
+
+/** Fast charcoal swordsman of the Ash Wastes. Its heavy grey blade chews
+    through guards — blocking works, but stamina shatters fast. Roll instead. */
+export class WitherSkeletonEnemy extends Enemy {
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+    super(scene, 'wither', spawn, {
+      hp: 95,
+      dmg: 24,
+      speed: 3.4,
+      aggro: 13,
+      atkRange: 2.25,
+      windup: 0.5,
+      recover: 0.65,
+      souls: 70,
+      scale: 1.0,
+      name: 'شمشیرزن ویسری',
+    })
+  }
+
+  protected attackCooldown() {
+    return 0.7 + Math.random() * 0.7
+  }
+
+  protected windupAnim(p: number) {
+    resetPose(this.h)
+    this.h.armR.rotation.x = -2.9 * p
+    this.h.armR.rotation.z = -0.3 * p
+    this.h.root.rotation.y = 0.4 * p
+    this.h.legL.rotation.x = 0.25 * p
+  }
+
+  protected strikeAnim(p: number) {
+    animAttack(this.h, p, 'light0')
+  }
+
+  protected strikeDur() {
+    return 0.24
+  }
+
+  /** heavy guard-draining swing */
+  protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
+    const reach = this.opts.atkRange + 0.6
+    let angDiff = angleToPlayer - this.yaw
+    while (angDiff > Math.PI) angDiff -= Math.PI * 2
+    while (angDiff < -Math.PI) angDiff += Math.PI * 2
+    if (dist < reach && Math.abs(angDiff) < 1.15) {
+      const dmg = Math.round(this.opts.dmg * (0.9 + Math.random() * 0.2))
+      if (player.takeDamage(dmg, this.pos.x, this.pos.z, game, true)) game.onPlayerHit(dmg)
+    }
+  }
+
+  protected deathAnim(p: number) {
+    animDead(this.h, p)
+    this.h.head.rotation.z = 0.5 * p
+    this.h.armR.rotation.z = -0.8 * p
+  }
+}
+
+/* ================= BLAZE ================= */
+
+/** Floating molten sentry — hovers over the ash, keeps its distance and
+    spits fireballs. Rush it, block the bolts, or snipe it with pyromancy. */
+export class BlazeEnemy extends Enemy {
+  private rods: THREE.Group
+  private trailT = 0
+
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+    super(scene, 'blaze', spawn, {
+      hp: 70,
+      dmg: 16,
+      speed: 2.7,
+      aggro: 14,
+      atkRange: 2.0,
+      windup: 0.85,
+      recover: 0.5,
+      souls: 60,
+      scale: 0.95,
+      name: 'شعله‌ی سرگردان',
+    })
+    // floating core — limbs are hidden, smoke rods orbit instead
+    this.h.armL.visible = false
+    this.h.armR.visible = false
+    this.h.legL.visible = false
+    this.h.legR.visible = false
+    this.rods = createBlazeRods()
+    this.h.root.add(this.rods)
+  }
+
+  reset() {
+    super.reset()
+    this.rods.rotation.set(0, 0, 0)
+    this.rods.position.y = 0
+    setFlashWhite(this.h, 0)
+  }
+
+  update(dt: number, player: Player, game: Game) {
+    super.update(dt, player, game)
+    this.rods.rotation.y += dt * (this.state === 'windup' ? 9 : 2.4)
+    if (this.alive && this.state !== 'idle') {
+      this.trailT -= dt
+      if (this.trailT <= 0) {
+        this.trailT = 0.14
+        game.spawnBurst(
+          this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.1, (Math.random() - 0.5) * 0.3)),
+          0xff9a2a, 1, 0.5, 0.5, 0.09
+        )
+      }
+    }
+  }
+
+  /** hover above the ground with a lazy bob */
+  protected syncModel() {
+    this.h.group.position.copy(this.pos)
+    this.h.group.rotation.y = this.yaw
+    if (this.world) {
+      this.h.group.position.y =
+        this.world.surfaceAt(this.pos.x, this.pos.z) + 1.02 + Math.sin(this.animT * 2.3) * 0.12
+    }
+  }
+
+  protected attackCooldown() {
+    return 1.9 + Math.random() * 1.3
+  }
+
+  protected wantsAttack(dist: number, _angDiff: number): boolean {
+    return dist <= 13
+  }
+
+  /** hovering drift — holds the 6.5..11.5m firing band */
+  protected chaseMove(dt: number, dx: number, dz: number, dist: number, angleToPlayer: number) {
+    this.yaw = angleToPlayer
+    const ux = dx / (dist || 1)
+    const uz = dz / (dist || 1)
+    if (dist < 6.5) {
+      this.pos.x -= ux * this.speed() * 0.7 * dt
+      this.pos.z -= uz * this.speed() * 0.7 * dt
+    } else if (dist > 11.5) {
+      this.pos.x += ux * this.speed() * dt
+      this.pos.z += uz * this.speed() * dt
+    } else {
+      const sway = Math.sin(this.animT * 1.4) * 0.5
+      this.pos.x += -uz * sway * dt
+      this.pos.z += ux * sway * dt
+    }
+    this.h.root.rotation.x = 0.1
+  }
+
+  protected windupAnim(p: number) {
+    resetPose(this.h)
+    this.h.head.rotation.x = -0.3 * p
+    setFlashWhite(this.h, p * 0.55) // heating up
+  }
+
+  protected strikeAnim(p: number) {
+    resetPose(this.h)
+    this.h.head.rotation.x = 0.15 * Math.sin(p * Math.PI)
+  }
+
+  /** the fireball is released at the impact moment */
+  protected doStrike(player: Player, game: Game, _dist: number, _angleToPlayer: number) {
+    const from = this.pos.clone().add(new THREE.Vector3(0, 1.35, 0))
+    const to = player.pos.clone().add(new THREE.Vector3(0, 0.95, 0))
+    game.spawnFireball(from, to, Math.round(this.opts.dmg * (0.9 + Math.random() * 0.25)))
+    game.sfx.fireShoot()
+  }
+
+  protected recoverAnim(p: number) {
+    resetPose(this.h)
+    this.h.head.rotation.x = 0.1 * (1 - p)
+  }
+
+  protected deathAnim(p: number) {
+    animDead(this.h, p)
+    this.rods.rotation.y += 0.25 * p
+    this.rods.position.y = -0.5 * p
+  }
+}
+
+/* ================= BOSS 2: THE FLAME KING ================= */
+
+type FlameMove = 'volley' | 'sweep' | 'slam' | 'dash'
+
+export class BossFlameEnemy extends Enemy {
+  private pick: FlameMove = 'volley'
+  private followUp: FlameMove | null = null // queued phase-2 combo
+  private poise = 0
+  private maxPoise = 170
+  private phase2Done = false
+  private introDone = false
+  private dashDir = new THREE.Vector3(0, 0, 1)
+  private chargeHit = false
+  private dustT = 0
+
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+    super(scene, 'bossflame', spawn, {
+      hp: 850,
+      dmg: 34,
+      speed: 3.2,
+      aggro: 60,
+      atkRange: 3.0,
+      windup: 0.8,
+      recover: 0.9,
+      souls: 4500,
+      scale: 2.35,
+      isBoss: true,
+      name: 'پادشاه شعله',
+    })
+    this.active = false
+  }
+
+  phase2() {
+    return this.hp < this.maxHp * 0.5
+  }
+
+  reset() {
+    super.reset()
+    this.active = false
+    this.pick = 'volley'
+    this.followUp = null
+    this.poise = 0
+    this.phase2Done = false
+    this.introDone = false
+    this.chargeHit = false
+    setFlash(this.h, 0)
+  }
+
+  update(dt: number, player: Player, game: Game) {
+    // ---- intro roar on first activation ----
+    if (this.active && !this.introDone && !this.dead) {
+      this.introDone = true
+      this.state = 'roar'
+      this.stateT = 0
+      game.onBoss2Intro(this.pos)
+    }
+    // ---- phase-2 awakening ----
+    if (!this.phase2Done && !this.dead && this.hp > 0 && this.hp < this.maxHp * 0.5) {
+      this.phase2Done = true
+      this.state = 'roar'
+      this.stateT = 0
+      game.onBoss2Phase2()
+    }
+    super.update(dt, player, game)
+    // ---- phase-2 smoldering aura ----
+    if (this.phase2Done && !this.dead) {
+      const pulse = 0.14 + Math.sin(this.animT * 6) * 0.07
+      setFlash(this.h, this.flash * 0.55 + pulse)
+    }
+  }
+
+  /** poise/stagger — same rules as the first lord */
+  takeDamage(dmg: number, game: Game, fromX: number, fromZ: number) {
+    const wasRoar = this.state === 'roar'
+    const roarT = this.stateT
+    const wasStaggered = this.state === 'stagger'
+    super.takeDamage(dmg, game, fromX, fromZ)
+    if (this.dead) return
+    if (wasRoar) {
+      this.state = 'roar'
+      this.stateT = roarT
+      return
+    }
+    if (wasStaggered) {
+      this.state = 'stagger'
+      return
+    }
+    this.poise += dmg
+    if (this.poise >= this.maxPoise) {
+      this.poise = 0
+      this.state = 'stagger'
+      this.stateT = 0
+      game.onBossStagger(this.pos)
+    }
+  }
+
+  protected speed() {
+    return this.opts.speed * (this.phase2() ? 1.28 : 1)
+  }
+
+  protected attackCooldown() {
+    if (this.phase2() && this.followUp) return 0.15
+    return this.phase2() ? 0.4 + Math.random() * 0.3 : 0.9 + Math.random() * 0.5
+  }
+
+  protected wantsAttack(dist: number, angDiff: number): boolean {
+    if (dist > 6.5) return true // anti-kite: volley or dash
+    if (this.phase2() && dist > 5.2) return true
+    if (dist <= 3.4) return true
+    return Math.abs(angDiff) > 1.5 && dist < 4.8
+  }
+
+  protected windupDur() {
+    const base =
+      this.pick === 'volley' ? 0.85 : this.pick === 'sweep' ? 0.6 : this.pick === 'slam' ? 0.9 : 0.65
+    return this.phase2() ? base * 0.75 : base
+  }
+
+  protected strikeDur() {
+    switch (this.pick) {
+      case 'volley': return 0.42
+      case 'sweep': return 0.4
+      case 'slam': return 0.6
+      case 'dash': return 0.55
+    }
+  }
+
+  protected strikeImpactP() {
+    if (this.pick === 'volley') return 0.5
+    if (this.pick === 'sweep') return 0.45
+    if (this.pick === 'slam') return 0.55
+    return 2 // dash damage is contact-based
+  }
+
+  protected onWindupStart(_game: Game | undefined, dist: number, _angDiff: number) {
+    const chained = this.followUp
+    this.followUp = null
+    if (dist > 6.5) {
+      this.pick = Math.random() < 0.55 ? 'volley' : 'dash'
+    } else if (chained && dist < 5.0) {
+      this.pick = chained
+    } else if (dist < 2.4) {
+      this.pick = Math.random() < 0.6 ? 'slam' : 'sweep'
+    } else {
+      this.pick = Math.random() < 0.5 ? 'sweep' : 'slam'
+    }
+    if (this.phase2()) {
+      if (this.pick === 'sweep' && Math.random() < 0.35) this.followUp = 'volley'
+      else if (this.pick === 'volley' && Math.random() < 0.3) this.followUp = 'dash'
+    }
+  }
+
+  protected onStrikeStart(player: Player, game: Game) {
+    if (this.pick === 'dash') {
+      const dx = player.pos.x - this.pos.x
+      const dz = player.pos.z - this.pos.z
+      const l = Math.hypot(dx, dz) || 1
+      this.dashDir.set(dx / l, 0, dz / l)
+      this.chargeHit = false
+      game.sfx.dash()
+    }
+  }
+
+  protected windupAnim(p: number) {
+    resetPose(this.h)
+    if (this.pick === 'volley') {
+      // both arms raised, gathering embers
+      this.h.armR.rotation.x = -2.9 * p
+      this.h.armL.rotation.x = -2.9 * p
+      this.h.head.rotation.x = -0.35 * p
+      setFlashWhite(this.h, p * 0.35)
+    } else if (this.pick === 'sweep') {
+      this.h.armR.rotation.x = -2.3 * p
+      this.h.armR.rotation.z = -0.85 * p
+      this.h.root.rotation.y = 0.55 * p
+    } else if (this.pick === 'slam') {
+      this.h.armR.rotation.x = -3.0 * p
+      this.h.armL.rotation.x = -2.8 * p
+      this.h.root.rotation.x = -0.16 * p
+    } else {
+      // flame dash crouch
+      this.h.root.position.y = -0.2 * p
+      this.h.root.rotation.x = 0.4 * p
+      this.h.armR.rotation.x = -1.0 * p
+      this.h.legL.rotation.x = 0.65 * p
+      this.h.legR.rotation.x = -0.5 * p
+      setFlashWhite(this.h, p * 0.3)
+    }
+  }
+
+  protected strikeAnim(p: number) {
+    switch (this.pick) {
+      case 'volley':
+        resetPose(this.h)
+        this.h.armR.rotation.x = lerp(-2.9, -1.2, Math.min(1, p * 2.5))
+        this.h.armL.rotation.x = lerp(-2.9, -1.2, Math.min(1, p * 2.5))
+        break
+      case 'sweep': animSweep(this.h, p); break
+      case 'slam': animSlam(this.h, p); break
+      case 'dash': animCharge(this.h, p); break
+    }
+  }
+
+  protected strikeMove(dt: number, p: number, player: Player, game: Game) {
+    if (this.pick !== 'dash') return
+    const sp = 13.5 * (1 - 0.35 * p)
+    this.pos.x += this.dashDir.x * sp * dt
+    this.pos.z += this.dashDir.z * sp * dt
+    this.dustT -= dt
+    if (this.dustT <= 0) {
+      this.dustT = 0.06
+      game.spawnBurst(
+        this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.9, (Math.random() - 0.5) * 0.8)),
+        0xff8a2a, 4, 1.8, 0.45, 0.16
+      )
+    }
+    if (!this.chargeHit) {
+      const d = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z)
+      if (d < 1.9) {
+        this.chargeHit = true
+        const dmg = Math.round(this.opts.dmg * 0.8 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+        game.spawnBurst(this.pos.clone().add(new THREE.Vector3(0, 1.8, 0)), 0xffd27a, 12, 3, 0.4)
+      }
+    }
+  }
+
+  protected recoverAnim(p: number) {
+    resetPose(this.h)
+    if (this.pick === 'slam') {
+      this.h.armR.rotation.x = 0.5 * (1 - p)
+      this.h.armL.rotation.x = 0.45 * (1 - p)
+      this.h.root.rotation.x = 0.22 * (1 - p)
+    } else if (this.pick === 'sweep') {
+      this.h.armR.rotation.x = -0.55 * (1 - p)
+      this.h.armR.rotation.z = 0.8 * (1 - p)
+      this.h.root.rotation.y = -1.05 * (1 - p)
+    } else if (this.pick === 'dash') {
+      this.h.root.rotation.x = 0.32 * (1 - p)
+      this.h.armR.rotation.x = -1.5 * (1 - p)
+    } else {
+      this.h.armR.rotation.x = -1.1 * (1 - p)
+      this.h.armL.rotation.x = -1.1 * (1 - p)
+    }
+  }
+
+  protected roarDur() { return 1.9 }
+  protected roarAnim(p: number) { animRoar(this.h, p) }
+  protected staggerDur() { return 1.8 }
+  protected staggerAnim(p: number) { animStagger(this.h, p) }
+  protected deathDur() { return 1.7 }
+  protected deathAnim(p: number) { animBossDead(this.h, p) }
+
+  protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
+    if (this.pick === 'volley') {
+      // fan of fireballs from both hands
+      const from = this.pos.clone().add(new THREE.Vector3(0, 2.6, 0))
+      const to = player.pos.clone().add(new THREE.Vector3(0, 0.95, 0))
+      const dir = to.clone().sub(from)
+      dir.y = 0
+      const dl = dir.length() || 1
+      dir.divideScalar(dl)
+      const n = this.phase2() ? 5 : 3
+      const spread = 0.24
+      for (let i = 0; i < n; i++) {
+        const a = (i - (n - 1) / 2) * spread
+        const ca = Math.cos(a)
+        const sa = Math.sin(a)
+        const rd = new THREE.Vector3(ca * dir.x + sa * dir.z, 0, -sa * dir.x + ca * dir.z)
+        const target = from.clone().addScaledVector(rd, Math.max(6, dl))
+        game.spawnFireball(from.clone(), target, Math.round(this.opts.dmg * 0.5))
+      }
+      game.sfx.fireShoot()
+    } else if (this.pick === 'slam') {
+      // AOE impact + a burning lava pool left behind
+      if (dist < 4.3) {
+        const dmg = Math.round(this.opts.dmg * 1.1 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      }
+      game.onBoss2Slam(this.pos)
+    } else if (this.pick === 'sweep') {
+      const reach = this.opts.atkRange + 1.0
+      let angDiff = angleToPlayer - this.yaw
+      while (angDiff > Math.PI) angDiff -= Math.PI * 2
+      while (angDiff < -Math.PI) angDiff += Math.PI * 2
+      if (dist < reach && Math.abs(angDiff) < 2.15) {
+        const dmg = Math.round(this.opts.dmg * 0.88 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      }
+    }
+    // dash damage is contact-based in strikeMove
   }
 }

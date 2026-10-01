@@ -85,6 +85,21 @@ export function createBow(): THREE.Group {
   return g
 }
 
+/** the Blaze's orbiting smoke rods — attached to the body root, spun in code */
+export function createBlazeRods(): THREE.Group {
+  const g = new THREE.Group()
+  const hot = new THREE.MeshLambertMaterial({ color: 0xc47a1e })
+  const dark = new THREE.MeshLambertMaterial({ color: 0x8a5414 })
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2
+    const rod = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.14), i % 2 ? hot : dark)
+    rod.position.set(Math.cos(a) * 0.33, 0.95, Math.sin(a) * 0.33)
+    rod.castShadow = true
+    g.add(rod)
+  }
+  return g
+}
+
 export function createHumanoid(
   kind: CharKind,
   scale = 1,
@@ -171,6 +186,20 @@ export function createHumanoid(
     sh.position.set(0.175, -0.42, 0.02)
     sh.rotation.y = -0.45
     armL.add(sh)
+  }
+
+  // the Flame King wears a crown of blocky embers
+  if (kind === 'bossflame') {
+    const ember = new THREE.MeshLambertMaterial({ color: 0xff7a1e })
+    const emberHot = new THREE.MeshLambertMaterial({ color: 0xffc23d })
+    const flame = (dx: number, h: number, m: THREE.Material) => {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(0.09, h, 0.09), m)
+      f.position.set(dx, 0.25 + h / 2, 0)
+      head.add(f)
+    }
+    flame(-0.18, 0.22, ember)
+    flame(0, 0.34, emberHot)
+    flame(0.18, 0.2, ember)
   }
 
   group.scale.setScalar(scale)
@@ -549,6 +578,26 @@ export function animPoke(h: Humanoid, p: number) {
     h.root.rotation.x = 0.14 * Math.sin(q * Math.PI)
   }
   h.root.rotation.y = -0.2 * Math.sin(p * Math.PI)
+}
+
+/** pyromancy cast: gather both arms overhead, then shove the flame forward */
+export function animCast(h: Humanoid, p: number) {
+  resetPose(h)
+  if (p < 0.55) {
+    const q = p / 0.55
+    h.armL.rotation.x = -2.4 * q
+    h.armR.rotation.x = -2.4 * q
+    h.armL.rotation.z = 0.3 * q
+    h.armR.rotation.z = -0.3 * q
+    h.root.rotation.x = -0.12 * q
+  } else {
+    const q = Math.min(1, (p - 0.55) / 0.2)
+    h.armL.rotation.x = lerp(-2.4, -1.35, q)
+    h.armR.rotation.x = lerp(-2.4, -1.35, q)
+    h.armL.rotation.z = lerp(0.3, 0.12, q)
+    h.armR.rotation.z = lerp(-0.3, -0.12, q)
+    h.root.rotation.x = lerp(-0.12, 0.1, q)
+  }
 }
 
 export function setOpacity(h: Humanoid, opacity: number) {

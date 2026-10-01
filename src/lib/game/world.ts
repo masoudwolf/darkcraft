@@ -7,6 +7,17 @@ export const BOSS_CENTER = { x: 0, z: -18 }
 export const GATE_Z = -10
 export const BOSS_ARENA = { minX: -8, maxX: 8, minZ: -23.5, maxZ: GATE_Z + 0.2 }
 
+/* ---- the Ash Wastes: a scorched land east of the great wall ---- */
+export const ASH_WALL_X = 11 // wall column; only the fog-gate corridor pierces it
+export const GATE2 = { x: ASH_WALL_X, z: 18 }
+export const BOSS2_CENTER = { x: 21, z: 18 }
+export const PYRO_ITEM = { x: 13.5, z: 21.5 }
+export const LAVA_POOLS: { x0: number; z0: number; x1: number; z1: number }[] = [
+  { x0: 15, z0: 2, x1: 17, z1: 3 },
+  { x0: 25, z0: 26, x1: 26, z1: 27 },
+  { x0: 24, z0: 6, x1: 25, z1: 7 },
+]
+
 interface Vec3Lite { x: number; y: number; z: number }
 
 export class World {
@@ -16,16 +27,21 @@ export class World {
   private clouds: { mesh: THREE.Mesh; speed: number }[] = []
   private rng = mulberry32(1337)
   fogGate: THREE.Mesh | null = null
+  fogGate2: THREE.Mesh | null = null
 
   constructor() {
     this.genHeightmap()
     this.buildTerrain()
     this.buildWalls()
+    this.buildAshWall()
     this.buildTrees()
+    this.buildDeadTrees()
     this.buildRuins()
     this.buildBonfireBase()
     this.buildBossArena()
+    this.buildBoss2Arena()
     this.buildFogGate()
+    this.buildGate2()
     this.buildSky()
   }
 
@@ -54,7 +70,24 @@ export class World {
         // flatten boss arena
         const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
         if (dA < 9.5) h = Math.round(lerp(2, h, smoothstep(6, 9.5, dA)))
+        // flatten the Flame King's arena + its approach corridor
+        const dA2 = Math.hypot(x - BOSS2_CENTER.x, z - BOSS2_CENTER.z)
+        if (dA2 < 9.5) h = Math.round(lerp(2, h, smoothstep(6, 9.5, dA2)))
+        const dG = Math.abs(z - GATE2.z)
+        if (x >= ASH_WALL_X - 1 && x <= ASH_WALL_X + 3 && dG < 3) {
+          h = Math.round(lerp(2, h, smoothstep(1.5, 3, dG)))
+        }
         this.heights[this.idx(x, z)] = Math.max(0, Math.min(6, h))
+      }
+    }
+    // lava pools sit in shallow craters
+    for (const p of LAVA_POOLS) {
+      for (let x = p.x0 - 1; x <= p.x1 + 1; x++) {
+        for (let z = p.z0 - 1; z <= p.z1 + 1; z++) {
+          if (x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1) {
+            this.heights[this.idx(x, z)] = 2
+          }
+        }
       }
     }
   }
@@ -127,11 +160,20 @@ export class World {
       for (let x = -WORLD_HALF; x < WORLD_HALF; x++) {
         const h = this.heights[this.idx(x, z)]
         const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
+        const dA2 = Math.hypot(x - BOSS2_CENTER.x, z - BOSS2_CENTER.z)
         const isPath = Math.abs(x) <= 1 && z > GATE_Z && z < BONFIRE.z + 1
-        if (dA < 8.5) {
+        const isPath2 = z >= 17 && z <= 19 && x >= ASH_WALL_X
+        const lavaCell = LAVA_POOLS.some((p) => x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1)
+        if (lavaCell) {
+          put2(x, h + 0.51, z, 'lava')
+        } else if (dA < 8.5 || dA2 < 8.5) {
           put2(x, h + 0.5, z, 'stonebrick')
         } else if (isPath) {
           put2(x, h + 0.5, z, 'dirt')
+        } else if (isPath2) {
+          put2(x, h + 0.5, z, 'stonebrick')
+        } else if (x >= ASH_WALL_X) {
+          put2(x, h + 0.5, z, 'nether')
         } else {
           put2(x, h + 0.5, z, 'grass')
         }
@@ -141,6 +183,22 @@ export class World {
       }
     }
     this.buildChunked(batch)
+  }
+
+  /** the great wall between the green hollow and the Ash Wastes —
+      only a narrow corridor at the fog gate pierces it */
+  private buildAshWall() {
+    const cobble: Vec3Lite[] = []
+    const stone: Vec3Lite[] = []
+    for (let z = -WORLD_HALF; z < WORLD_HALF; z++) {
+      if (z >= 16 && z <= 20) continue // gate opening
+      const h = this.heights[this.idx(ASH_WALL_X, z)]
+      const top = 4 + Math.floor(this.rng() * 2)
+      for (let y = 1; y <= top; y++) this.put(cobble, ASH_WALL_X, h + y - 0.5 + 1, z)
+      if (z % 3 === 0) this.put(stone, ASH_WALL_X, h + top + 0.5 + 1, z) // battlement caps
+    }
+    this.buildInstanced(this.mats.cobble, cobble)
+    this.buildInstanced(this.mats.stone, stone)
   }
 
   private buildWalls() {
@@ -162,7 +220,7 @@ export class World {
   private buildTrees() {
     const log: Vec3Lite[] = [], leaves: Vec3Lite[] = []
     const spots: [number, number][] = [
-      [-20, -2], [18, 5], [-15, 12], [21, -13], [-21, -16], [14, 21], [-9, 21], [24, 15],
+      [-20, -2], [-15, 12], [-21, -16], [-9, 21],
     ]
     for (const [tx, tz] of spots) {
       const h = this.heights[this.idx(tx, tz)]
@@ -182,6 +240,23 @@ export class World {
     }
     this.buildInstanced(this.mats.log, log)
     this.buildInstanced(this.mats.leaves, leaves)
+  }
+
+  /** burnt, leafless trunks scattered through the Ash Wastes */
+  private buildDeadTrees() {
+    const log: Vec3Lite[] = []
+    const spots: [number, number][] = [
+      [16, 13], [26, 2], [19, 27], [25, 21], [15, 26], [22, -6],
+    ]
+    for (const [tx, tz] of spots) {
+      const h = this.heights[this.idx(tx, tz)]
+      const trunkH = 3 + Math.floor(this.rng() * 2)
+      for (let y = 1; y <= trunkH; y++) this.put(log, tx, h + y - 0.5 + 1, tz)
+      // one or two bare branches
+      this.put(log, tx + 1, h + trunkH - 0.5 + 1, tz)
+      if (this.rng() < 0.6) this.put(log, tx - 1, h + trunkH - 1 - 0.5 + 1, tz)
+    }
+    this.buildInstanced(this.mats.log, log)
   }
 
   private buildRuins() {
@@ -237,6 +312,22 @@ export class World {
     this.buildInstanced(this.mats.glow, glow)
   }
 
+  /** the Flame King's arena — scorched pillars around a flat stone floor */
+  private buildBoss2Arena() {
+    const deco: Vec3Lite[] = []
+    const glow: Vec3Lite[] = []
+    const h = this.heights[this.idx(BOSS2_CENTER.x, BOSS2_CENTER.z)]
+    const pillar = (x: number, z: number) => {
+      for (let y = 1; y <= 4; y++) this.put(deco, x, h + y - 0.5 + 1, z)
+      this.put(glow, x, h + 4.5 + 1, z)
+    }
+    pillar(14, 11); pillar(28, 11); pillar(14, 25); pillar(28, 25)
+    // gate posts on the corridor
+    pillar(ASH_WALL_X, 15); pillar(ASH_WALL_X, 21)
+    this.buildInstanced(this.mats.stonebrick, deco)
+    this.buildInstanced(this.mats.glow, glow)
+  }
+
   private buildFogGate() {
     const h = this.heights[this.idx(0, GATE_Z)]
     const geo = new THREE.PlaneGeometry(5.6, 4.4)
@@ -244,6 +335,16 @@ export class World {
     mesh.position.set(0, h + 3.2, GATE_Z)
     this.group.add(mesh)
     this.fogGate = mesh
+  }
+
+  /** second fog wall — faces east/west across the corridor in the great wall */
+  private buildGate2() {
+    const h = this.heights[this.idx(GATE2.x, GATE2.z)]
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.4), this.mats.fog)
+    mesh.position.set(GATE2.x, h + 3.2, GATE2.z)
+    mesh.rotation.y = Math.PI / 2
+    this.group.add(mesh)
+    this.fogGate2 = mesh
   }
 
   /* ---------- sky ---------- */
@@ -307,6 +408,11 @@ export class World {
 
   setFogGateVisible(v: boolean) {
     if (this.fogGate) this.fogGate.visible = v
+  }
+
+  setFogGatesVisible(g1: boolean, g2: boolean) {
+    if (this.fogGate) this.fogGate.visible = g1
+    if (this.fogGate2) this.fogGate2.visible = g2
   }
 }
 

@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { Engine } from './engine'
-import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF } from './world'
+import { World, BONFIRE, GATE_Z, BOSS_CENTER, WORLD_HALF, ASH_WALL_X, GATE2, BOSS2_CENTER, PYRO_ITEM, LAVA_POOLS } from './world'
 import { Player } from './player'
-import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy } from './enemy'
+import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
 import { createSword } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
@@ -29,8 +29,11 @@ export interface HudState {
   bossHp: number
   bossMax: number
   prompt: string | null
-  banner: 'died' | 'bossfell' | null
+  banner: 'died' | 'bossfell' | 'bossfell2' | null
   blocking: boolean
+  pyro: number
+  maxPyro: number
+  pyroUnlocked: boolean
 }
 
 export interface SaveData {
@@ -40,6 +43,8 @@ export interface SaveData {
   end: number
   str: number
   estusUp?: boolean
+  pyro?: boolean
+  ember?: boolean
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -247,6 +252,12 @@ class Arrow {
     this.mesh.position.copy(this.pos)
     this.mesh.lookAt(this.pos.x + this.vel.x, this.pos.y + this.vel.y, this.pos.z + this.vel.z)
 
+    // the great ash wall stops arrows outside the gate corridor
+    if (Math.abs(this.pos.x - ASH_WALL_X) < 0.4 && !(this.pos.z > 15.9 && this.pos.z < 20.1)) {
+      this.stuck = true
+      return true
+    }
+
     // ground impact — stick in with a dust puff
     const ground = this.game.world.surfaceAt(this.pos.x, this.pos.z)
     if (this.pos.y <= ground + 0.06) {
@@ -287,6 +298,128 @@ class Arrow {
   }
 }
 
+/* Fireballs — pyromancy bolts. Friendly ones (the player's) explode on the
+   first enemy they graze with splash damage; hostile ones are blockable and
+   roll-dodgeable like arrows. Both burn out on the ground or the ash wall. */
+class Fireball {
+  private mesh: THREE.Group
+  private vel = new THREE.Vector3()
+  private t = 0
+  private trailT = 0
+  private done = false
+
+  constructor(
+    private game: Game,
+    private pos: THREE.Vector3,
+    target: THREE.Vector3,
+    private dmg: number,
+    private friendly: boolean
+  ) {
+    const g = new THREE.Group()
+    const core = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.24, 0.24),
+      new THREE.MeshBasicMaterial({ color: 0xffd23d })
+    )
+    const mid = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.4, 0.4),
+      new THREE.MeshBasicMaterial({ color: 0xff8a1e, transparent: true, opacity: 0.5, depthWrite: false })
+    )
+    const out = new THREE.Mesh(
+      new THREE.BoxGeometry(0.62, 0.62, 0.62),
+      new THREE.MeshBasicMaterial({ color: 0xff5a10, transparent: true, opacity: 0.22, depthWrite: false })
+    )
+    g.add(out, mid, core)
+    g.position.copy(pos)
+    game.engine.scene.add(g)
+    this.mesh = g
+    this.vel.subVectors(target, pos)
+    const dist = this.vel.length()
+    this.vel.normalize().multiplyScalar(14)
+    // a gentle loft so bolts crest the blocky terrain instead of
+    // detonating on the first hill between caster and target
+    this.vel.y += Math.max(0, target.y - pos.y) * 0.5 + dist * 0.1
+    if (!friendly) this.vel.y += 0.6
+  }
+
+  update(dt: number): boolean {
+    if (this.done) return false
+    this.t += dt
+    this.vel.y -= 4.5 * dt // light gravity so the loft arcs over and comes down
+    this.pos.addScaledVector(this.vel, dt)
+    this.mesh.position.copy(this.pos)
+    this.mesh.rotation.y += dt * 9
+    this.trailT -= dt
+    if (this.trailT <= 0) {
+      this.trailT = 0.05
+      this.game.spawnBurst(this.pos.clone(), 0xff8a2a, 1, 0.3, 0.35, 0.09)
+    }
+
+    // the great ash wall burns them out outside the corridor
+    if (Math.abs(this.pos.x - ASH_WALL_X) < 0.45 && !(this.pos.z > 15.9 && this.pos.z < 20.1)) {
+      this.explode(null)
+      return false
+    }
+
+    const ground = this.game.world.surfaceAt(this.pos.x, this.pos.z) + 0.18
+    if (this.pos.y <= ground || this.t > 3) {
+      this.explode(null)
+      return false
+    }
+
+    if (this.friendly) {
+      for (const e of this.game.allEnemies) {
+        if (!e.alive) continue
+        const dx = e.pos.x - this.pos.x
+        const dz = e.pos.z - this.pos.z
+        const reach = e.isBoss ? 1.5 : 0.85
+        const topY = e.isBoss ? 4.4 : 2.6
+        if (dx * dx + dz * dz < reach * reach && this.pos.y < e.pos.y + topY) {
+          this.explode(e)
+          return false
+        }
+      }
+    } else {
+      const p = this.game.player
+      const hy = Math.max(p.pos.y + 0.2, Math.min(p.pos.y + 1.9, this.pos.y))
+      const d2 =
+        (this.pos.x - p.pos.x) ** 2 + (this.pos.z - p.pos.z) ** 2 + (this.pos.y - hy) ** 2
+      if (d2 < 0.6 * 0.6) {
+        const vl = Math.hypot(this.vel.x, this.vel.z) || 1
+        const wasBlocking = p.state === 'block'
+        if (p.takeDamage(this.dmg, this.pos.x - (this.vel.x / vl) * 1.2, this.pos.z - (this.vel.z / vl) * 1.2, this.game)) {
+          this.game.onPlayerHit(this.dmg)
+        } else if (wasBlocking) {
+          this.game.onArrowBlocked()
+        }
+        this.explode(null)
+        return false
+      }
+    }
+    return true
+  }
+
+  private explode(primary: Enemy | null) {
+    this.done = true
+    this.game.onFireballBoom(this.pos, this.friendly)
+    if (this.friendly) {
+      if (primary) primary.takeDamage(this.dmg, this.game, this.pos.x, this.pos.z)
+      for (const e of this.game.allEnemies) {
+        if (!e.alive || e === primary) continue
+        const d = Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z)
+        if (d < 2.2) e.takeDamage(Math.max(1, Math.round(this.dmg * 0.45)), this.game, this.pos.x, this.pos.z)
+      }
+    }
+  }
+
+  dispose(scene: THREE.Scene) {
+    scene.remove(this.mesh)
+    this.mesh.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.geometry) m.geometry.dispose()
+    })
+  }
+}
+
 /* ================= GAME ================= */
 
 export class Game {
@@ -296,6 +429,7 @@ export class Game {
   sfx = new Sfx()
   enemies: Enemy[] = []
   boss: BossEnemy
+  boss2: BossFlameEnemy
   phase: Phase = 'menu'
   onState?: (s: HudState) => void
 
@@ -311,11 +445,14 @@ export class Game {
   private hurtFlash = 0
   private deadT = 0
   private bannerT = 0
-  private banner: 'died' | 'bossfell' | null = null
+  private banner: 'died' | 'bossfell' | 'bossfell2' | null = null
   private prompt: string | null = null
   private fogPassT = 0
+  private fogPass2T = 0
   private bossActive = false
   private bossFell = false
+  private boss2Active = false
+  private boss2Fell = false
   private lockLastMove = 0
 
   private bursts: Burst[] = []
@@ -323,10 +460,19 @@ export class Game {
   private orbs: SoulOrb[] = []
   private waves: Shockwave[] = []
   private arrows: Arrow[] = []
+  private fireballs: Fireball[] = []
+  private lavaPools: { mesh: THREE.Mesh; x: number; z: number; t: number }[] = []
+  private lavaTick = 0
   private bloodstain: { mesh: THREE.Group; amount: number } | null = null
   private boomLights: { light: THREE.PointLight; t: number }[] = []
   private estusShard: { mesh: THREE.Group; light: THREE.PointLight } | null = null
   private estusUp = false
+  private pyroItem: { mesh: THREE.Group; light: THREE.PointLight } | null = null
+  private emberItem: { mesh: THREE.Group; light: THREE.PointLight } | null = null
+  private pyroUnlocked = false
+  private emberTaken = false
+  private castFailT = -9
+  private tmpColor = new THREE.Color()
 
   private reticle: HTMLDivElement
   private vignette: HTMLDivElement
@@ -430,7 +576,7 @@ export class Game {
 
     // creepers — fast, fuse up and explode; keep your distance or block!
     const creeperPts: [number, number][] = [
-      [13, -4], [-14, -9], [9, 12],
+      [7, -6], [-14, -9], [9, 12],
     ]
     for (const [x, z] of creeperPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -443,7 +589,7 @@ export class Game {
     // skeleton archers — hold mid-range and pepper you with arrows;
     // rush them to force a panicky smack, or block/roll the volleys
     const skelPts: [number, number][] = [
-      [16, 4], [-17, -4], [11, 14],
+      [16, 4], [-17, -4], [7, 16],
     ]
     for (const [x, z] of skelPts) {
       const p = new THREE.Vector3(x, 0, z)
@@ -453,11 +599,45 @@ export class Game {
       this.enemies.push(s)
     }
 
-    // boss
+    // wither skeletons — the Ash Wastes guards; their heavy grey blades
+    // chew through shields, so roll instead of block
+    const witherPts: [number, number][] = [
+      [16, 10], [16, 27], [27, 9],
+    ]
+    for (const [x, z] of witherPts) {
+      const p = new THREE.Vector3(x, 0, z)
+      p.y = this.world.surfaceAt(x, z)
+      const w = new WitherSkeletonEnemy(scene, p)
+      w.world = this.world
+      this.enemies.push(w)
+    }
+
+    // blazes — floating sentries spitting fireballs
+    const blazePts: [number, number][] = [
+      [20, 2], [13, 26],
+    ]
+    for (const [x, z] of blazePts) {
+      const p = new THREE.Vector3(x, 0, z)
+      p.y = this.world.surfaceAt(x, z)
+      const b = new BlazeEnemy(scene, p)
+      b.world = this.world
+      this.enemies.push(b)
+    }
+
+    // boss 1 — the ancient zombie knight beyond the north fog
     const bossSpawn = new THREE.Vector3(BOSS_CENTER.x, 0, BOSS_CENTER.z)
     bossSpawn.y = this.world.surfaceAt(BOSS_CENTER.x, BOSS_CENTER.z)
     this.boss = new BossEnemy(scene, bossSpawn)
     this.boss.world = this.world
+
+    // boss 2 — the Flame King of the Ash Wastes, behind the east fog
+    const boss2Spawn = new THREE.Vector3(BOSS2_CENTER.x, 0, BOSS2_CENTER.z)
+    boss2Spawn.y = this.world.surfaceAt(BOSS2_CENTER.x, BOSS2_CENTER.z)
+    this.boss2 = new BossFlameEnemy(scene, boss2Spawn)
+    this.boss2.world = this.world
+
+    // the pyromancy flame, waiting in the wastes' entrance ruins
+    this.buildPyroItem()
 
     // DOM overlays (reticle + hurt vignette)
     this.reticle = document.createElement('div')
@@ -476,7 +656,17 @@ export class Game {
   }
 
   get allEnemies(): Enemy[] {
-    return this.bossFell ? this.enemies : [...this.enemies, this.boss]
+    const list = [...this.enemies]
+    if (!this.bossFell) list.push(this.boss)
+    if (!this.boss2Fell) list.push(this.boss2)
+    return list
+  }
+
+  /** whichever lord is currently fighting — drives the HUD boss bar */
+  private get activeBoss(): Enemy | null {
+    if (this.bossActive && !this.bossFell) return this.boss
+    if (this.boss2Active && !this.boss2Fell) return this.boss2
+    return null
   }
 
   /* ================= PUBLIC API (for React) ================= */
@@ -514,8 +704,12 @@ export class Game {
     this.player.fullRestore()
     for (const e of this.enemies) e.reset()
     if (!this.bossFell) this.boss.reset()
+    if (!this.boss2Fell) this.boss2.reset()
     this.bossActive = false
-    this.world.setFogGateVisible(!this.bossFell)
+    this.boss2Active = false
+    this.bossActiveBarrier = false
+    this.boss2Barrier = false
+    this.world.setFogGatesVisible(!this.bossFell, !this.boss2Fell)
     this.save()
     this.sfx.bonfire()
     // free the cursor! pointer lock retargets every click to the canvas,
@@ -558,11 +752,27 @@ export class Game {
       this.emit(true)
       return
     }
-    // estus shard dropped by the boss
+    // estus shard dropped by the first boss
     if (this.estusShard) {
       const sp = this.estusShard.mesh.position
       if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
         this.collectEstusShard()
+        return
+      }
+    }
+    // the pyromancy flame loot
+    if (this.pyroItem) {
+      const sp = this.pyroItem.mesh.position
+      if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
+        this.collectPyroItem()
+        return
+      }
+    }
+    // the Great Ember dropped by the Flame King
+    if (this.emberItem) {
+      const sp = this.emberItem.mesh.position
+      if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
+        this.collectEmber()
         return
       }
     }
@@ -572,9 +782,18 @@ export class Game {
       this.rest()
       return
     }
-    // fog gate
+    // fog gate 1 — the zombie knight
     if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
       this.fogPassT = 0.75
+      this.sfx.bossRoar()
+      return
+    }
+    // fog gate 2 — the Flame King
+    if (!this.boss2Active && !this.boss2Fell &&
+      this.player.pos.x > GATE2.x - 2.4 && this.player.pos.x < GATE2.x + 2.0 &&
+      this.player.pos.z > 16.2 && this.player.pos.z < 19.8
+    ) {
+      this.fogPass2T = 0.75
       this.sfx.bossRoar()
     }
   }
@@ -641,6 +860,8 @@ export class Game {
         end: this.player.end,
         str: this.player.str,
         estusUp: this.estusUp,
+        pyro: this.pyroUnlocked,
+        ember: this.emberTaken,
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -666,6 +887,13 @@ export class Game {
       // permanent estus-shard upgrade
       this.estusUp = !!d.estusUp
       this.player.maxEstus = this.estusUp ? 4 : 3
+      // pyromancy flags
+      this.pyroUnlocked = !!d.pyro
+      this.emberTaken = !!d.ember
+      this.player.pyroUnlocked = this.pyroUnlocked
+      this.player.maxPyro = 4 + (this.emberTaken ? 2 : 0)
+      this.player.pyro = this.player.maxPyro
+      if (this.pyroUnlocked) this.removePyroItem()
     } catch { /* ignore */ }
   }
 
@@ -777,8 +1005,9 @@ export class Game {
     )
     orb.position.copy(e.pos).add(new THREE.Vector3(0, 1.2, 0))
     this.engine.scene.add(orb)
-    this.orbs.push({ mesh: orb, t: 0, amount: e.isBoss ? 3000 : e.soulsValue(), from: orb.position.clone() })
-    if (e.isBoss) this.onBossKilled()
+    this.orbs.push({ mesh: orb, t: 0, amount: e.soulsValue(), from: orb.position.clone() })
+    if (e === this.boss) this.onBossKilled()
+    else if (e === this.boss2) this.onBoss2Killed()
     this.emit(true)
   }
 
@@ -786,12 +1015,26 @@ export class Game {
     this.bossFell = true
     this.bossActive = false
     this.bossActiveBarrier = false
-    this.world.setFogGateVisible(false)
+    this.world.setFogGatesVisible(false, !this.boss2Fell)
     this.banner = 'bossfell'
     this.bannerT = 0
     if (this.player.lockedTarget) this.player.lockedTarget = null
     this.sfx.victory()
     this.spawnEstusShard()
+    this.save()
+  }
+
+  /** the Flame King falls — the Great Ember is his legacy */
+  private onBoss2Killed() {
+    this.boss2Fell = true
+    this.boss2Active = false
+    this.boss2Barrier = false
+    this.world.setFogGatesVisible(!this.bossFell, false)
+    this.banner = 'bossfell2'
+    this.bannerT = 0
+    if (this.player.lockedTarget) this.player.lockedTarget = null
+    this.sfx.victory()
+    this.spawnEmber()
     this.save()
   }
 
@@ -876,6 +1119,190 @@ export class Game {
     this.emit(true)
   }
 
+  /* ================= BOSS 2 / PYROMANCY EVENTS ================= */
+
+  onBoss2Intro(pos: THREE.Vector3) {
+    this.sfx.bossRoar()
+    this.shake = Math.max(this.shake, 0.42)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 3, 0)), 0xff7a2a, 26, 3.6)
+  }
+
+  onBoss2Phase2() {
+    this.sfx.phaseRoar()
+    this.shake = Math.max(this.shake, 0.5)
+    const c = this.boss2.pos.clone().add(new THREE.Vector3(0, 2.6, 0))
+    this.spawnBurst(c, 0xff6a1a, 34, 4.5)
+    this.spawnBurst(this.boss2.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xffa044, 20, 3, 0.7, 0.2)
+  }
+
+  onBoss2Slam(pos: THREE.Vector3) {
+    this.shake = Math.max(this.shake, 0.5)
+    this.sfx.heavy()
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff8a3a, 24, 4.5, 0.6, 0.22)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.25, 0)), 0xc25a1a, 14, 2.4, 0.8, 0.28)
+    this.waves.push(new Shockwave(this, pos.clone(), 4.6, 14, 0xff9a4a))
+    // the floor stays molten for a while — keep moving!
+    this.spawnLavaPool(pos.x, pos.z)
+  }
+
+  /** a temporary molten patch left by the Flame King's slam */
+  private spawnLavaPool(x: number, z: number) {
+    const base = this.world.mats.lava as THREE.MeshBasicMaterial
+    const mat = base.clone()
+    mat.transparent = true
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4), mat)
+    m.rotation.x = -Math.PI / 2
+    m.position.set(x, this.world.surfaceAt(x, z) + 0.04, z)
+    this.engine.scene.add(m)
+    this.lavaPools.push({ mesh: m, x, z, t: 0 })
+  }
+
+  /** any enemy (Blaze, Flame King) calls this at the release moment */
+  spawnFireball(from: THREE.Vector3, target: THREE.Vector3, dmg: number) {
+    this.fireballs.push(new Fireball(this, from, target, dmg, false))
+  }
+
+  /** the player's pyromancy shot — aims at the locked target when there is one */
+  spawnPlayerFireball(p: Player) {
+    const from = p.pos.clone().add(new THREE.Vector3(0, 1.35, 0))
+    let dir: THREE.Vector3
+    let targetPoint: THREE.Vector3
+    if (p.lockedTarget && p.lockedTarget.alive) {
+      targetPoint = p.lockedTarget.pos.clone()
+      dir = targetPoint.clone().sub(from)
+      dir.y = 0
+      if (dir.lengthSq() < 0.01) {
+        dir.set(Math.sin(p.yaw), 0, Math.cos(p.yaw))
+        targetPoint = from.clone().addScaledVector(dir, 12)
+      }
+    } else {
+      dir = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw))
+      targetPoint = from.clone().addScaledVector(dir, 12)
+    }
+    dir.normalize()
+    // land the bolt at chest height above the target's ground —
+    // without this, flat shots detonate on any terrain bump
+    targetPoint.y = this.world.surfaceAt(targetPoint.x, targetPoint.z) + 1.0
+    const to = targetPoint
+    const dmg = Math.round(42 * (1 + p.str * 0.08))
+    this.fireballs.push(new Fireball(this, from, to, dmg, true))
+    this.sfx.fireShoot()
+    this.spawnBurst(from.clone().addScaledVector(dir, 0.5), 0xffb347, 6, 1.6, 0.3, 0.1)
+  }
+
+  onFireballBoom(pos: THREE.Vector3, friendly: boolean) {
+    this.sfx.fireBoom()
+    this.shake = Math.max(this.shake, friendly ? 0.14 : 0.2)
+    const at = pos.clone()
+    this.spawnBurst(at, 0xffd23d, 16, 3.4, 0.45, 0.16)
+    this.spawnBurst(at, 0xff6a1a, 12, 2.4, 0.6, 0.2)
+    const light = new THREE.PointLight(0xff8a30, 5, 10, 1.8)
+    light.position.copy(at)
+    this.engine.scene.add(light)
+    this.boomLights.push({ light, t: 0 })
+  }
+
+  /** feedback when the player presses R without pyromancy or charges */
+  onCastFail(unlocked: boolean, hasCharge: boolean) {
+    if (this.time - this.castFailT < 1.6) return
+    this.castFailT = this.time
+    if (!unlocked) {
+      this.spawnText('هنوز جادو نیاموخته‌ای — در خاکسترگاه بیاب!', '#ff9a5c', this.player.pos.clone().add(new THREE.Vector3(0, 2.4, 0)))
+    } else if (!hasCharge) {
+      this.spawnText('شارژ جادو خالی است — در آتش کمپ بازپر کن', '#ff9a5c', this.player.pos.clone().add(new THREE.Vector3(0, 2.4, 0)))
+    }
+    this.emit(true)
+  }
+
+  /** the pyromancy flame loot — a staff-head of living embers */
+  private buildPyroItem() {
+    const g = new THREE.Group()
+    const stick = new THREE.Mesh(
+      new THREE.BoxGeometry(0.09, 0.7, 0.09),
+      new THREE.MeshLambertMaterial({ color: 0x4a3620 })
+    )
+    stick.position.y = 0.1
+    const orb = new THREE.Mesh(
+      new THREE.BoxGeometry(0.26, 0.26, 0.26),
+      new THREE.MeshBasicMaterial({ color: 0xffb347 })
+    )
+    orb.position.y = 0.62
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.46, 0.46, 0.46),
+      new THREE.MeshBasicMaterial({ color: 0xff7a1e, transparent: true, opacity: 0.3 })
+    )
+    glow.position.y = 0.62
+    g.add(stick, glow, orb)
+    const y = this.world.surfaceAt(PYRO_ITEM.x, PYRO_ITEM.z) + 0.5
+    g.position.set(PYRO_ITEM.x, y, PYRO_ITEM.z)
+    this.engine.scene.add(g)
+    const light = new THREE.PointLight(0xff8a2a, 2.2, 7, 1.8)
+    light.position.set(PYRO_ITEM.x, y + 0.6, PYRO_ITEM.z)
+    this.engine.scene.add(light)
+    this.pyroItem = { mesh: g, light }
+  }
+
+  private removePyroItem() {
+    if (!this.pyroItem) return
+    this.engine.scene.remove(this.pyroItem.mesh)
+    this.engine.scene.remove(this.pyroItem.light)
+    this.pyroItem = null
+  }
+
+  private collectPyroItem() {
+    if (!this.pyroItem) return
+    this.removePyroItem()
+    this.pyroUnlocked = true
+    this.player.pyroUnlocked = true
+    this.player.pyro = this.player.maxPyro
+    this.sfx.shard()
+    this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), 0xff8a2a, 20, 2.6)
+    this.spawnText('شعله‌ی پیرمانسی! با R شعله پرتاب کن', '#ffb347', this.player.pos.clone().add(new THREE.Vector3(0, 2.6, 0)))
+    this.save()
+    this.emit(true)
+  }
+
+  /** the Great Ember — the Flame King's dropped legacy (+2 spell charges) */
+  private spawnEmber() {
+    if (this.emberTaken || this.emberItem) return
+    const g = new THREE.Group()
+    const core = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.32, 0.32),
+      new THREE.MeshBasicMaterial({ color: 0xff5a10 })
+    )
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.56, 0.56, 0.56),
+      new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.3 })
+    )
+    g.add(glow, core)
+    const bx = this.boss2.pos.x
+    const bz = this.boss2.pos.z
+    const y = this.world.surfaceAt(bx, bz) + 0.75
+    g.position.set(bx, y, bz)
+    this.engine.scene.add(g)
+    const light = new THREE.PointLight(0xff5a20, 2.6, 7, 1.8)
+    light.position.set(bx, y + 0.5, bz)
+    this.engine.scene.add(light)
+    this.emberItem = { mesh: g, light }
+  }
+
+  private collectEmber() {
+    if (!this.emberItem) return
+    this.engine.scene.remove(this.emberItem.mesh)
+    this.engine.scene.remove(this.emberItem.light)
+    this.emberItem = null
+    this.emberTaken = true
+    this.player.pyroUnlocked = true
+    this.pyroUnlocked = true
+    this.player.maxPyro += 2
+    this.player.pyro = this.player.maxPyro
+    this.sfx.ember()
+    this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), 0xff5a20, 22, 2.8)
+    this.spawnText('اخگر بزرگ! ظرفیت جادو +۲', '#ff7a3a', this.player.pos.clone().add(new THREE.Vector3(0, 2.6, 0)))
+    this.save()
+    this.emit(true)
+  }
+
   spawnDamageText(dmg: number, pos: THREE.Vector3, height: number) {
     this.spawnText(`${dmg}`, '#ffffff', pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, height, (Math.random() - 0.5) * 0.6)))
   }
@@ -910,9 +1337,16 @@ export class Game {
       for (let x = -WORLD_HALF; x < WORLD_HALF; x++) {
         const h = this.world.getH(x, z)
         const dA = Math.hypot(x - BOSS_CENTER.x, z - BOSS_CENTER.z)
+        const dA2 = Math.hypot(x - BOSS2_CENTER.x, z - BOSS2_CENTER.z)
         const isPath = Math.abs(x) <= 1 && z > GATE_Z && z < BONFIRE.z + 1
-        if (dA < 8.5) tc.fillStyle = '#828282'
+        const isPath2 = z >= 17 && z <= 19 && x >= ASH_WALL_X
+        const lavaCell = LAVA_POOLS.some((p) => x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1)
+        if (x === ASH_WALL_X) tc.fillStyle = '#4a4a4a'
+        else if (lavaCell) tc.fillStyle = '#ff7a1f'
+        else if (dA < 8.5 || dA2 < 8.5) tc.fillStyle = '#828282'
         else if (isPath) tc.fillStyle = '#8a6440'
+        else if (isPath2) tc.fillStyle = '#7a6a5a'
+        else if (x >= ASH_WALL_X) tc.fillStyle = `rgb(${86 + h * 5},${40 + h * 3},${34 + h * 2})`
         else tc.fillStyle = `rgb(${52 + h * 7},${98 + h * 13},${36 + h * 5})`
         tc.fillRect(x + WORLD_HALF, z + WORLD_HALF, 1, 1)
       }
@@ -940,17 +1374,27 @@ export class Game {
     ctx.fillStyle = '#ffe08a'
     ctx.fillRect(px(BONFIRE.x) - 1, pz(BONFIRE.z) - 1, 2, 2)
 
-    // boss — dark crimson square until it falls
+    // boss 1 — dark crimson square until it falls
     if (!this.bossFell) {
       ctx.fillStyle = this.bossActive ? '#d43737' : '#8a2020'
       ctx.fillRect(px(this.boss.pos.x) - 2.5, pz(this.boss.pos.z) - 2.5, 5, 5)
+    }
+
+    // boss 2 — molten orange square until it falls
+    if (!this.boss2Fell) {
+      ctx.fillStyle = this.boss2Active ? '#ff6a1f' : '#a03a10'
+      ctx.fillRect(px(this.boss2.pos.x) - 2.5, pz(this.boss2.pos.z) - 2.5, 5, 5)
     }
 
     // enemies — color-coded by breed
     for (const e of this.enemies) {
       if (!e.alive) continue
       ctx.fillStyle =
-        e instanceof CreeperEnemy ? '#59d959' : e instanceof SkeletonEnemy ? '#ece8dc' : '#d43737'
+        e instanceof CreeperEnemy ? '#59d959'
+        : e instanceof SkeletonEnemy ? '#ece8dc'
+        : e instanceof WitherSkeletonEnemy ? '#8a8a96'
+        : e instanceof BlazeEnemy ? '#ffb347'
+        : '#d43737'
       ctx.fillRect(px(e.pos.x) - 1.5, pz(e.pos.z) - 1.5, 3, 3)
     }
 
@@ -965,6 +1409,20 @@ export class Game {
     if (this.estusShard) {
       const sp = this.estusShard.mesh.position
       ctx.fillStyle = Math.sin(this.time * 8) > 0 ? '#ffc44d' : '#ffdf8a'
+      ctx.fillRect(px(sp.x) - 1.5, pz(sp.z) - 1.5, 3, 3)
+    }
+
+    // pyromancy flame loot — pulsing ember
+    if (this.pyroItem) {
+      const sp = this.pyroItem.mesh.position
+      ctx.fillStyle = Math.sin(this.time * 9) > 0 ? '#ff8a2a' : '#ffb347'
+      ctx.fillRect(px(sp.x) - 1.5, pz(sp.z) - 1.5, 3, 3)
+    }
+
+    // great ember — hot red sparkle
+    if (this.emberItem) {
+      const sp = this.emberItem.mesh.position
+      ctx.fillStyle = Math.sin(this.time * 9) > 0 ? '#ff5a20' : '#ff8a3a'
       ctx.fillRect(px(sp.x) - 1.5, pz(sp.z) - 1.5, 3, 3)
     }
 
@@ -1003,6 +1461,7 @@ export class Game {
   }
 
   private bossActiveBarrier = false
+  private boss2Barrier = false
 
   private respawn() {
     const p = new THREE.Vector3(BONFIRE.x + 2.5, 0, BONFIRE.z + 2)
@@ -1010,15 +1469,19 @@ export class Game {
     this.player.reset(p, Math.PI * 0.85)
     this.player.fullRestore()
     for (const e of this.enemies) e.reset()
-    if (!this.bossFell) {
-      this.boss.reset()
-      this.world.setFogGateVisible(true)
+    if (!this.bossFell || !this.boss2Fell) {
+      this.world.setFogGatesVisible(!this.bossFell, !this.boss2Fell)
     }
+    if (!this.bossFell) this.boss.reset()
+    if (!this.boss2Fell) this.boss2.reset()
     this.bossActive = false
     this.bossActiveBarrier = false
+    this.boss2Active = false
+    this.boss2Barrier = false
     for (const o of this.orbs) this.engine.scene.remove(o.mesh)
     this.orbs = []
     this.fogPassT = 0
+    this.fogPass2T = 0
     this.phase = 'playing'
     this.banner = null
     this.hurtFlash = 0
@@ -1030,14 +1493,26 @@ export class Game {
     const lim = 28.4
     p.x = Math.max(-lim, Math.min(lim, p.x))
     p.z = Math.max(-lim, Math.min(lim, p.z))
-    // fog gate blocks entry before trigger
+    // fog gate 1 blocks entry before trigger
     if (!this.bossActive && !this.bossFell && this.fogPassT <= 0 && !this.player.busy) {
       if (p.z < GATE_Z + 0.9) p.z = GATE_Z + 0.9
     }
-    // arena barrier while fighting
+    // fog gate 2 corridor blocks entry before trigger
+    if (!this.boss2Active && !this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
+      if (p.x > GATE2.x + 0.9) p.x = GATE2.x + 0.9
+    }
+    // the great ash wall is solid — only the gate corridor pierces it
+    if (Math.abs(p.x - ASH_WALL_X) < 0.55 && !(p.z > 16.1 && p.z < 19.9)) {
+      p.x = p.x < ASH_WALL_X ? ASH_WALL_X - 0.55 : ASH_WALL_X + 0.55
+    }
+    // arena barriers while fighting
     if (this.bossActiveBarrier && !this.bossFell) {
       p.x = Math.max(BOSS_CENTER.x - 7.6, Math.min(BOSS_CENTER.x + 7.6, p.x))
       p.z = Math.max(-23.2, Math.min(GATE_Z - 0.6, p.z))
+    }
+    if (this.boss2Barrier && !this.boss2Fell) {
+      p.x = Math.max(BOSS2_CENTER.x - 7.2, Math.min(BOSS2_CENTER.x + 7.2, p.x))
+      p.z = Math.max(BOSS2_CENTER.z - 7.2, Math.min(BOSS2_CENTER.z + 7.2, p.z))
     }
   }
 
@@ -1051,10 +1526,29 @@ export class Game {
         return 'برداشتن تکه‌ی استوس'
       }
     }
+    if (this.pyroItem) {
+      const sp = this.pyroItem.mesh.position
+      if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
+        return 'برداشتن شعله‌ی پیرمانسی'
+      }
+    }
+    if (this.emberItem) {
+      const sp = this.emberItem.mesh.position
+      if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
+        return 'برداشتن اخگر بزرگ'
+      }
+    }
     const bPos = new THREE.Vector3(BONFIRE.x, this.world.surfaceAt(BONFIRE.x, BONFIRE.z), BONFIRE.z)
     if (bPos.distanceTo(this.player.pos) < 2.6) return 'استراحت در آتش کمپ'
     if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE_Z + 3.2 && this.player.pos.z > GATE_Z - 1) {
       return 'عبور از دیوار مه'
+    }
+    if (
+      !this.boss2Active && !this.boss2Fell &&
+      this.player.pos.x > GATE2.x - 2.4 && this.player.pos.x < GATE2.x + 2.0 &&
+      this.player.pos.z > 16.2 && this.player.pos.z < 19.8
+    ) {
+      return 'عبور از دیوار مه دوم'
     }
     return null
   }
@@ -1143,7 +1637,7 @@ export class Game {
       input.releaseLock()
     }
 
-    // fog pass animation
+    // fog pass 1 animation — north gate
     if (this.fogPassT > 0) {
       this.fogPassT -= dt
       this.player.pos.z -= 5.5 * dt
@@ -1159,6 +1653,59 @@ export class Game {
         this.boss.active = true
         this.sfx.bossRoar()
         this.shake = Math.max(this.shake, 0.4)
+      }
+    }
+
+    // fog pass 2 animation — east gate into the Flame King's arena
+    if (this.fogPass2T > 0) {
+      this.fogPass2T -= dt
+      this.player.pos.x += 5.5 * dt
+      let dY2 = -Math.PI / 2 - this.camYaw
+      while (dY2 > Math.PI) dY2 -= Math.PI * 2
+      while (dY2 < -Math.PI) dY2 += Math.PI * 2
+      this.camYaw += dY2 * Math.min(1, 5 * dt)
+      this.camPitch += (0.32 - this.camPitch) * Math.min(1, 4 * dt)
+      if (this.fogPass2T <= 0) {
+        this.boss2Active = true
+        this.boss2Barrier = true
+        this.boss2.active = true
+        this.sfx.bossRoar()
+        this.shake = Math.max(this.shake, 0.4)
+      }
+    }
+
+    // ash-wastes ambience — the sky reddens east of the great wall
+    const inAsh = this.player.pos.x > ASH_WALL_X - 0.6
+    const fog = this.engine.scene.fog as THREE.Fog
+    const bg = this.engine.scene.background as THREE.Color
+    fog.color.lerp(this.tmpColor.set(inAsh ? 0x261016 : 0x101720), Math.min(1, 2.5 * dt))
+    bg.lerp(this.tmpColor.set(inAsh ? 0x1c0c10 : 0x101720), Math.min(1, 2.5 * dt))
+
+    // lava burns whoever stands in it
+    this.lavaTick -= dt
+    if (this.lavaTick <= 0 && this.player.alive && this.fogPassT <= 0 && this.fogPass2T <= 0) {
+      const px = Math.round(this.player.pos.x)
+      const pz = Math.round(this.player.pos.z)
+      let inLava = LAVA_POOLS.some((p) => px >= p.x0 && px <= p.x1 && pz >= p.z0 && pz <= p.z1)
+      if (!inLava) {
+        inLava = this.lavaPools.some(
+          (lp) => Math.hypot(this.player.pos.x - lp.x, this.player.pos.z - lp.z) < 2.2
+        )
+      }
+      if (inLava) {
+        this.lavaTick = 0.55
+        const dmg = 8
+        if (
+          this.player.takeDamage(
+            dmg,
+            this.player.pos.x + (Math.random() - 0.5),
+            this.player.pos.z + (Math.random() - 0.5),
+            this
+          )
+        ) {
+          this.onPlayerHit(dmg)
+          this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xff7a1e, 8, 1.8, 0.4, 0.12)
+        }
       }
     }
 
@@ -1196,6 +1743,7 @@ export class Game {
 
     for (const e of this.enemies) e.update(dt, this.player, this)
     if (!this.bossFell) this.boss.update(dt, this.player, this)
+    if (!this.boss2Fell) this.boss2.update(dt, this.player, this)
 
     this.world.update(dt)
     this.updateBonfire(dt)
@@ -1203,13 +1751,13 @@ export class Game {
     this.updateOrbs(dt)
 
     // prompt
-    this.prompt = this.fogPassT > 0 ? null : this.detectPrompt()
+    this.prompt = this.fogPassT > 0 || this.fogPass2T > 0 ? null : this.detectPrompt()
     if (this.prompt && input.isTouch && input.consume('TouchInteract')) this.interact()
 
     // banner timer
     if (this.banner) {
       this.bannerT += rawDt
-      if (this.banner === 'bossfell' && this.bannerT > 3.4) {
+      if ((this.banner === 'bossfell' || this.banner === 'bossfell2') && this.bannerT > 3.6) {
         this.banner = null
         this.emit(true)
       }
@@ -1258,6 +1806,25 @@ export class Game {
       if (!alive) a.dispose(this.engine.scene)
       return alive
     })
+    // fireballs — pyromancy & flame foes
+    this.fireballs = this.fireballs.filter((f) => {
+      const alive = f.update(dt)
+      if (!alive) f.dispose(this.engine.scene)
+      return alive
+    })
+    // temporary molten patches from the Flame King's slams
+    this.lavaPools = this.lavaPools.filter((lp) => {
+      lp.t += dt
+      const mat = lp.mesh.material as THREE.MeshBasicMaterial
+      mat.opacity = Math.max(0, 1 - Math.max(0, lp.t - 3) / 1.5)
+      if (lp.t >= 4.5) {
+        this.engine.scene.remove(lp.mesh)
+        lp.mesh.geometry.dispose()
+        mat.dispose()
+        return false
+      }
+      return true
+    })
     // creeper explosion flash lights
     this.boomLights = this.boomLights.filter((b) => {
       b.t += dt
@@ -1279,6 +1846,18 @@ export class Game {
       this.estusShard.mesh.rotation.y += dt * 1.6
       this.estusShard.mesh.position.y += Math.sin(this.time * 2.4) * dt * 0.16
       this.estusShard.light.intensity = 2 + Math.sin(this.time * 4.2) * 0.5
+    }
+    // pyromancy flame loot bob + spin
+    if (this.pyroItem) {
+      this.pyroItem.mesh.rotation.y += dt * 1.8
+      this.pyroItem.mesh.position.y += Math.sin(this.time * 2.6) * dt * 0.14
+      this.pyroItem.light.intensity = 2 + Math.sin(this.time * 5) * 0.5
+    }
+    // great ember bob + spin
+    if (this.emberItem) {
+      this.emberItem.mesh.rotation.y += dt * 2
+      this.emberItem.mesh.position.y += Math.sin(this.time * 2.8) * dt * 0.16
+      this.emberItem.light.intensity = 2.4 + Math.sin(this.time * 5.5) * 0.6
     }
   }
 
@@ -1356,7 +1935,7 @@ export class Game {
   private emit(force: boolean) {
     if (!this.onState) return
     const p = this.player
-    const bossVisible = this.bossActive && !this.bossFell
+    const ab = this.activeBoss
     const s: HudState = {
       phase: this.phase,
       hp: Math.max(0, Math.round(p.hp)),
@@ -1371,12 +1950,15 @@ export class Game {
       end: p.end,
       str: p.str,
       nextCost: this.nextCost(),
-      bossName: bossVisible ? this.boss.name : null,
-      bossHp: Math.max(0, Math.round(this.boss.hp)),
-      bossMax: this.boss.maxHp,
+      bossName: ab ? ab.name : null,
+      bossHp: ab ? Math.max(0, Math.round(ab.hp)) : 0,
+      bossMax: ab ? ab.maxHp : 0,
       prompt: this.phase === 'playing' ? this.prompt : null,
       banner: this.phase === 'dead' ? 'died' : this.banner,
       blocking: p.state === 'block',
+      pyro: p.pyro,
+      maxPyro: p.maxPyro,
+      pyroUnlocked: p.pyroUnlocked,
     }
     const json = JSON.stringify(s)
     if (force || json !== this.lastHudJson) {

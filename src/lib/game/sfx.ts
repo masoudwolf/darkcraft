@@ -204,4 +204,31 @@ export class Sfx {
     this.noise(0.3, 0.4, 1600, 160)
     this.tone(90, 0.4, 'square', 0.3, 40, 0.12)
   }
+
+  /* ---- pyromancy / ash wastes ---- */
+
+  /** fireball launch — a pressure hiss + crackling whoosh */
+  fireShoot() {
+    this.noise(0.18, 0.24, 1800, 500)
+    this.tone(300, 0.16, 'sawtooth', 0.16, 120)
+  }
+
+  /** fireball detonation — deep thump + crackle */
+  fireBoom() {
+    this.noise(0.3, 0.5, 1200, 140)
+    this.tone(90, 0.3, 'sine', 0.4, 40)
+  }
+
+  /** gathering a spell — rising shimmer */
+  cast() {
+    this.tone(420, 0.18, 'triangle', 0.2, 760)
+    this.noise(0.2, 0.12, 2400, 900)
+  }
+
+  /** the Great Ember — dark warm chord */
+  ember() {
+    this.tone(330, 0.2, 'triangle', 0.24, 415)
+    this.tone(554, 0.24, 'triangle', 0.22, undefined, 0.14)
+    this.tone(166, 0.4, 'sine', 0.22, undefined, 0.05)
+  }
 }

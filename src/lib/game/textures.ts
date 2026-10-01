@@ -155,6 +155,18 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     }
     c.putImageData(img, 0, 0)
   })
+  // netherrack — the bruised red stone of the Ash Wastes
+  const netherTex = makeTex(16, 23, (c, r, s) => {
+    fillNoise(c, r, s, [98, 44, 38], 22)
+    for (let i = 0; i < 12; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(66,26,22)', 2, 2)
+    for (let i = 0; i < 7; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(146,58,44)', 1, 1)
+  })
+  // lava — glowing cells (unlit material so it reads as molten)
+  const lavaTex = makeTex(32, 24, (c, r, s) => {
+    fillNoise(c, r, s, [244, 110, 18], 30)
+    for (let i = 0; i < 26; i++) px(c, Math.floor(r() * (s - 2)), Math.floor(r() * (s - 2)), 'rgb(255,208,64)', 2, 2)
+    for (let i = 0; i < 18; i++) px(c, Math.floor(r() * (s - 2)), Math.floor(r() * (s - 2)), 'rgb(150,44,10)', 2, 1)
+  })
 
   const grassSide = lam(grassSideTex)
   blockMats = {
@@ -168,6 +180,8 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     leaves: lam(leavesTex),
     coal: lam(coalTex),
     glow: lam(glowTex),
+    nether: lam(netherTex),
+    lava: new THREE.MeshBasicMaterial({ map: lavaTex }),
     fog: new THREE.MeshBasicMaterial({
       map: fogTex,
       transparent: true,
@@ -181,7 +195,7 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
 
 /* ================= CHARACTER TEXTURES ================= */
 
-export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper' | 'skeleton'
+export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame'
 
 interface CharTexs {
   skin: THREE.Texture
@@ -253,6 +267,39 @@ function getCharTexs(kind: CharKind): CharTexs {
       eye: '#141414',
       mouth: [64, 60, 52] as [number, number, number],
     },
+    wither: {
+      skin: [56, 54, 58] as [number, number, number],
+      skinVary: 14,
+      hairTop: [44, 42, 46] as [number, number, number],
+      body: [66, 64, 70] as [number, number, number],
+      arm: [56, 54, 58] as [number, number, number],
+      sleeve: false,
+      leg: [48, 46, 50] as [number, number, number],
+      eye: '#ff7b24',
+      mouth: [30, 28, 30] as [number, number, number],
+    },
+    blaze: {
+      skin: [236, 176, 52] as [number, number, number],
+      skinVary: 26,
+      hairTop: [214, 140, 36] as [number, number, number],
+      body: [196, 124, 32] as [number, number, number],
+      arm: [236, 176, 52] as [number, number, number],
+      sleeve: false,
+      leg: [176, 110, 28] as [number, number, number],
+      eye: '#fff2c0',
+      mouth: [120, 60, 12] as [number, number, number],
+    },
+    bossflame: {
+      skin: [52, 42, 44] as [number, number, number],
+      skinVary: 12,
+      hairTop: [38, 30, 32] as [number, number, number],
+      body: [46, 36, 38] as [number, number, number],
+      arm: [52, 42, 44] as [number, number, number],
+      sleeve: false,
+      leg: [40, 32, 34] as [number, number, number],
+      eye: '#ffd23d',
+      mouth: [90, 36, 14] as [number, number, number],
+    },
   }[kind]
 
   const faceTex = makeTex(8, 30, (c, r, s) => {
@@ -276,6 +323,33 @@ function getCharTexs(kind: CharKind): CharTexs {
       px(c, 2, 6, '#3a362e', 4, 1)
       px(c, 3, 7, '#cfcaba', 1, 1) // tooth gaps
       px(c, 5, 7, '#cfcaba', 1, 1)
+      return
+    }
+    if (kind === 'wither') {
+      // charcoal skull — hollow sockets with a single ember gleam each
+      px(c, 1, 3, '#0c0a0c', 2, 2)
+      px(c, 5, 3, '#0c0a0c', 2, 2)
+      px(c, 2, 4, '#ff7b24', 1, 1)
+      px(c, 5, 4, '#ff7b24', 1, 1)
+      px(c, 3, 5, '#2a262a', 2, 1)
+      px(c, 2, 6, '#2a262a', 4, 1)
+      return
+    }
+    if (kind === 'blaze') {
+      // molten bright eyes over a dark smoke maw
+      px(c, 1, 3, '#fff6d8', 2, 2)
+      px(c, 5, 3, '#fff6d8', 2, 2)
+      px(c, 3, 5, '#5a2a08', 2, 2)
+      return
+    }
+    if (kind === 'bossflame') {
+      // burning glare + a molten crack for a mouth
+      px(c, 1, 2, 'rgba(0,0,0,0.5)', 2, 1)
+      px(c, 5, 2, 'rgba(0,0,0,0.5)', 2, 1)
+      px(c, 1, 3, '#ffd23d', 2, 2)
+      px(c, 5, 3, '#ffd23d', 2, 2)
+      px(c, 3, 5, '#1a1214', 2, 1)
+      px(c, 2, 6, '#c24a18', 4, 1)
       return
     }
     // eyes (minecraft style)
@@ -315,6 +389,26 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 0, 6, '#8a8578', s, 1)
         px(c, 3, 1, '#9a9484', 2, 5)
       }
+      if (kind === 'wither') {
+        // charred ribcage
+        px(c, 0, 2, '#2e2c30', s, 1)
+        px(c, 0, 4, '#2e2c30', s, 1)
+        px(c, 0, 6, '#2e2c30', s, 1)
+        px(c, 3, 1, '#3a383c', 2, 5)
+      }
+      if (kind === 'blaze') {
+        // smoke flecks drifting over molten gold
+        for (let i = 0; i < 8; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(60,40,20,0.55)', 2, 1)
+        }
+      }
+      if (kind === 'bossflame') {
+        // ember cracks glowing through charred plates
+        for (let i = 0; i < 10; i++) {
+          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,120,30)', 1, 2)
+        }
+        px(c, 0, 5, 'rgb(160,40,20)', 8, 1)
+      }
       if (kind === 'creeper') {
         for (let i = 0; i < 8; i++) {
           px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(38,92,38,0.85)', 2, 2)
@@ -350,6 +444,10 @@ function getCharTexs(kind: CharKind): CharTexs {
         // bone joint shading
         px(c, 0, 0, '#918c7e', s, 1)
         px(c, 0, 7, '#918c7e', s, 1)
+      }
+      if (kind === 'wither') {
+        px(c, 0, 0, '#302e32', s, 1)
+        px(c, 0, 7, '#302e32', s, 1)
       }
       if (kind === 'creeper') {
         for (let i = 0; i < 6; i++) {

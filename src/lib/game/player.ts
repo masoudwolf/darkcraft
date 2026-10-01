@@ -1,13 +1,13 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock,
+  createHumanoid, animIdle, animWalk, animAttack, animRoll, animDrink, animHit, animDead, animBlock, animCast,
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
 import type { World } from './world'
 import type { Game, PlayerStrikeDef } from './game'
 
-export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead' | 'block'
+export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead' | 'block' | 'cast'
 
 const ROLL_DUR = 0.48
 // i-frames must comfortably cover a react-to-swing dodge AND an anticipatory
@@ -16,6 +16,8 @@ const ROLL_IFRAME = 0.42
 const STAMINA_COST_ROLL = 22
 const STAMINA_COST_LIGHT = 18
 const STAMINA_COST_HEAVY = 32
+const STAMINA_COST_CAST = 20
+const CAST_DUR = 0.65
 const STAMINA_REGEN = 30
 const WALK_SPEED = 3.6
 const SPRINT_SPEED = 6.1
@@ -74,6 +76,12 @@ export class Player {
   healedThisDrink = false
   hitDur = 0.34
 
+  // pyromancy — charges refill at the bonfire
+  pyro = 4
+  maxPyro = 4
+  pyroUnlocked = false
+  private castFired = false
+
   private rollDir = new THREE.Vector3(0, 0, -1)
   private kbDir = new THREE.Vector3()
   private attackDef: AttackDef | null = null
@@ -106,6 +114,7 @@ export class Player {
     this.invuln = 1
     this.animT = 0
     this.deathT = 0
+    this.castFired = false
     this.lockedTarget = null
     setOpacity(this.h, 1)
     setFlash(this.h, 0)
@@ -118,6 +127,7 @@ export class Player {
     this.hp = this.maxHp
     this.stamina = this.maxStamina
     this.estus = this.maxEstus
+    this.pyro = this.maxPyro
   }
 
   applyLevel(stat: 'vit' | 'end' | 'str') {
@@ -158,7 +168,16 @@ export class Player {
     this.invuln = ROLL_IFRAME
   }
 
-  takeDamage(dmg: number, fromX: number, fromZ: number, game?: Game): boolean {
+  startCast() {
+    this.state = 'cast'
+    this.stateT = 0
+    this.castFired = false
+    this.pyro--
+    this.stamina = Math.max(0, this.stamina - STAMINA_COST_CAST)
+    this.staminaDelay = 0.6
+  }
+
+  takeDamage(dmg: number, fromX: number, fromZ: number, game?: Game, guardHeavy = false): boolean {
     if (this.invuln > 0 || this.state === 'dead') return false
     const dx = this.pos.x - fromX
     const dz = this.pos.z - fromZ
@@ -171,8 +190,10 @@ export class Player {
       const aZ = -dz / l
       const dot = aX * fx + aZ * fz
       if (dot > 0.3) {
-        const chip = Math.max(1, Math.round(dmg * 0.15))
-        const cost = dmg * 0.9
+        // heavy grey blades (wither skeletons) chew through guards:
+        // blocking still works but stamina shatters fast
+        const chip = Math.max(1, Math.round(dmg * (guardHeavy ? 0.3 : 0.15)))
+        const cost = dmg * (guardHeavy ? 1.6 : 0.9)
         this.kbDir.set(aX, 0, aZ)
         if (this.stamina >= cost) {
           this.stamina -= cost
@@ -305,6 +326,20 @@ export class Player {
         this.healedThisDrink = false
         resetPose(this.h)
       }
+    } else if (this.state === 'cast') {
+      // ---- pyromancy: gather, release, recover ----
+      this.stateT += dt
+      const p = this.stateT / CAST_DUR
+      animCast(this.h, Math.min(1, p))
+      if (!this.castFired && p >= 0.6) {
+        this.castFired = true
+        game.spawnPlayerFireball(this)
+      }
+      if (p >= 1) {
+        this.state = 'idle'
+        this.stateT = 0
+        resetPose(this.h)
+      }
     } else if (this.state === 'hit') {
       this.stateT += dt
       this.pos.x += this.kbDir.x * 4.5 * (1 - this.stateT / this.hitDur) * dt
@@ -411,11 +446,19 @@ export class Player {
           this.combo = 0
           this.startAttack(this.lightDef(0))
           game.sfx.swing()
-        } else if ((input.consume('KeyE') || input.consume('KeyR')) && this.estus > 0) {
+        } else if (input.consume('KeyE') && this.estus > 0) {
           this.estus--
           this.state = 'drink'
           this.stateT = 0
           this.healedThisDrink = false
+        } else if (input.consume('KeyR') || input.consume('Cast')) {
+          // pyromancy — R (or the touch ember button)
+          if (this.pyroUnlocked && this.pyro > 0 && this.stamina >= STAMINA_COST_CAST) {
+            game.sfx.cast()
+            this.startCast()
+          } else {
+            game.onCastFail(this.pyroUnlocked, this.pyro > 0)
+          }
         }
       }
       }
