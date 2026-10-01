@@ -224,3 +224,26 @@ Stage Summary:
 - حرکت هر ماب با ماهیتش هم‌خوان است: چهارنعل/کمان‌کش/شکاری/شناور/لنگ‌انداز زامبی
 - فایل‌ها: textures.ts (بازنویسی کاراکترها)، models.ts (+۱۶۰ خط مدل/انیمیشن)، enemy.ts (هوک‌ها + فیکس گدازه)
 - پیشنهاد گام بعد: صدای مخصوص هر ماب (groan/click)، انیمیشن معرفی برای باس ۲، یا NPC و فروشگاه
+
+---
+Task ID: 8
+Agent: Z.ai Code (main)
+Task: Fix fog-gate bugs (white texture, player/enemy pass-through), pro archer animation, 3D model viewer, full game menu (start/settings/exit/viewer)
+
+Work Log:
+- Replaced white-noise fog texture with structured blue-grey mist (vignette edges + wisp bands) in textures.ts; built 3 parallax layers per gate in world.ts with per-layer cloned textures
+- Sealed closed gates: player clamp at GATE_Z+0.55 whole-width (fight barrier at GATE_Z-0.8); Enemy.clamp() now blocks crossing both closed gates (needs game ref, bossFell/boss2Fell made public); BossEnemy/BossFlameEnemy clamp() overrides contain bosses in their arenas
+- Rebuilt createBow: recurve limbs, leather grip, dynamic two-segment string with moving nock node, sliding nocked arrow (setBowDraw/setNocked/bowDrawAmount helpers)
+- New archer anims: animBowDraw 3-beat (reach 0-24% / pull 24-76% / full-draw tremble), animBowShoot (back-snap release + follow-through), improved animBowIdle + animSkeletonWalk (bow-carry march); SkeletonEnemy wired so bow string bends in sync, arrow vanishes on release
+- Created src/lib/game/bestiary.ts: registry of all 8 mobs x ~10 anims each (incl. inline creeper fuse, blaze rods spin, volley)
+- Created src/components/game/ModelViewer.tsx: own renderer, orbit/pinch camera, mob sidebar, anim chips, speed slider, auto-rotate/wireframe/grid/pause toggles, hit+fuse flash tests, material cloning to avoid leaking into game
+- game.ts: added 'paused' phase, pause/resume/exitToMenu, GameSettings (sens/volume/invertY/shadows) with localStorage persistence, sens multiplier + invert-Y in camera, ESC + lock-loss auto-pause (wasLocked reset on respawn/pause to avoid spurious pause after death), frozen flag for viewer
+- GameClient.tsx: new MainMenu (start/viewer/settings/exit), PauseMenu, SettingsModal (shared), ExitScreen, touch pause button, ModelViewer integration
+- Browser-verified: gate clamp (player z=-9.450 exact), zombie band push-back (-10.0 -> -9.326), fog pass + boss intro, boss death (voxel burst, souls, body hidden, gate 1 opens), arrows in flight, viewer for player/archer/boss/blaze/creeper, settings persistence, pause/resume, exit-to-menu, exit screen; fixed viewer model-overlap bug (removeFromParent) and post-death spurious pause
+- Committed & pushed: 7105c28
+
+Stage Summary:
+- Fog gates now look like Dark Souls mist (animated, layered, soft) and are hard collision for player AND mobs until their lord falls
+- Archer reads like a real archer: visible nocked arrow, bending string, coiled draw, disciplined release
+- Model viewer = debugging superpower for future mob work
+- Menu/settings/pause round out the production feel; settings persist in localStorage
