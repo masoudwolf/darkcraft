@@ -3133,7 +3133,9 @@ export class Game {
     } catch { /* ignore */ }
   }
 
-  private playerStrike(def: PlayerStrikeDef) {
+  /** the player's blade connects — arc, damage, knockback, sfx
+      (called from Player on the strike beat; PlayerStrikeDef lives in player.ts) */
+  playerStrike(def: PlayerStrikeDef) {
     const fwd = new THREE.Vector3(Math.sin(this.player.yaw), 0, Math.cos(this.player.yaw))
     let hits = 0
     for (const e of this.allEnemies) {

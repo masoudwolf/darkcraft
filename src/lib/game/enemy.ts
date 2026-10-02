@@ -782,6 +782,17 @@ export class Enemy {
       ) {
         const sup = this.world.supportAt(nx, this.pos.z, feet)
         if (sup <= feet + 0.5 || !this.headBumped(nx, this.pos.z, sup)) this.pos.x = nx
+      } else {
+        // threshold drop: a doorway over a raised floor — re-judge head
+        // room at the landing height so the lintel never seals a mob in
+        const sup = this.world.supportAt(nx, this.pos.z, feet)
+        if (
+          sup <= feet - 0.5 &&
+          !this.world.wallAt(edge, this.pos.z - r, sup) &&
+          !this.world.wallAt(edge, this.pos.z, sup) &&
+          !this.world.wallAt(edge, this.pos.z + r, sup)
+        )
+          this.pos.x = nx
       }
     }
     if (dz !== 0) {
@@ -794,6 +805,16 @@ export class Enemy {
       ) {
         const sup = this.world.supportAt(this.pos.x, nz, feet)
         if (sup <= feet + 0.5 || !this.headBumped(this.pos.x, nz, sup)) this.pos.z = nz
+      } else {
+        // threshold drop: re-judge head room at the landing height
+        const sup = this.world.supportAt(this.pos.x, nz, feet)
+        if (
+          sup <= feet - 0.5 &&
+          !this.world.wallAt(this.pos.x - r, edge, sup) &&
+          !this.world.wallAt(this.pos.x, edge, sup) &&
+          !this.world.wallAt(this.pos.x + r, edge, sup)
+        )
+          this.pos.z = nz
       }
     }
     const intended = Math.hypot(dx, dz)

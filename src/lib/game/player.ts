@@ -5,7 +5,7 @@ import {
 } from './models'
 import type { Input } from './engine'
 import type { WorldV3 } from './worldV3'
-import type { Game, PlayerStrikeDef } from './game'
+import type { Game } from './game'
 import type { DmgType, RollTier } from './items'
 
 export type PlayerState = 'idle' | 'run' | 'roll' | 'attack' | 'heavy' | 'drink' | 'hit' | 'dead' | 'block' | 'cast' | 'aim'
@@ -660,7 +660,11 @@ export class Player {
   /** axis-separated blocky collision — walls stop the body, one-block
       steps auto-climb, cliffs are walls but drops are always allowed;
       steps that would lift the body INTO an overhead block (eaves, low
-      roofs) are refused, so nothing ever stands wedged inside masonry */
+      roofs) are refused, so nothing ever stands wedged inside masonry;
+      a blocked move whose landing is a real DROP (a doorway over a
+      raised floor) retries the head check at the lower support — the
+      body falls as it crosses the threshold, so a lintel can never
+      seal the player inside a room they walked into */
   private slide(world: WorldV3, dx: number, dz: number) {
     const r = 0.28
     if (dx !== 0) {
@@ -673,6 +677,15 @@ export class Player {
         const sup = world.supportAt(nx, this.pos.z, this.pos.y)
         if (sup <= this.pos.y + 0.5 || !this.headBumped(world, nx, this.pos.z, sup))
           this.pos.x = nx
+      } else {
+        // threshold drop: re-judge head room at the landing height
+        const sup = world.supportAt(nx, this.pos.z, this.pos.y)
+        if (
+          sup <= this.pos.y - 0.5 &&
+          !world.wallAt(edge, this.pos.z - r, sup) &&
+          !world.wallAt(edge, this.pos.z + r, sup)
+        )
+          this.pos.x = nx
       }
     }
     if (dz !== 0) {
@@ -684,6 +697,15 @@ export class Player {
       ) {
         const sup = world.supportAt(this.pos.x, nz, this.pos.y)
         if (sup <= this.pos.y + 0.5 || !this.headBumped(world, this.pos.x, nz, sup))
+          this.pos.z = nz
+      } else {
+        // threshold drop: re-judge head room at the landing height
+        const sup = world.supportAt(this.pos.x, nz, this.pos.y)
+        if (
+          sup <= this.pos.y - 0.5 &&
+          !world.wallAt(this.pos.x - r, edge, sup) &&
+          !world.wallAt(this.pos.x + r, edge, sup)
+        )
           this.pos.z = nz
       }
     }

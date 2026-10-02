@@ -766,18 +766,22 @@ export class WorldV3 {
           if (!edge) continue
           this.col(wall, x, z, y0, y0 + 1)
         }
+      // door columns — computed early so the beam course can clear them
+      const dz = Math.floor((z0 + z1) / 2)
+      const dx = doorSide === 'E' ? x1 : x0
       // top course: timber beams on plaster homes, stone on the rest
+      // (the two door columns stay open — a lintel here would seal
+      // anyone standing on the raised plank floor inside the house)
       const beam = wall === 'plaster' ? 'log' : wall
       for (let x = x0; x <= x1; x++)
         for (let z = z0; z <= z1; z++) {
           const edge = x === x0 || x === x1 || z === z0 || z === z1
           if (!edge) continue
+          if (x === dx && (z === dz || z === dz + 1)) continue // over the door
           const corner = (x === x0 || x === x1) && (z === z0 || z === z1)
           this.b(corner ? 'darkstone' : beam, x, y0 + 2, z)
         }
       // door — 2 wide, 2 tall, on the street side
-      const dz = Math.floor((z0 + z1) / 2)
-      const dx = doorSide === 'E' ? x1 : x0
       this.clearCol(wall, dx, y0, y0 + 1, dz)
       this.clearCol(wall, dx, y0, y0 + 1, dz + 1)
       // street window beside the door — the life inside shows through
@@ -1207,7 +1211,9 @@ export class WorldV3 {
         if (!edge) continue
         this.col('stonebrick', x, z, y0, y0 + 2)
       }
-    this.clearCol('stonebrick', -30, y0, y0 + 1, -35) // the east door
+    // the east door — 3 tall, so someone standing on the raised tomb
+    // slab inside still has head room to walk out (no sealed coffins)
+    this.clearCol('stonebrick', -30, y0, y0 + 2, -35)
     this.fill('stonebrick', -33, -30, y0 + 3, y0 + 3, -36, -34) // slab roof
     this.fill('plank', -32, -31, y0, y0, -35, -35) // the tomb slab
 
