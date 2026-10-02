@@ -1754,9 +1754,10 @@ export class Game {
     captain.champLoot = 'captain_blade'
     this.enemies.push(captain)
 
-    // the Grave Warden walks the candlelit graveyard — a bone champion whose
-    // oath is older than the graves he tends; his shield still carries a flame
-    const gwPos = new THREE.Vector3(-24, 0, -27)
+    // the Grave Warden keeps the candlelit graveyard — a bone champion
+    // standing his eternal watch between the memorial and the mausoleum
+    // door; his oath is older than the graves he tends
+    const gwPos = new THREE.Vector3(-24.4, 0, -31.4)
     gwPos.y = this.world.surfaceAt(gwPos.x, gwPos.z)
     const warden = new SkeletonEnemy(scene, gwPos, 9, {
       hp: 300, dmg: 22, speed: 2.6, aggro: 9, atkRange: 2.2, windup: 0.8, recover: 0.6,
@@ -4287,14 +4288,28 @@ export class Game {
     const lim = V3_HALF - 1.6
     p.x = Math.max(-lim, Math.min(lim, p.x))
     p.z = Math.max(-lim, Math.min(lim, p.z))
-    // fog gate 1 blocks the whole gate span before the trigger — the
-    // arena is sealed, no slipping around the mist's soft edges
+    // fog gate 1 seals only the lane between the gate pillars, and only
+    // within a thin band just north of the line — a wall, not a teleport:
+    // the old version claimed the whole 16-block gate span, so walking up
+    // to the Grave Warden in the graveyard (reachable via the Watchers'
+    // Stair) hurled the player 17 blocks south onto the gate line.
+    // Everything beyond the lane is already physical stonebrick wall.
     if (!this.bossActive && !this.bossFell && this.fogPassT <= 0 && !this.player.busy) {
-      if (p.z < GATE1.z + 0.55 && p.x > GATE1.x0 && p.x < GATE1.x1) p.z = GATE1.z + 0.55
+      if (
+        p.z < GATE1.z + 0.55 && p.z > GATE1.z - 2.4 &&
+        p.x > GATE1.lane0 - 0.3 && p.x < GATE1.lane1 + 0.3
+      ) {
+        p.z = GATE1.z + 0.55
+      }
     }
-    // fog gate 2 seals the gatehouse mouth
+    // fog gate 2 seals the gatehouse mouth — same thin-band treatment
     if (!this.boss2Active && !this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
-      if (p.z < GATE2.z + 0.55 && Math.abs(p.x - GATE2.x) < 3.4) p.z = GATE2.z + 0.55
+      if (
+        p.z < GATE2.z + 0.55 && p.z > GATE2.z - 2.4 &&
+        Math.abs(p.x - GATE2.x) < 3.4
+      ) {
+        p.z = GATE2.z + 0.55
+      }
     }
     // arena barriers while fighting — held just short of the fog so the
     // player can never stand inside the mist

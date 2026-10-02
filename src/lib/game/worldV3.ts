@@ -133,7 +133,7 @@ export const REGIONS_V3: RegionV3[] = [
     name: 'تپهٔ کلیسا',
     sub: 'برجِ ناقوس طلایی — لنگرِ دیداری نقشه',
     dot: '#ece8dc',
-    desc: 'پله‌های وسیع از دهکده به فلات سنگی می‌رسند: پیشِ رو حیاطِ شوالیه (آرنای باس اول) با دروازهٔ مه، پشتِ آن کلیسای سنگی با پنجره‌های ماه‌گرفته و برج ناقوس با زنگ طلایی، سردابِ کوچکِ چسبیده به دیوار شمالی، و شرقِ کلیسا گورستانِ محصور با دوازده قبر، شمع‌های روشن و مجسمهٔ عزادار. سرِ پله‌های نگهبانان — میان‌بُرِ چمن — از دامنهٔ شرقی پیدا است. زنگ از آتشگاه پیدا است.',
+    desc: 'پله‌های وسیع از دهکده به فلات سنگی می‌رسند: پیشِ رو حیاطِ شوالیه (آرنای باس اول) با دروازهٔ مه، پشتِ آن کلیسای سنگی با پنجره‌های ماه‌گرفته و برج ناقوس با زنگ طلایی، سردابِ کوچکِ چسبیده به دیوار شمالی — و شرقِ کلیسا گورستانِ محصور: دروازهٔ طاق‌دار با فانوس، مسیرِ سنگیِ آیینی تا صلیبِ یادبود، آرامگاهِ سنگیِ نگهبانِ گورها با تابوت و کوزهٔ زرین، دیوارِ اُسکنت با طاقچه‌های شمع‌روشن، قبرِ تازه‌کنده‌ای که هنوز کسی شمعش را روشن نگه داشته، و مجسمهٔ عزادار که کلیدِ سردابه پای پایش خاک می‌خورد. سرِ پله‌های نگهبانان — میان‌بُرِ چمن — از دامنهٔ شرقی پیدا است. زنگ از آتشگاه پیدا است.',
     design: 'برج = قطب‌نما. مثل Undead Parish، بازیکن از هر جای نقشه می‌داند «مقصدها آن‌جاست» — بدون هیچ نشانگر HUD.',
     cam: { x: -32, z: -20, y: 16, dist: 40, theta: 0.75, phi: 0.6 },
   },
@@ -415,6 +415,14 @@ export class WorldV3 {
 
         // the graveyard keeps bare earth
         if (x >= -27 && x <= -18 && z >= -33 && z <= -24 && edHill <= 1.05) s = S_DIRT
+        // the yard's processional walk: gate → memorial plaza, plus the
+        // mausoleum door path and its stone floor; moss creeps at the edges
+        const inYard = x >= -26 && x <= -19 && z >= -32 && z <= -25
+        if (inYard && (x * 7 + z * 11) % 9 === 0) s = S_MOSSY
+        if (x >= -23 && x <= -22 && z >= -29 && z <= -23) s = S_COBBLE
+        if (x >= -25 && x <= -20 && z >= -31 && z <= -30) s = S_COBBLE
+        if (x >= -26 && x <= -24 && z === -31) s = S_COBBLE
+        if (x === -26 && z >= -32 && z <= -31) s = S_BRICK // the mausoleum floor
         // the bonfire hearth keeps a mossy ring
         if (dBon < 3) s = S_MOSSY
         this.surf[this.idx(x, z)] = s
@@ -1139,63 +1147,164 @@ export class WorldV3 {
     altarLight.position.set(-35.5, y0 + 2.5, -31.5)
     this.group.add(altarLight)
 
-    /* ---------- the graveyard (east of the church) ---------- */
-    for (let x = -27; x <= -18; x++) {
-      if (x === -23 || x === -22) continue // the south gate
-      this.b('cobble', x, y0, -24)
-      this.b('cobble', x, y0, -33)
-    }
-    for (let z = -33; z <= -24; z++) {
-      this.b('cobble', -27, y0, z)
-      this.b('cobble', -18, y0, z)
-    }
-    // eight graves — some crosses, some slabs (all clear of the walls)
-    const graves: [number, number, boolean][] = [
-      [-25, -31, true], [-22, -31, false], [-20, -30, true], [-25, -28, false],
-      [-23, -27, true], [-20, -27, false], [-24, -25, false], [-20, -25, true],
-    ]
-    for (const [gx, gzz, cross] of graves) {
-      if (cross) {
-        this.b('mossy', gx, y0, gzz)
-        this.b('cobble', gx, y0 + 1, gzz)
-        this.b('cobble', gx, y0 + 2, gzz)
-        this.b('mossy', gx - 1, y0 + 2, gzz)
-        this.b('mossy', gx + 1, y0 + 2, gzz)
-      } else {
-        this.b('cobble', gx, y0, gzz)
-        this.b('mossy', gx, y0 + 1, gzz)
-      }
-    }
-    // the mourner statue + one dead tree
-    this.b('mossy', -26, y0, -32)
-    this.fill('darkstone', -26, -26, y0 + 1, y0 + 2, -32, -32)
-    this.b('cobble', -26, y0 + 3, -32)
-    this.deadTree('log', -26, y0, -25)
+    /* ---------- the graveyard (east of the church) — a true cemetery:
+       walled, gated, with a warden's mausoleum, a columbarium wall, a
+       memorial cross on its own plaza, and two dozen graves of every
+       kind — the parish outlived its town and buried it here ---------- */
 
-    /* four more graves — the parish outlived its town */
-    for (const [gx, gz, cross] of [[-26, -29, true], [-19, -31, false], [-22, -25, true], [-19, -26, false]] as const) {
-      if (cross) {
-        this.b('mossy', gx, y0, gz)
-        this.b('cobble', gx, y0 + 1, gz)
-        this.b('cobble', gx, y0 + 2, gz)
-        this.b('mossy', gx - 1, y0 + 2, gz)
-        this.b('mossy', gx + 1, y0 + 2, gz)
-      } else {
-        this.b('cobble', gx, y0, gz)
-        this.b('mossy', gx, y0 + 1, gz)
-      }
+    /* the perimeter — stonebrick base with mossy coping, 2 tall.
+       The north wall's east span becomes the columbarium (3 tall with
+       urn niches); the mausoleum provides the north wall's west span. */
+    // south wall, west of the gate (corner pillar at −27, collapsed run at −26)
+    this.fill('stonebrick', -25, -25, y0, y0, -24, -24)
+    this.fill('mossy', -25, -25, y0 + 1, y0 + 1, -24, -24)
+    // south wall, east of the gate (corner pillar at −18)
+    this.fill('stonebrick', -20, -19, y0, y0, -24, -24)
+    this.fill('mossy', -20, -19, y0 + 1, y0 + 1, -24, -24)
+    // east wall — with a ruined breach (the mortals stopped maintaining it)
+    for (let z = -32; z <= -25; z++) {
+      this.b('stonebrick', -18, y0, z)
+      if (z === -29 || z === -28) this.b('mossy', -18, y0, z) // crumbling teeth
+      else this.b('mossy', -18, y0 + 1, z)
+    }
+    // west wall south of the mausoleum
+    for (let z = -29; z <= -25; z++) {
+      this.b('stonebrick', -27, y0, z)
+      this.b('mossy', -27, y0 + 1, z)
+    }
+    /* the south gate — pillars 3 tall, darkstone lintel over the gap */
+    this.fill('stonebrick', -24, -24, y0, y0 + 2, -24, -24)
+    this.fill('stonebrick', -21, -21, y0, y0 + 2, -24, -24)
+    this.fill('darkstone', -24, -21, y0 + 3, y0 + 3, -24, -24)
+    this.b('glow', -24, y0 + 4, -24) // lanterns crown the gate pillars
+    this.b('glow', -21, y0 + 4, -24)
+    /* corner pillars — lantern-capped, the yard reads from the shortcut */
+    for (const [cx, cz] of [[-27, -24], [-18, -24], [-18, -33]] as const) {
+      this.col('stonebrick', cx, cz, y0, y0 + 2)
+      this.b('mossy', cx, y0 + 3, cz)
+      this.b('glow', cx, y0 + 4, cz)
+    }
+    /* the leak seals — collapsed wall runs between the yard's corner
+       and the arena's broken colonnade (they read as ruins, and they
+       keep the knight's court sealed behind its fog gate) */
+    this.b('mossy', -28, y0, -24)
+    this.b('cobble', -28, y0 + 1, -24)
+    this.b('cobble', -26, y0, -24)
+    this.b('mossy', -26, y0 + 1, -24)
+
+    /* ---------- the Warden's mausoleum (north-west corner) ---------- */
+    // shell: 3 tall, slab roof, darkstone door frame on the east face
+    // (corner cells belong to the east/west faces — no double fills)
+    this.fill('stonebrick', -27, -27, y0, y0 + 2, -33, -30) // west face
+    this.fill('stonebrick', -25, -25, y0, y0 + 2, -33, -30) // east face
+    this.fill('stonebrick', -26, -26, y0, y0 + 2, -30, -30) // south face
+    this.fill('stonebrick', -26, -26, y0, y0 + 2, -33, -33) // north face
+    this.clearCol('stonebrick', -25, y0, y0 + 1, -32) // swap the jambs to darkstone
+    this.clearCol('stonebrick', -25, y0, y0 + 1, -30)
+    this.b('darkstone', -25, y0, -32) // the door frame
+    this.b('darkstone', -25, y0 + 1, -32)
+    this.b('darkstone', -25, y0, -30)
+    this.b('darkstone', -25, y0 + 1, -30)
+    this.clearCol('stonebrick', -25, y0, y0 + 1, -31) // the doorway
+    this.fill('darkstone', -27, -25, y0 + 3, y0 + 3, -33, -30) // slab roof
+    this.b('mossy', -27, y0 + 4, -33) // moss crown + a stone cross finial
+    this.b('darkstone', -26, y0 + 4, -31)
+    this.b('darkstone', -26, y0 + 5, -31)
+    // inside: a plank bier with a gold urn, a candle niche in the wall
+    this.clearCol('stonebrick', -26, y0 + 1, y0 + 1, -33) // open the niche
+    this.b('plank', -26, y0, -32)
+    this.b('gold', -26, y0 + 1, -32)
+    this.b('glow', -26, y0 + 1, -33)
+    const mausLight = new THREE.PointLight(0xffc890, 1.4, 9, 1.8)
+    mausLight.position.set(-24.4, y0 + 1.8, -31)
+    this.group.add(mausLight)
+
+    /* the columbarium — the north wall's east span, 3 tall with urn
+       niches glowing between the bricks */
+    for (let x = -24; x <= -19; x++) {
+      this.b('stonebrick', x, y0, -33)
+      this.b(x === -24 || x === -22 || x === -20 ? 'glow' : 'stonebrick', x, y0 + 1, -33)
+      this.b('mossy', x, y0 + 2, -33)
     }
 
-    /* taller corner posts guard the graveyard walls */
-    for (const [cx, cz] of [[-27, -24], [-18, -24], [-27, -33], [-18, -33]] as const) {
-      this.b('cobble', cx, y0 + 1, cz)
-      this.b('mossy', cx, y0 + 2, cz)
-    }
+    /* ---------- the memorial plaza (centre) ---------- */
+    this.col('stonebrick', -22, -30, y0, y0) // the cross's plinth
+    this.b('cobble', -22, y0 + 1, -30)
+    this.b('cobble', -22, y0 + 2, -30)
+    this.b('mossy', -23, y0 + 2, -30) // the arms
+    this.b('mossy', -21, y0 + 2, -30)
+    this.b('cobble', -22, y0 + 3, -30)
+    this.b('glow', -23, y0, -31) // two candles keep the memorial
+    this.b('glow', -21, y0, -31)
+    const memoLight = new THREE.PointLight(0xffc890, 1.3, 10, 1.8)
+    memoLight.position.set(-22.5, y0 + 2.2, -30.5)
+    this.group.add(memoLight)
 
-    /* a lantern leans by the graveyard gate; candles mark two visits */
+    /* ---------- the graves ---------- */
+    // tall crosses (mossy base, cobble stem, arms at the stem's crown)
+    const crossGraves: [number, number][] = [[-21, -26], [-24, -28]]
+    for (const [gx, gz] of crossGraves) {
+      this.b('mossy', gx, y0, gz)
+      this.b('cobble', gx, y0 + 1, gz)
+      this.b('cobble', gx, y0 + 2, gz)
+      this.b('mossy', gx - 1, y0 + 2, gz)
+      this.b('mossy', gx + 1, y0 + 2, gz)
+    }
+    // slab tombs — two supports carrying a stone lid (the well-off dead)
+    this.b('cobble', -26, y0, -25)
+    this.b('cobble', -25, y0, -25)
+    this.fill('stonebrick', -26, -25, y0 + 1, y0 + 1, -25, -25)
+    this.b('cobble', -19, y0, -27)
+    this.b('cobble', -19, y0, -28)
+    this.fill('stonebrick', -19, -19, y0 + 1, y0 + 1, -27, -28)
+    // box tomb — a solid stone chest for a family's name
+    this.b('cobble', -26, y0, -28)
+    this.b('stonebrick', -26, y0 + 1, -28)
+    // headstones — the common dead, each a little different
+    this.b('cobble', -19, y0, -25); this.b('mossy', -19, y0 + 1, -25)
+    this.b('mossy', -25, y0, -26); this.b('cobble', -25, y0 + 1, -26)
+    this.b('mossy', -19, y0, -26); this.b('cobble', -19, y0 + 1, -26)
+    this.b('cobble', -21, y0, -25); this.b('mossy', -21, y0 + 1, -25)
+    this.b('cobble', -24, y0, -29); this.b('mossy', -24, y0 + 1, -29)
+    this.b('mossy', -25, y0, -28); this.b('cobble', -25, y0 + 1, -28)
+    // urn grave — a lit pedestal; whoever it holds is still tended
+    this.b('cobble', -26, y0, -26)
+    this.b('mossy', -26, y0 + 1, -26)
+    this.b('glow', -26, y0 + 2, -26)
+    // broken stone — time has toppling work left to do here
+    this.b('mossy', -26, y0, -29)
+    this.b('cobble', -25, y0, -29)
+    this.b('mossy', -19, y0, -30)
+    this.b('cobble', -19, y0, -29)
+    // the fresh grave — bare mounds, a head post, one candle someone lit
+    this.b('dirt', -21, y0, -29)
+    this.b('dirt', -20, y0, -29)
+    this.b('log', -21, y0 + 1, -29)
+    this.b('glow', -20, y0, -28)
+    // pauper stones along the north-east, under the columbarium
+    this.b('mossy', -23, y0, -32); this.b('cobble', -23, y0 + 1, -32)
+    this.b('mossy', -22, y0, -32)
+    this.b('cobble', -21, y0, -32); this.b('mossy', -21, y0 + 1, -32)
+    // rubble pile tucked between the mausoleum and the columbarium
+    this.b('mossy', -24, y0, -32)
+    this.b('cobble', -24, y0 + 1, -32)
+
+    /* the mourner — she weeps where the crypt key waits beside her */
+    this.b('mossy', -26, y0, -27)
+    this.fill('darkstone', -26, -26, y0 + 1, y0 + 2, -27, -27)
+    this.b('cobble', -26, y0 + 3, -27)
+    this.b('glow', -25, y0, -27) // a candle at her feet
+
+    /* dead trees — one inside the yard, one framing the gate outside */
+    this.col('log', -19, -31, y0, y0 + 2)
+    this.b('log', -18, y0 + 2, -31)
+    this.b('log', -19, y0 + 1, -30)
+    this.col('log', -20, -22, y0, y0 + 2)
+    this.b('log', -19, y0 + 2, -22)
+    this.b('log', -20, y0 + 1, -23)
+
+    /* a lantern leans by the graveyard gate */
     this.lantern(-25, y0, -23)
-    this.b('glow', -25, y0, -30)
-    this.b('glow', -21, y0, -26)
 
     /* crimson banners flank the church door — the parish still dresses
        for a congregation that stopped coming */
