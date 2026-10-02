@@ -151,3 +151,42 @@
 .toast-anim {
   animation: toastpop 2.4s ease-out both;
 }
+
+/* ---- cinematic letterbox / title cards ---- */
+@keyframes cinebar-top-kf {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+@keyframes cinebar-bot-kf {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.cinebar-top {
+  animation: cinebar-top-kf 0.8s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.cinebar-bot {
+  animation: cinebar-bot-kf 0.8s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes cinetitle-kf {
+  0% { opacity: 0; transform: scale(1.07); filter: blur(8px); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+.cine-title-anim {
+  animation: cinetitle-kf 1.5s ease-out both;
+}
+@keyframes cinecap-kf {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.cine-cap-anim {
+  animation: cinecap-kf 0.6s ease-out both;
+}
+@keyframes cardrise-kf {
+  0% { opacity: 0; transform: translateY(14px); filter: blur(4px); }
+  16% { opacity: 1; transform: translateY(0); filter: blur(0); }
+  80% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); filter: blur(2px); }
+}
+.cardrise-anim {
+  animation: cardrise-kf 3.4s ease-out both;
+}

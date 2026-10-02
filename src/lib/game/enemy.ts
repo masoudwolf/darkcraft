@@ -36,6 +36,8 @@ export interface EnemyOpts {
   scale: number
   isBoss?: boolean
   name?: string
+  /** mini-lord: ember aura, title-card intro, guaranteed relic drop */
+  champion?: boolean
 }
 
 export class Enemy {
@@ -56,6 +58,12 @@ export class Enemy {
   isBoss: boolean
   name: string
   active = true
+  /** mini-lord flag (ember aura + title-card intro + guaranteed relic) */
+  champion = false
+  /** the relic a champion drops when felled (ItemId) */
+  champLoot: string | null = null
+  /** champions greet the player with a title-card sting exactly once */
+  aggroPlayed = false
 
   protected opts: EnemyOpts
   private wanderT = 0
@@ -74,6 +82,7 @@ export class Enemy {
     this.maxHp = opts.hp
     this.isBoss = !!opts.isBoss
     this.name = opts.name ?? 'Hollow'
+    this.champion = !!opts.champion
     const sworded = kind === 'zombie' || kind === 'boss' || kind === 'wither' || kind === 'bossflame'
     this.h = createHumanoid(kind, opts.scale, {
       sword: sworded,
@@ -151,6 +160,11 @@ export class Enemy {
     this.animT += dt
     this.flash = Math.max(0, this.flash - dt * 4)
     setFlash(this.h, this.flash * 0.55)
+    // champions carry a faint ember pulse — the mark of a mini-lord
+    if (this.champion && !this.dead) {
+      const pulse = 0.11 + Math.sin(this.animT * 4.2) * 0.05
+      setFlash(this.h, this.flash * 0.5 + pulse)
+    }
 
     if (this.dead) {
       this.deathT += dt
@@ -186,6 +200,17 @@ export class Enemy {
     const sealed = this.gateSeals(game, player.pos.x, player.pos.z)
 
     this.cd = Math.max(0, this.cd - dt)
+
+    // a champion's first sight of the unkindled — the title-card sting
+    if (
+      this.champion &&
+      !this.aggroPlayed &&
+      !this.dead &&
+      (this.state === 'chase' || this.state === 'windup')
+    ) {
+      this.aggroPlayed = true
+      game.onChampionIntro(this)
+    }
 
     switch (this.state) {
       case 'idle': {
@@ -834,6 +859,20 @@ export class BossEnemy extends Enemy {
     return this.hp < this.maxHp * 0.5
   }
 
+  /** the intro cinematic drives the roar pose directly (state machine frozen) */
+  cineRoarStep(dt: number) {
+    this.state = 'roar'
+    this.stateT = (this.stateT + dt) % this.roarDur()
+    this.roarAnim(this.stateT / this.roarDur())
+  }
+
+  /** the intro cinematic already roared — skip the natural intro roar */
+  finishIntro() {
+    this.introDone = true
+    this.state = 'idle'
+    this.stateT = 0
+  }
+
   reset() {
     super.reset()
     this.active = false
@@ -1237,7 +1276,7 @@ export class SkeletonEnemy extends Enemy {
   private mode: 'shoot' | 'poke' = 'shoot'
   private bow: THREE.Group
 
-  constructor(scene: THREE.Scene, spawn: THREE.Vector3, aggro = 13.5) {
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3, aggro = 13.5, over?: Partial<EnemyOpts>) {
     super(scene, 'skeleton', spawn, {
       hp: 55,
       dmg: 15,
@@ -1249,6 +1288,7 @@ export class SkeletonEnemy extends Enemy {
       souls: 45,
       scale: 0.97,
       name: 'تیرانداز استخوانی',
+      ...over,
     })
     // bow strapped into the LEFT hand (limb axis = local X → upright when aiming)
     // the archers carve theirs from femurs — a pale cracked bone bow
@@ -1419,7 +1459,7 @@ export class WitherSkeletonEnemy extends Enemy {
   get lootKind(): string {
     return 'wither'
   }
-  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3, over?: Partial<EnemyOpts>) {
     super(scene, 'wither', spawn, {
       hp: 95,
       dmg: 24,
@@ -1431,6 +1471,7 @@ export class WitherSkeletonEnemy extends Enemy {
       souls: 70,
       scale: 1.08,
       name: 'شمشیرزن ویسری',
+      ...over,
     })
   }
 
@@ -1666,6 +1707,20 @@ export class BossFlameEnemy extends Enemy {
     this.introDone = false
     this.chargeHit = false
     setFlash(this.h, 0)
+  }
+
+  /** the intro cinematic drives the roar pose directly (state machine frozen) */
+  cineRoarStep(dt: number) {
+    this.state = 'roar'
+    this.stateT = (this.stateT + dt) % this.roarDur()
+    this.roarAnim(this.stateT / this.roarDur())
+  }
+
+  /** the intro cinematic already roared — skip the natural intro roar */
+  finishIntro() {
+    this.introDone = true
+    this.state = 'idle'
+    this.stateT = 0
   }
 
   update(dt: number, player: Player, game: Game) {

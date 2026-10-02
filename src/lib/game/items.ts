@@ -227,6 +227,18 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     icon: '⚔️', desc: 'تیغه‌ای از ابسیدینِ کفِ گودال؛ آخرین کسی که آن را بلند کرد دیگر انسان نبود. وزنش مثل یک دعوت به مرگ است — دعوتی که ردّش آخرین وظیفه‌ی یک اخگر است.',
     tier: 'boss', dmg: 64, spd: 0.8, style: 'obsidian', scale: 1.32,
   }),
+
+  /* ---- champion relics — guarded by the mini-lords of the Vale ---- */
+  captain_blade: I({
+    id: 'captain_blade', name: 'تیغِ سردار', cat: 'sword', slot: 'rh', weight: 5.2,
+    icon: '🗡️', desc: 'تیغِ نشانه‌دارِ سردارِ نگهبانان. روی غلافش هنوز شمارشِ شب‌ها کنده شده — شبی که نگهبانان بدونِ گزارش برگشتند، شمارش متوقف شد. تیغ هنوز منتظرِ گزارشِ آخر است.',
+    tier: 'boss', dmg: 48, spd: 0.94, style: 'iron', scale: 1.1,
+  }),
+  warden_shield: I({
+    id: 'warden_shield', name: 'سپرِ نگهبانِ گور', cat: 'shield', slot: 'lh', weight: 4.0,
+    icon: '🛡️', desc: 'سپری از آلیاژِ شمع و قیر که روی قبرِ بی‌نامِ نخستین آویخته بودند. شعله‌ی ریزِ لبه‌اش هرگز تمام نمی‌شود؛ می‌گویند هر کس که سپر را بلند کند، یک عمرِ نگهبانی به عهده می‌گیرد.',
+    tier: 'boss', block: 0.93, tint: 0xb9a86a,
+  }),
 }
 
 /* ---------------- slots & load math ---------------- */

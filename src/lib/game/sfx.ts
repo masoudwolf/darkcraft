@@ -358,6 +358,20 @@ export class Sfx {
     this.tone(166, 0.4, 'sine', 0.22, undefined, 0.05)
   }
 
+  /** region reveal — a soft, distant ember chord (location title cards) */
+  reveal() {
+    if (this.playFile('ember', 0.5, 0.03)) return
+    this.tone(330, 0.2, 'triangle', 0.1, 415)
+    this.tone(554, 0.24, 'triangle', 0.09, undefined, 0.14)
+  }
+
+  /** champion mini-lord intro sting — a far-off roar */
+  championSting() {
+    if (this.playFile('boss_roar', 0.5, 0.1)) return
+    this.tone(85, 0.7, 'sawtooth', 0.2, 42)
+    this.noise(0.5, 0.14, 520, 120)
+  }
+
   /* ---- boss death finales ---- */
 
   /** the knight's body bursts into voxels — deep thud + airy soul shimmer rising */

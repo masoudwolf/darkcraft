@@ -947,6 +947,74 @@ function BossFell({
   )
 }
 
+/** cinematic letterbox — the director is shooting; click/space skips */
+function CinematicOverlay({
+  title,
+  sub,
+  caption,
+  onSkip,
+}: {
+  title: string | null
+  sub: string | null
+  caption: string | null
+  onSkip: () => void
+}) {
+  return (
+    <div
+      className="absolute inset-0 z-40 cursor-pointer"
+      onPointerDown={onSkip}
+      role="button"
+      aria-label="رد کردن سینماتیک"
+    >
+      <div className="cinebar-top pointer-events-none absolute inset-x-0 top-0 h-[11vh] bg-black" />
+      <div className="cinebar-bot pointer-events-none absolute inset-x-0 bottom-0 h-[11vh] bg-black" />
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center" dir="rtl">
+        {title && (
+          <div className="cine-title-anim text-center">
+            <h2
+              className="font-pixel text-3xl font-black text-[#ffd54a] sm:text-5xl"
+              style={{ textShadow: '0 0 40px rgba(255,180,60,0.5), 0 3px 14px rgba(0,0,0,0.9)' }}
+            >
+              {title}
+            </h2>
+            {sub && <p className="mt-3 text-sm text-white/60 sm:text-base">{sub}</p>}
+          </div>
+        )}
+        {caption && (
+          <p
+            key={caption}
+            className="cine-cap-anim absolute bottom-[13.5vh] mx-6 max-w-[85%] text-center text-sm text-white/90 sm:text-base"
+            style={{ textShadow: '0 2px 10px rgba(0,0,0,0.95)' }}
+          >
+            {caption}
+          </p>
+        )}
+      </div>
+      <p className="pointer-events-none absolute bottom-[2.5vh] left-4 text-[11px] text-white/35" dir="rtl">
+        کلیک / فاصله — رد شدن
+      </p>
+    </div>
+  )
+}
+
+/** Dark-Souls-style location title card (region entry / champion intro) */
+function TitleCard({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center" dir="rtl">
+      <div className="cardrise-anim text-center">
+        <h3
+          className="font-pixel text-2xl font-black text-white/90 sm:text-4xl"
+          style={{ textShadow: '0 0 30px rgba(0,0,0,0.95), 0 2px 12px rgba(0,0,0,0.9)' }}
+        >
+          {title}
+        </h3>
+        <div className="mx-auto mt-2 h-px w-28 bg-gradient-to-r from-transparent via-[#ffd54a99] to-transparent" />
+        <p className="mt-2 text-xs text-[#ffd54a]/85 sm:text-sm">{sub}</p>
+      </div>
+    </div>
+  )
+}
+
 function RestModal({
   hud,
   onLevel,
@@ -1382,6 +1450,17 @@ export default function GameClient() {
       {viewerOpen && <ModelViewer onClose={closeViewer} />}
       {mapPreviewOpen && <MapViewer onClose={closeMapPreview} />}
       {phase === 'dead' && <YouDied />}
+      {hud?.cine && phase === 'playing' && (
+        <CinematicOverlay
+          title={hud.cine.title}
+          sub={hud.cine.sub}
+          caption={hud.cine.caption}
+          onSkip={() => gameRef.current?.skipCinematic()}
+        />
+      )}
+      {hud?.card && phase === 'playing' && !hud?.cine && (
+        <TitleCard key={hud.card.key} title={hud.card.title} sub={hud.card.sub} />
+      )}
       {hud?.banner === 'bossfell' && phase === 'playing' && (
         <BossFell
           title="دشمن بزرگ نابود شد!"

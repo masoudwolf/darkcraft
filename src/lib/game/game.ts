@@ -29,7 +29,6 @@ import {
 /* ================= HUD STATE ================= */
 
 export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop' | 'inventory' | 'lore'
-
 export interface HudState {
   phase: Phase
   hp: number
@@ -72,6 +71,10 @@ export interface HudState {
   aiming: boolean
   /** draw power 0..1 while aiming */
   draw: number
+  /** a cinematic is playing — letterbox + boss/title cards + captions */
+  cine: { title: string | null; sub: string | null; caption: string | null } | null
+  /** a location title card (first entry into a region / champion intro) */
+  card: { title: string; sub: string; key: number } | null
 }
 
 export interface InvHud {
@@ -192,6 +195,8 @@ export interface SaveData {
   lhA?: 1 | 2
   /** memorial stones already read */
   lore?: string[]
+  /** one-time cinematics already seen (intro shot, post-boss beat, regions) */
+  cine?: { intro?: boolean; beat1?: boolean; regions?: string[] }
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -210,6 +215,33 @@ export const DEFAULT_SETTINGS: GameSettings = {
   invertY: false,
   shadows: true,
 }
+
+/* ================= CINEMATICS ================= */
+
+function easeInOut(t: number) {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
+}
+
+interface CineKey {
+  /** seconds this shot lasts */
+  dur: number
+  /** camera position at the end of the shot */
+  pos: THREE.Vector3
+  /** look-at point at the end of the shot */
+  look: THREE.Vector3
+  /** fired once when the shot begins (roar, sfx, particles...) */
+  onStart?: () => void
+}
+
+/** the named regions of the Vale — first entry earns its title card */
+const REGIONS = [
+  { id: 'fortress', name: 'دژِ ذغال', sub: 'تختِ پادشاهِ شعله', x0: 22, x1: 54, z0: -26, z1: -2 },
+  { id: 'parish', name: 'فلاتِ کلیسا', sub: 'زنگی که دیگر برای کسی نمی‌خواند', x0: -44, x1: -8, z0: -40, z1: -2 },
+  { id: 'wastes', name: 'خاکسترگاه', sub: 'سرزمینِ سوختهٔ شرق', x0: 20, x1: 56, z0: -2, z1: 38 },
+  { id: 'village', name: 'دهکدهٔ فراموش‌شده', sub: 'خانه‌هایی که خالی ماندند', x0: -52, x1: -12, z0: 2, z1: 28 },
+  { id: 'shrine', name: 'زیارتگاهِ نخستین', sub: 'آتشگاهِ آغاز و پایان', x0: -12, x1: 12, z0: 18, z1: 40 },
+]
+
 
 /* ================= PARTICLES / EFFECTS ================= */
 
@@ -1241,6 +1273,31 @@ export class Game {
   boss2Fell = false
   private lockLastMove = 0
 
+  /* ---- cinematics ---- */
+  private cine: {
+    keys: CineKey[]
+    i: number
+    t: number
+    fromPos: THREE.Vector3
+    fromLook: THREE.Vector3
+    title: string | null
+    sub: string | null
+    caption: string | null
+    /** the roaring boss the shot is about (roar pose driven manually) */
+    actor: { cineRoarStep(dt: number): void } | null
+    onEnd: () => void
+  } | null = null
+  private cineBlendT = 0
+  private cineEndPos = new THREE.Vector3()
+  private cineEndLook = new THREE.Vector3()
+  /** one-time story beats / region reveals (persisted) */
+  private cineSeen: { intro?: boolean; beat1?: boolean; regions?: string[] } = {}
+  private lastRegion: string | null = null
+  private beat1Pending = 0
+  private card: { title: string; sub: string; key: number } | null = null
+  private cardT = 0
+  private cardKey = 0
+
   private bursts: Burst[] = []
   private texts: FloatText[] = []
   private orbs: SoulOrb[] = []
@@ -1537,13 +1594,39 @@ export class Game {
       this.enemies.push(b)
     }
 
+    // ---- champions — the mini-lords of the Vale ----
+    // the Watchers' Captain holds the head of the shortcut stair: a withered
+    // giant in charred plate, carrying the tally-blade of his lost watch
+    const capPos = new THREE.Vector3(-16, 0, -11)
+    capPos.y = this.world.surfaceAt(capPos.x, capPos.z)
+    const captain = new WitherSkeletonEnemy(scene, capPos, {
+      hp: 420, dmg: 30, speed: 3.2, aggro: 10.5, atkRange: 2.6, windup: 0.62, recover: 0.7,
+      souls: 700, scale: 1.38, champion: true, name: 'سردارِ نگهبانان',
+    })
+    captain.world = this.world
+    captain.game = this
+    captain.champLoot = 'captain_blade'
+    this.enemies.push(captain)
+
+    // the Grave Warden walks the candlelit graveyard — a bone champion whose
+    // oath is older than the graves he tends; his shield still carries a flame
+    const gwPos = new THREE.Vector3(-24, 0, -27)
+    gwPos.y = this.world.surfaceAt(gwPos.x, gwPos.z)
+    const warden = new SkeletonEnemy(scene, gwPos, 9, {
+      hp: 300, dmg: 22, speed: 2.6, aggro: 9, atkRange: 2.2, windup: 0.8, recover: 0.6,
+      souls: 550, scale: 1.32, champion: true, name: 'نگهبانِ گورها',
+    })
+    warden.world = this.world
+    warden.game = this
+    warden.champLoot = 'warden_shield'
+    this.enemies.push(warden)
+
     // boss 1 — the ancient zombie knight beyond the town's fog
     const bossSpawn = new THREE.Vector3(BOSS_CENTER.x, 0, BOSS_CENTER.z)
     bossSpawn.y = this.world.surfaceAt(BOSS_CENTER.x, BOSS_CENTER.z)
     this.boss = new BossEnemy(scene, bossSpawn)
     this.boss.world = this.world
     this.boss.game = this
-
     // boss 2 — the Flame King of the caldera, behind the breach fog
     const boss2Spawn = new THREE.Vector3(BOSS2_CENTER.x, 0, BOSS2_CENTER.z)
     boss2Spawn.y = this.world.surfaceAt(BOSS2_CENTER.x, BOSS2_CENTER.z)
@@ -1598,6 +1681,11 @@ export class Game {
     this.phase = 'playing'
     if (!this.engine.input.isTouch) this.engine.input.requestLock()
     this.emit(true)
+    // first light — the establishing shot of the Vale (once per save)
+    if (!this.cineSeen.intro) {
+      this.cineSeen.intro = true
+      this.startIntroCinematic()
+    }
   }
 
   /* ---------- pause / menus / settings ---------- */
@@ -2392,6 +2480,7 @@ export class Game {
         rhA: this.rhActive,
         lhA: this.lhActive,
         lore: this.loreStones.filter((s) => s.seen).map((s) => s.id),
+        cine: this.cineSeen,
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -2402,6 +2491,8 @@ export class Game {
       const raw = localStorage.getItem(SAVE_KEY)
       if (!raw) return
       const d = JSON.parse(raw) as SaveData
+      // one-time cinematics already watched
+      this.cineSeen = d.cine ?? {}
       // re-apply levels from scratch for consistency
       const target = { vit: d.vit ?? 0, end: d.end ?? 0, str: d.str ?? 0 }
       this.player.vit = 0
@@ -2589,6 +2680,11 @@ export class Game {
     // their gear may hit the ground — a little inheritance from the dead
     // (lords skip the common table — their signature rig is guaranteed)
     const drops = e.isBoss ? [] : rollLoot(e.lootKind)
+    // champions always drop their guarded relic
+    if (e.champion && e.champLoot) {
+      drops.push({ id: e.champLoot as ItemId, n: 1 })
+      this.spawnText('غنیمتِ بزرگ!', '#ffd54a', e.pos.clone().add(new THREE.Vector3(0, 3.2, 0)))
+    }
     if (drops.length > 0) this.spawnLoot(drops, e.pos)
     if (e === this.boss) this.onBossKilled()
     else if (e === this.boss2) this.onBoss2Killed()
@@ -2607,6 +2703,11 @@ export class Game {
     // the lord's inheritance: his great blade + a piece of his armor
     this.spawnLoot(bossLoot(1), this.boss.pos)
     this.spawnEstusShard()
+    // once the ash settles, the camera finds the fortress (once per save)
+    if (!this.cineSeen.beat1) {
+      this.cineSeen.beat1 = true
+      this.beat1Pending = 4.2
+    }
     this.save()
   }
 
@@ -2718,6 +2819,281 @@ export class Game {
     this.sfx.bossRoar()
     this.shake = Math.max(this.shake, 0.42)
     this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 3, 0)), 0xff7a2a, 26, 3.6)
+  }
+
+  /* ================= CINEMATIC DIRECTOR ================= */
+
+  /** begin a cinematic — the player freezes, the director owns the camera */
+  private startCinematic(
+    keys: CineKey[],
+    opts: {
+      title?: string
+      sub?: string
+      actor?: { cineRoarStep(dt: number): void } | null
+      onEnd?: () => void
+    } = {}
+  ) {
+    this.cine = {
+      keys,
+      i: 0,
+      t: 0,
+      fromPos: this.engine.camera.position.clone(),
+      fromLook: this.camTarget.clone(),
+      title: opts.title ?? null,
+      sub: opts.sub ?? null,
+      caption: null,
+      actor: opts.actor ?? null,
+      onEnd: opts.onEnd ?? (() => {}),
+    }
+    this.player.lockedTarget = null
+    this.emit(true)
+  }
+
+  /** any click/tap/space skips the shot — end events still run */
+  skipCinematic() {
+    this.endCinematic()
+  }
+
+  private endCinematic() {
+    const c = this.cine
+    if (!c) return
+    // capture the camera's current pose for a smooth hand-back
+    this.cineEndPos.copy(this.engine.camera.position)
+    const dir = new THREE.Vector3()
+    this.engine.camera.getWorldDirection(dir)
+    this.cineEndLook.copy(this.engine.camera.position).addScaledVector(dir, 10)
+    this.cine = null
+    this.cineBlendT = 0.7
+    // resync pointer-lock state so skipping never auto-pauses
+    this.wasLocked = this.engine.input.pointerLocked && !this.engine.input.isTouch
+    c.onEnd()
+    this.emit(true)
+  }
+
+  /** one frame of cinematic — camera keyframes + frozen world (except the roar) */
+  private updateCinematic(dt: number, input: Engine['input']) {
+    const c = this.cine!
+    if (
+      input.consume('LMB') ||
+      input.consume('Space') ||
+      input.consume('Enter') ||
+      input.consume('KeyF')
+    ) {
+      this.endCinematic()
+      return
+    }
+    input.takeMouse() // swallow look input during the shot
+    const key = c.keys[c.i]
+    if (key.onStart) {
+      const fn = key.onStart
+      key.onStart = undefined
+      fn()
+    }
+    c.t += dt
+    const k = easeInOut(Math.min(1, c.t / key.dur))
+    this.engine.camera.position.lerpVectors(c.fromPos, key.pos, k)
+    const look = new THREE.Vector3().lerpVectors(c.fromLook, key.look, k)
+    this.engine.camera.lookAt(look)
+    if (c.actor) c.actor.cineRoarStep(dt)
+    if (c.t >= key.dur) {
+      c.fromPos.copy(key.pos)
+      c.fromLook.copy(key.look)
+      c.i++
+      c.t = 0
+      if (c.i >= c.keys.length) {
+        this.endCinematic()
+        return
+      }
+    }
+    // the world breathes around the shot
+    this.world.update(dt)
+    this.updateBonfire(dt)
+    this.updateMerchant(dt)
+    this.updateEffects(dt)
+    this.updateLoot(dt)
+    this.drawMinimap()
+    this.emit(false)
+  }
+
+  private setCaption(text: string) {
+    if (!this.cine) return
+    this.cine.caption = text
+    this.emit(true)
+  }
+
+  /** keep a cinematic camera point out of walls / above ground */
+  private cineSafe(p: THREE.Vector3, toward: THREE.Vector3) {
+    for (let i = 0; i < 10; i++) {
+      const blocked =
+        this.world.solidStruct(Math.round(p.x), Math.round(p.y - 0.4), Math.round(p.z)) ||
+        this.world.surfaceAt(p.x, p.z) + 0.5 > p.y
+      if (!blocked) return p
+      p.lerp(toward, 0.15)
+      const ground = this.world.surfaceAt(p.x, p.z) + 0.5
+      if (p.y < ground) p.y = ground
+    }
+    return p
+  }
+
+  /** the fog gate closes behind — the lord's intro, shot properly */
+  private startBossIntro(which: 1 | 2) {
+    const boss = which === 1 ? this.boss : this.boss2
+    const gate =
+      which === 1
+        ? new THREE.Vector3((GATE1.lane0 + GATE1.lane1) / 2, 0, GATE1.z)
+        : new THREE.Vector3(GATE2.x, 0, GATE2.z)
+    gate.y = this.world.surfaceAt(gate.x, gate.z)
+    const bp = boss.pos.clone()
+    const toBoss = bp.clone().sub(gate)
+    toBoss.y = 0
+    if (toBoss.lengthSq() < 0.01) toBoss.set(0, 0, -1)
+    toBoss.normalize()
+    const side = new THREE.Vector3(-toBoss.z, 0, toBoss.x)
+    const chest = bp.clone().add(new THREE.Vector3(0, which === 1 ? 2.5 : 2.9, 0))
+
+    // front-right of the lord → arc across his front → rise to the wide shot
+    const k1 = bp.clone().addScaledVector(toBoss, 5.4).addScaledVector(side, 7.0)
+    k1.y = bp.y + 3.5
+    const k2 = bp.clone().addScaledVector(toBoss, 5.4).addScaledVector(side, -7.0)
+    k2.y = bp.y + 3.7
+    const k3 = gate.clone().addScaledVector(toBoss, 5.0)
+    k3.y = gate.y + 6.4
+    this.cineSafe(k1, gate)
+    this.cineSafe(k2, gate)
+    this.cineSafe(k3, gate)
+
+    this.startCinematic(
+      [
+        {
+          dur: 1.7,
+          pos: k1,
+          look: chest,
+          onStart: () => (which === 1 ? this.onBossIntro(bp) : this.onBoss2Intro(bp)),
+        },
+        { dur: 2.3, pos: k2, look: chest },
+        { dur: 1.5, pos: k3, look: chest.clone().add(new THREE.Vector3(0, 0.6, 0)) },
+      ],
+      {
+        title: boss.name,
+        sub: which === 1 ? 'نگهبانِ دروازهٔ کلیسا' : 'خداوندگارِ خاکسترگاه',
+        actor: boss,
+        onEnd: () => {
+          boss.finishIntro()
+          if (which === 1) {
+            this.bossActive = true
+            this.bossActiveBarrier = true
+            this.boss.active = true
+          } else {
+            this.boss2Active = true
+            this.boss2Barrier = true
+            this.boss2.active = true
+          }
+          this.save()
+        },
+      }
+    )
+  }
+
+  /** opening establishing shot — the Vale, the tower, the fortress (once) */
+  private startIntroCinematic() {
+    const bY = this.world.surfaceAt(BONFIRE.x, BONFIRE.z)
+    const p = this.player.pos
+    this.startCinematic(
+      [
+        {
+          dur: 2.1,
+          pos: new THREE.Vector3(1.6, bY + 3.6, 27.2),
+          look: new THREE.Vector3(BONFIRE.x, bY + 1.0, BONFIRE.z),
+          onStart: () => {
+            this.sfx.reveal()
+            this.setCaption('این‌جا «درّهٔ زغال» است — خانهٔ آخرین آتشِ جهان')
+          },
+        },
+        {
+          dur: 2.7,
+          pos: new THREE.Vector3(6.5, bY + 7.2, 21.0),
+          look: new THREE.Vector3(-28, 17, -22),
+          onStart: () => this.setCaption('زنگِ ناقوس، پادشاهِ خاکستر را بیدار کرده است...'),
+        },
+        {
+          dur: 2.7,
+          pos: new THREE.Vector3(-3.5, bY + 6.4, 24.0),
+          look: new THREE.Vector3(34, 13, -10),
+          onStart: () => this.setCaption('اما تا اخگری باقی است، راه بازمی‌گردد — افروز، و جلو برو'),
+        },
+        {
+          dur: 1.5,
+          pos: new THREE.Vector3(p.x, p.y + 2.6, p.z + 5.6),
+          look: new THREE.Vector3(p.x, p.y + 1.5, p.z),
+        },
+      ],
+      { title: 'ماین سولز', sub: 'درّهٔ زغال' }
+    )
+  }
+
+  /** after the first lord falls — the camera finds the fortress (once) */
+  private startBeat1Cinematic() {
+    const c = this.boss.pos.clone()
+    this.startCinematic(
+      [
+        {
+          dur: 1.9,
+          pos: c.clone().add(new THREE.Vector3(3.2, 3.0, 4.2)),
+          look: c.clone().add(new THREE.Vector3(0, 1.2, 0)),
+          onStart: () => {
+            this.sfx.reveal()
+            this.setCaption('از آن‌سوی خاکسترگاه... پادشاهِ شعله خبردار می‌شود')
+          },
+        },
+        {
+          dur: 2.4,
+          pos: c.clone().add(new THREE.Vector3(0.5, 9.5, -7.0)),
+          look: new THREE.Vector3(34, 13, -10),
+        },
+      ],
+      {}
+    )
+  }
+
+  /* ---- region title cards ---- */
+
+  private showCard(title: string, sub: string) {
+    this.cardKey++
+    this.card = { title, sub, key: this.cardKey }
+    this.cardT = 3.4
+    this.sfx.reveal()
+    this.emit(true)
+  }
+
+  private updateRegionCard(dt: number) {
+    if (this.cardT > 0) {
+      this.cardT -= dt
+      if (this.cardT <= 0) {
+        this.card = null
+        this.emit(true)
+      }
+    }
+    const p = this.player.pos
+    const r = REGIONS.find((x) => p.x >= x.x0 && p.x <= x.x1 && p.z >= x.z0 && p.z <= x.z1)
+    if (r && r.id !== this.lastRegion) {
+      this.lastRegion = r.id
+      if (!this.cine && !this.cineSeen.regions?.includes(r.id)) {
+        this.cineSeen.regions = [...(this.cineSeen.regions ?? []), r.id]
+        this.showCard(r.name, r.sub)
+      }
+    }
+  }
+
+  /** a champion notices the unkindled — title card + far roar (once) */
+  onChampionIntro(e: Enemy) {
+    this.sfx.championSting()
+    this.shake = Math.max(this.shake, 0.28)
+    this.showCard(e.name, 'نگهبانِ بزرگِ درّه')
+    this.spawnText(
+      'یک بزرگ سترگ بیدار می‌شود!',
+      '#ffb54a',
+      e.pos.clone().add(new THREE.Vector3(0, 3.6, 0))
+    )
   }
 
   onBoss2Phase2() {
@@ -3085,6 +3461,10 @@ export class Game {
   private boss2Barrier = false
 
   private respawn() {
+    // never let a cut-scene survive a death
+    this.cine = null
+    this.cineBlendT = 0
+    this.beat1Pending = 0
     const p = new THREE.Vector3(BONFIRE.x + 2.5, 0, BONFIRE.z + 2)
     p.y = this.world.surfaceAt(p.x, p.z)
     this.player.reset(p, Math.PI * 0.85)
@@ -3334,6 +3714,20 @@ export class Game {
 
     /* ---- playing ---- */
 
+    /* ---- cinematic override — the director owns the camera ---- */
+    if (this.cine) {
+      this.updateCinematic(dt, input)
+      return
+    }
+
+    // deferred story beat after the first lord falls
+    if (this.beat1Pending > 0) {
+      this.beat1Pending -= dt
+      if (this.beat1Pending <= 0) this.startBeat1Cinematic()
+    }
+    // first-entry region title cards
+    this.updateRegionCard(dt)
+
     // camera input
     const { dx, dy } = input.takeMouse()
     if (dx !== 0 || dy !== 0) this.lockLastMove = 0
@@ -3383,11 +3777,7 @@ export class Game {
       this.camYaw += dYaw * Math.min(1, 5 * dt)
       this.camPitch += (0.32 - this.camPitch) * Math.min(1, 4 * dt)
       if (this.fogPassT <= 0) {
-        this.bossActive = true
-        this.bossActiveBarrier = true
-        this.boss.active = true
-        this.sfx.bossRoar()
-        this.shake = Math.max(this.shake, 0.4)
+        this.startBossIntro(1)
       }
     }
 
@@ -3401,11 +3791,7 @@ export class Game {
       this.camYaw += dY2 * Math.min(1, 5 * dt)
       this.camPitch += (0.32 - this.camPitch) * Math.min(1, 4 * dt)
       if (this.fogPass2T <= 0) {
-        this.boss2Active = true
-        this.boss2Barrier = true
-        this.boss2.active = true
-        this.sfx.bossRoar()
-        this.shake = Math.max(this.shake, 0.4)
+        this.startBossIntro(2)
       }
     }
 
@@ -3720,6 +4106,16 @@ export class Game {
       this.engine.camera.position.y += (Math.random() - 0.5) * s
     }
     this.engine.camera.lookAt(this.camTarget)
+    // smooth hand-back — blend the director's last pose into the follow cam
+    if (this.cineBlendT > 0) {
+      this.cineBlendT = Math.max(0, this.cineBlendT - dt)
+      const bk = 1 - this.cineBlendT / 0.7
+      const be = bk * bk * (3 - 2 * bk)
+      const bp2 = this.cineEndPos.clone().lerp(this.engine.camera.position, be)
+      const btgt = this.cineEndLook.clone().lerp(this.camTarget, be)
+      this.engine.camera.position.copy(bp2)
+      this.engine.camera.lookAt(btgt)
+    }
   }
 
   private updateReticle() {
@@ -3807,6 +4203,10 @@ export class Game {
       bowEquipped: this.player.loadout.aiming,
       aiming: this.player.state === 'aim' && this.player.aimRelease <= 0,
       draw: Math.min(1, this.player.aimT / 0.55),
+      cine: this.cine
+        ? { title: this.cine.title, sub: this.cine.sub, caption: this.cine.caption }
+        : null,
+      card: this.card,
     }
     const json = JSON.stringify(s)
     if (force || json !== this.lastHudJson) {
