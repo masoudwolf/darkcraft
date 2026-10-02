@@ -1,11 +1,11 @@
 import * as THREE from 'three'
 import {
-  createHumanoid, createMerchant, createBow, createBlazeRods, setBowDraw, setNocked, bowDrawAmount,
+  createHumanoid, createMerchant, createSmith, createBow, createBlazeRods, setBowDraw, setNocked, bowDrawAmount,
   animIdle, animWalk, animZombieWalk, animZombieIdle,
   animCreeperWalk, animCreeperIdle, animSkeletonWalk, animBowIdle,
   animWitherWalk, animAttack, animHit, animDead, animRoll, animBlock, animBlockWalk, animDrink, animCast,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
-  animBowDraw, animBowShoot, animPoke, animMerchantIdle, animMerchantGreet,
+  animBowDraw, animBowShoot, animPoke, animMerchantIdle, animMerchantGreet, animSmithIdle,
   lerp, resetPose, setFlash, setFlashWhite,
   type Humanoid,
 } from './models'
@@ -260,6 +260,21 @@ export const BESTIARY: BestiaryEntry[] = [
     ],
   },
 
+  /* ---------------- THE SMITH (NPC) ---------------- */
+  {
+    id: 'smith',
+    name: 'کوره‌بان',
+    sub: 'NPC — آهنگر خرابهٔ سوخته، استاد آبکاری تیغ‌ها',
+    dot: '#e08030',
+    scale: 1.08,
+    build: () => createSmith(),
+    anims: [
+      { id: 'idle', label: 'تکیه بر پتک', fn: (h, t) => animSmithIdle(h, t) },
+      { id: 'walk', label: 'راه رفتن', fn: (h, t) => animWalk(h, t) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+    ],
+  },
+
   /* ---------------- BOSS 2: THE FLAME KING ---------------- */
   {
     id: 'bossflame',
@@ -290,6 +305,28 @@ export const BESTIARY: BestiaryEntry[] = [
       { id: 'dash', label: 'جهش آتشین', dur: 0.8, fn: shot(0.8, (h, p) => animCharge(h, p)) },
       { id: 'stagger', label: 'شکست تعادل', dur: 1.8, fn: (h, t) => animStagger(h, (t % 1.8) / 1.8, t) },
       { id: 'dead', label: 'مرگ سینمایی', dur: 1.7, fn: shot(1.7, (h, p) => animBossDead(h, p)) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+    ],
+  },
+
+  /* ---------------- BOSS 3: THE FIRST COAL ---------------- */
+  {
+    id: 'coal',
+    name: 'ذغالِ نخستین',
+    sub: 'باس آخر — ماسک بازالت، قلب کوره، یوک چکش شکسته',
+    dot: '#ff8a3a',
+    scale: 2.6,
+    build: () => createHumanoid('coal', 2.6),
+    anims: [
+      { id: 'idle', label: 'قرار گرفتن', fn: (h, t) => animZombieIdle(h, t) },
+      { id: 'walk', label: 'گام سنگین', fn: (h, t) => animWalk(h, t, 1.05) },
+      { id: 'roar', label: 'خشم (معرفی)', dur: 2.0, fn: shot(2.0, (h, p) => animRoar(h, p)) },
+      { id: 'slam', label: 'کوبیدن دودست', dur: 0.6, fn: shot(0.6, (h, p) => animSlam(h, p)) },
+      { id: 'sweep', label: 'جاروی افقی', dur: 0.42, fn: shot(0.42, (h, p) => animSweep(h, p)) },
+      { id: 'nova', label: 'شکاف زمین', dur: 0.55, fn: shot(0.55, (h, p) => animStomp(h, p)) },
+      { id: 'rock', label: 'پرتاب سنگ گداخته', dur: 0.45, fn: shot(0.45, (h, p) => animCast(h, p)) },
+      { id: 'stagger', label: 'شکست تعادل', dur: 1.9, fn: (h, t) => animStagger(h, (t % 1.9) / 1.9, t) },
+      { id: 'dead', label: 'فروریختن به خاکستر', dur: 1.8, fn: shot(1.8, (h, p) => animBossDead(h, p)) },
       { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
     ],
   },

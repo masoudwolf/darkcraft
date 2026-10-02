@@ -338,8 +338,10 @@ export class WorldV3 {
            in or out — the pit fights for you. ---- */
         const ep = Math.hypot((x - 34.5) / 10, (z + 45.5) / 5.8)
         if (ep <= 1) h = 1
-        else if (ep <= 1.45) h = Math.max(h, 9)
-        else if (ep <= 2.1) h = Math.max(h, lerp(9, h, smoothstep(1.45, 2.1, ep)))
+        else if (ep <= 1.62) h = Math.max(h, 9)
+        /* no outer skirt: the rim meets the wastes as a raw 2-3 block
+           cliff on every side — the COAL STAIR below is the only slope,
+           so the pit can never be walked into around its edge */
         /* the maker's seam — a hollow the first builders left in the west
            rim, sealed again by their heir's illusion (see the game's secrets) */
         if (x >= 23 && x <= 24 && z >= -46 && z <= -45) h = 1
@@ -448,6 +450,18 @@ export class WorldV3 {
         this.heights[this.idx(x, z)] = 5
         this.surf[this.idx(x, z)] = S_LAVA
       }
+    // the channel's ends run under stone ridges — the moat is a sealed
+    // glow, not a pool to wade, and its rim stays a cliff all the way round
+    for (const [mx0, mx1] of [
+      [23, 24],
+      [44, 45],
+    ] as const) {
+      for (let x = mx0; x <= mx1; x++)
+        for (let z = -37; z <= -32; z++) {
+          this.heights[this.idx(x, z)] = 9
+          this.surf[this.idx(x, z)] = S_STONE
+        }
+    }
 
     /* ---- the Molten Pit floor — chiseled netherstone, stone rim ---- */
     for (let x = 20; x <= 50; x++)
@@ -1069,16 +1083,34 @@ export class WorldV3 {
     this.fill('darkstone', -36, -31, y0 + 5, y0 + 5, gz, gz)
     this.b('glow', -36, y0 + 4, gz - 1)
     this.b('glow', -31, y0 + 4, gz - 1)
-    // side walls (2 tall) seal the arena east & west
+    // side walls (4 tall) seal the arena east & west — too high to mount
+    // from the cloister walk or the flanks, so no wall-top shortcuts exist
     for (let z = gz - 1; z >= -23; z--) {
-      this.fill('cobble', -40, -40, y0, y0 + 1, z, z)
-      this.fill('cobble', -24, -24, y0, y0 + 1, z, z)
+      this.fill('cobble', -40, -40, y0, y0 + 3, z, z)
+      this.fill('cobble', -24, -24, y0, y0 + 3, z, z)
+      if (z % 2 === 0) {
+        this.b('mossy', -40, y0 + 3, z)
+        this.b('mossy', -24, y0 + 3, z)
+      }
     }
-    // broken columns along the church front
-    for (const cx of [-39, -35, -29, -25]) {
+    /* the cloister wall — the church front's ruined outer wall. It seals
+       the court's whole north side so the fog gate stays the only way in,
+       while the 2-wide walk between it and the church stays open (past the
+       broken columns — this walk is how the parish door is reached) */
+    for (let x = -39; x <= -25; x++) {
+      this.fill('cobble', x, x, y0, y0 + 3, -22, -22)
+      if (x === -36 || x === -30) this.b('glow', x, y0 + 3, -22)
+      else if (x % 3 === 0) this.b('mossy', x, y0 + 3, -22)
+    }
+    this.b('mossy', -34, y0 + 4, -22) // two broken rises crown the wall
+    this.b('mossy', -27, y0 + 4, -22)
+    // broken columns along the church front (the west span stays clear —
+    // it is the cloister walk's mouth, marked by a lantern on the flank)
+    for (const cx of [-35, -29, -25]) {
       this.col('stonebrick', cx, -24, y0, y0 + 2)
       if (cx !== -35) this.b('glow', cx, y0 + 3, -24)
     }
+    this.lantern(-42, y0, -24)
 
     /* ---------- the church ---------- */
     // nave: walls x −41..−30, z −33..−25, 6 tall, door south x −37..−36
@@ -1172,12 +1204,13 @@ export class WorldV3 {
       this.b('stonebrick', -27, y0, z)
       this.b('mossy', -27, y0 + 1, z)
     }
-    /* the south gate — pillars 3 tall, darkstone lintel over the gap */
-    this.fill('stonebrick', -24, -24, y0, y0 + 2, -24, -24)
-    this.fill('stonebrick', -21, -21, y0, y0 + 2, -24, -24)
-    this.fill('darkstone', -24, -21, y0 + 3, y0 + 3, -24, -24)
-    this.b('glow', -24, y0 + 4, -24) // lanterns crown the gate pillars
-    this.b('glow', -21, y0 + 4, -24)
+    /* the south gate — pillars kept low (2 tall) so their caps can never
+       serve as a step onto the arena's east wall; lanterns crown the arch */
+    this.fill('stonebrick', -24, -24, y0, y0 + 1, -24, -24)
+    this.fill('stonebrick', -21, -21, y0, y0 + 1, -24, -24)
+    this.fill('darkstone', -24, -21, y0 + 2, y0 + 2, -24, -24)
+    this.b('glow', -24, y0 + 3, -24)
+    this.b('glow', -21, y0 + 3, -24)
     /* corner pillars — lantern-capped, the yard reads from the shortcut */
     for (const [cx, cz] of [[-27, -24], [-18, -24], [-18, -33]] as const) {
       this.col('stonebrick', cx, cz, y0, y0 + 2)
@@ -1428,6 +1461,10 @@ export class WorldV3 {
         this.b('cobble', 47, y0 + 5, z)
       }
     }
+    // the north curtain returns — the wall runs unbroken from the corner
+    // towers to the gatehouse (the plateau never shows a level gap)
+    this.fill('cobble', 21, 23, y0, y0 + 4, -30, -29)
+    this.fill('cobble', 45, 47, y0, y0 + 4, -30, -29)
 
     /* the gatehouse — two lantern towers + the arch over a 6-wide mouth */
     this.fill('cobble', 29, 30, y0, y0 + 7, -8, -6)
