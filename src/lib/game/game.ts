@@ -1864,6 +1864,8 @@ export class Game {
     this.respawn()
     this.phase = 'menu'
     this.engine.input.releaseLock()
+    // an ended story keeps the NG+ door open in the menu
+    this.ended = true
     this.emit(true)
   }
 
@@ -3991,6 +3993,8 @@ export class Game {
     this.orbs = []
     this.fogPassT = 0
     this.fogPass2T = 0
+    // dying while the Coal's bed called — the choice waits for a fresh breath, not the old countdown
+    if (this.endingPending > 0) this.endingPending = 1.4
     // death released the pointer lock — never read that as "player pressed ESC"
     this.wasLocked = false
     this.phase = 'playing'
