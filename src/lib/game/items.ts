@@ -18,16 +18,32 @@ import type { SwordStyle } from './models'
 export type ItemId = string
 
 export type ArmorSlot = 'head' | 'chest' | 'hands' | 'legs' | 'cape'
-export type EquipSlot = 'rh1' | 'rh2' | 'lh1' | 'lh2' | ArmorSlot
-export type ItemCategory = 'sword' | 'shield' | 'bow' | 'armor' | 'material'
+export type EquipSlot = 'rh1' | 'rh2' | 'lh1' | 'lh2' | ArmorSlot | 'charm1' | 'charm2'
+export type ItemCategory = 'sword' | 'shield' | 'bow' | 'armor' | 'material' | 'charm'
 export type DmgType = 'phys' | 'fire' | 'blast'
+
+/** what a ring or amulet quietly does while it is worn */
+export interface PassiveDef {
+  /** flat max-HP bonus */
+  hp?: number
+  /** stamina regeneration multiplier (1.25 = a quarter faster) */
+  stamRegen?: number
+  /** outgoing damage multiplier */
+  dmgMul?: number
+  /** souls earned multiplier */
+  soulsMul?: number
+  /** walk & sprint speed multiplier */
+  walkMul?: number
+  /** extra soak applied to every damage type (0.08 = 8% off the top) */
+  soak?: number
+}
 
 export interface ItemDef {
   id: ItemId
   name: string
   cat: ItemCategory
-  /** the canonical slot this equips into (rh → rh1/rh2, lh → lh1/lh2) */
-  slot: 'rh' | 'lh' | ArmorSlot
+  /** the canonical slot this equips into (rh → rh1/rh2, lh → lh1/lh2, charm → charm1/charm2) */
+  slot: 'rh' | 'lh' | 'charm' | ArmorSlot
   weight: number
   icon: string
   desc: string
@@ -50,6 +66,10 @@ export interface ItemDef {
   /* visuals */
   tint?: number
   tint2?: number
+  /* charm — the passive it whispers while worn */
+  passive?: PassiveDef
+  /* keys — open one door, weigh nothing, sell for almost nothing */
+  key?: boolean
 }
 
 /* ---------------- the catalogue ---------------- */
@@ -268,11 +288,60 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     icon: '🥋', desc: 'صفحاتی از سنگِ گداخته‌ی کفِ گودال؛ قلبِ کوره‌ای که هزار سال تنها سوخت. آن را که بپوشی، صدای چکشِ سازندگان را در نبضِ خودت می‌شنوی.',
     tier: 'boss', def: 0.18, fire: 0.18, tint: 0x241e22, tint2: 0x171215,
   }),
+
+  /* ---- charms — rings & amulets, the quiet passives (2 slots) ---- */
+  ring_ember_knight: I({
+    id: 'ring_ember_knight', name: 'انگشترِ شوالیهٔ اخگر', cat: 'charm', slot: 'charm', weight: 0.4,
+    icon: '💍', desc: ' حلقه‌ای از آهنِ سپرِ شوالیهٔ کهن، با نگینی که از قلبِ آتشگاه تراشیده‌اند. دستی که این را ببندد، سوگندِ ایستادن را به یاد می‌آورد — و ضربه‌اش سنگین‌تر می‌شود.',
+    tier: 'rare', passive: { dmgMul: 1.12 },
+  }),
+  ring_ashwalker: I({
+    id: 'ring_ashwalker', name: 'انگشترِ خاکسترراه', cat: 'charm', slot: 'charm', weight: 0.3,
+    icon: '💍', desc: 'انگشتری که کوره‌بانانِ خاکسترگاه با آن پیمان بستند: «پا، پیش از آتش برسد.» پوشنده‌اش روی خاکستر مثل روی چمن راه می‌رود.',
+    tier: 'rare', passive: { walkMul: 1.15 },
+  }),
+  ring_cling: I({
+    id: 'ring_cling', name: 'انگشترِ چسبیده', cat: 'charm', slot: 'charm', weight: 0.3,
+    icon: '💍', desc: 'حلقه‌ای قدیمی در حلقهٔ سنگیِ چمن پیدا شد — جایی که کسی خیلی پیش‌تر نشسته بود و برنخاست. انگشتر به انگشت چسبیده بود؛ نفَسِ صاحبش هنوز در حلقه‌اش جاری است و بنده را تازه نگه می‌دارد.',
+    tier: 'rare', passive: { stamRegen: 1.25 },
+  }),
+  ring_first_maker: I({
+    id: 'ring_first_maker', name: 'انگشترِ نخستینِ سازندگان', cat: 'charm', slot: 'charm', weight: 0.5,
+    icon: '💍', desc: 'سنگ‌نگینِ آتشین از انگشتری که نخستینِ سازندگان به دست کرد، وقتی نخستین بلوک را بر نخستین خاک گذاشت. در دهلیزِ پنهانِ بسترِ ذغال جا مانده بود — انگشتری که جهان با آن اندازه گرفته شد، هم می‌سازد و هم نگه می‌دارد.',
+    tier: 'boss', passive: { dmgMul: 1.15, soak: 0.08 },
+  }),
+  amulet_souls: I({
+    id: 'amulet_souls', name: 'طلسمِ روح‌خواه', cat: 'charm', slot: 'charm', weight: 0.4,
+    icon: '📿', desc: 'گردن‌آویزی از استخوانِ ماهی و سیمِ قبر که روح‌های گریخته را در مسیرش نگه می‌داشت. صاحبش می‌گفت روح، ثروتِ جهانِ مرده است — حالا ثروتش از گردنِ تو می‌گذرد.',
+    tier: 'rare', passive: { soulsMul: 1.3 },
+  }),
+  amulet_vigil: I({
+    id: 'amulet_vigil', name: 'طلسمِ بیداری', cat: 'charm', slot: 'charm', weight: 0.5,
+    icon: '📿', desc: 'تسمه‌ای چرمی با قطعه‌ای از شیشهٔ پنجرهٔ کلیسا؛ شیشه‌ای که هزار سال ماه را رد کرده است. آن را که بر گردن آویزد، خوابِ عمیق از او می‌گریزد — و قلبش، یکی دو نفسِ دیگر برای ایستادن پیدا می‌کند.',
+    tier: 'rare', passive: { hp: 25 },
+  }),
+  amulet_iron_skin: I({
+    id: 'amulet_iron_skin', name: 'طلسمِ پوستِ آهنین', cat: 'charm', slot: 'charm', weight: 0.6,
+    icon: '📿', desc: 'صفحه‌ای کوچک از آهنِ سردابِ دژ، با حکاکیِ زرهی که صاحب ندارد. کوره‌بان می‌گوید فلزِ بی‌صاحب، صاحبِ تازه را آزمایش می‌کند: اگر تیغِ دشمن را نگه دارد، تورا هم نگه می‌دارد.',
+    tier: 'rare', passive: { soak: 0.14 },
+  }),
+
+  /* ---- keys — small iron promises ---- */
+  key_crypt: I({
+    id: 'key_crypt', name: 'کلیدِ سردابه', cat: 'material', slot: 'rh', weight: 0.2,
+    icon: '🗝️', desc: 'کلیدی آهنی با ریشِ خزه. نگهبانِ گورستان آن را با خود دفن کردند تا سردابه برای همیشه بماند بسته — اما مرگِ نگهبان، سوگندش را آزاد کرد.',
+    tier: 'rare', key: true,
+  }),
+  key_tower: I({
+    id: 'key_tower', name: 'کلیدِ برج', cat: 'material', slot: 'rh', weight: 0.2,
+    icon: '🗝️', desc: 'کلیدِ برنجیِ برجِ دیدبانِ چمن. زاهدِ خاکسترگاه آن را از راهرویی برد که دیگر وجود ندارد؛ می‌گوید برجی که نگهبان ندارد، فقط قفسِ زنگ است.',
+    tier: 'rare', key: true,
+  }),
 }
 
 /* ---------------- slots & load math ---------------- */
 
-export const ALL_SLOTS: EquipSlot[] = ['rh1', 'rh2', 'lh1', 'lh2', 'head', 'chest', 'hands', 'legs', 'cape']
+export const ALL_SLOTS: EquipSlot[] = ['rh1', 'rh2', 'lh1', 'lh2', 'head', 'chest', 'hands', 'legs', 'cape', 'charm1', 'charm2']
 
 export type EquippedMap = Partial<Record<EquipSlot, ItemId | null>>
 
@@ -286,6 +355,8 @@ export const SLOT_LABEL: Record<EquipSlot, string> = {
   hands: 'دست‌ها',
   legs: 'پاها',
   cape: 'شنل',
+  charm1: 'انگشتر/طلسم ۱',
+  charm2: 'انگشتر/طلسم ۲',
 }
 
 /** total weight of everything equipped (DS counts every slot, not just held) */
@@ -334,6 +405,24 @@ export function armorTotals(eq: EquippedMap): { def: number; fire: number; blast
     }
   }
   return { def: Math.min(0.6, def), fire: Math.min(0.7, fire), blast: Math.min(0.7, blast) }
+}
+
+/** the quiet sum of both worn charms — rings and amulets never shout */
+export function charmTotals(eq: EquippedMap): { hp: number; stamRegen: number; dmgMul: number; soulsMul: number; walkMul: number; soak: number; count: number } {
+  const t = { hp: 0, stamRegen: 1, dmgMul: 1, soulsMul: 1, walkMul: 1, soak: 0, count: 0 }
+  for (const s of ['charm1', 'charm2'] as const) {
+    const id = eq[s]
+    const p = id ? ITEMS[id]?.passive : null
+    if (!p) continue
+    t.count++
+    t.hp += p.hp ?? 0
+    t.stamRegen *= p.stamRegen ?? 1
+    t.dmgMul *= p.dmgMul ?? 1
+    t.soulsMul *= p.soulsMul ?? 1
+    t.walkMul *= p.walkMul ?? 1
+    t.soak += p.soak ?? 0
+  }
+  return t
 }
 
 /* ---------------- loot tables ---------------- */
@@ -445,8 +534,8 @@ export function defaultEquip(): EquippedMap {
   return { rh1: 'worn_sword', lh1: 'wooden_shield' }
 }
 
-/** does an item belong in the right hand or left hand? */
-export function slotGroupOf(it: ItemDef): 'rh' | 'lh' | ArmorSlot {
+/** does an item belong in the right hand, the left hand, or elsewhere? */
+export function slotGroupOf(it: ItemDef): 'rh' | 'lh' | 'charm' | ArmorSlot {
   return it.slot
 }
 

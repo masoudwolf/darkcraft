@@ -567,8 +567,21 @@ function ItemStatLine({ it }: { it: InvItemView }) {
   if (it.def) bits.push(`جسم‌ساز +${Math.round(it.def * 100)}٪`)
   if (it.fire) bits.push(`آتش‌بند +${Math.round(it.fire * 100)}٪`)
   if (it.blast) bits.push(`انفجارگریز +${Math.round(it.blast * 100)}٪`)
+  const passive = it.cat === 'charm' ? PASSIVE_LINES[it.id] : null
+  if (passive) bits.push(passive)
   bits.push(`وزن ${it.weight}`)
   return <span className="text-[10px] text-white/45" dir="rtl">{bits.join(' · ')}</span>
+}
+
+/** the worn passive of every charm, in one line each */
+const PASSIVE_LINES: Record<string, string> = {
+  ring_ember_knight: 'منفعل: آسیب +۱۲٪',
+  ring_ashwalker: 'منفعل: سرعت حرکت +۱۵٪',
+  ring_cling: 'منفعل: بازیابی استقامت +۲۵٪',
+  ring_first_maker: 'منفعل: آسیب +۱۵٪ · کاهش آسیب +۸٪',
+  amulet_souls: 'منفعل: روح +۳۰٪',
+  amulet_vigil: 'منفعل: جان بیشینه +۲۵',
+  amulet_iron_skin: 'منفعل: کاهش آسیب ورودی +۱۴٪',
 }
 
 function InventoryModal({
@@ -589,7 +602,8 @@ function InventoryModal({
   const [sel, setSel] = useState<InvItemView | null>(null)
   const loadPct = Math.min(120, (inv.load / inv.maxLoad) * 100)
   const handSlots = inv.slots.filter((s) => s.slot.startsWith('rh') || s.slot.startsWith('lh'))
-  const armorSlots = inv.slots.filter((s) => !s.slot.startsWith('rh') && !s.slot.startsWith('lh'))
+  const charmSlots = inv.slots.filter((s) => s.slot === 'charm1' || s.slot === 'charm2')
+  const armorSlots = inv.slots.filter((s) => !s.slot.startsWith('rh') && !s.slot.startsWith('lh') && s.slot !== 'charm1' && s.slot !== 'charm2')
 
   const SlotCell = ({ slot, label, item, active }: { slot: string; label: string; item: InvItemView | null; active?: boolean }) => (
     <button
@@ -646,6 +660,22 @@ function InventoryModal({
                 />
               ))}
             </div>
+            <div className="mb-2 mt-4 text-xs font-bold text-white/70">انگشتر و طلسم — دو جای خاموش</div>
+            <div className="grid grid-cols-2 gap-2">
+              {charmSlots.map((s) => (
+                <SlotCell key={s.slot} slot={s.slot} label={s.label} item={s.item} />
+              ))}
+            </div>
+            {inv.charmLines.length > 0 && (
+              <div className="mt-2 border border-amber-500/25 bg-amber-950/20 px-2.5 py-1.5">
+                <div className="mb-0.5 text-[9px] font-bold text-amber-300/80">سخنِ انگشترها</div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                  {inv.charmLines.map((l) => (
+                    <span key={l} className="text-[10px] text-amber-200/90" dir="rtl">{l}</span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mb-2 mt-4 text-xs font-bold text-white/70">زره — سر، سینه، دست، پا، شنل</div>
             <div className="grid grid-cols-2 gap-2">
               {armorSlots.map((s) => (
@@ -717,7 +747,9 @@ function InventoryModal({
                       <span className={`truncate text-xs font-bold ${TIER_STYLE[it.tier]}`}>{it.name}</span>
                       {it.n > 1 && <span className="font-pixel text-[9px] text-white/60">×{it.n}</span>}
                       {it.ammo && <span className="rounded-sm border border-sky-700/60 bg-sky-950/50 px-1 py-px font-pixel text-[8px] text-sky-300">مهمات</span>}
-                      {it.cat === 'material' && <span className="rounded-sm border border-amber-700/60 bg-amber-950/50 px-1 py-px font-pixel text-[8px] text-amber-300">مواد</span>}
+                      {it.key && <span className="rounded-sm border border-yellow-700/60 bg-yellow-950/50 px-1 py-px font-pixel text-[8px] text-yellow-300">کلید</span>}
+                      {it.cat === 'charm' && <span className="rounded-sm border border-amber-500/60 bg-amber-950/50 px-1 py-px font-pixel text-[8px] text-amber-300">منفعل</span>}
+                      {it.cat === 'material' && !it.key && <span className="rounded-sm border border-amber-700/60 bg-amber-950/50 px-1 py-px font-pixel text-[8px] text-amber-300">مواد</span>}
                       {it.equipped && <span className="mr-auto font-pixel text-[9px] text-amber-300/90">تجهیز شده</span>}
                     </button>
                     <button

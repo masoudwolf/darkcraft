@@ -340,6 +340,9 @@ export class WorldV3 {
         if (ep <= 1) h = 1
         else if (ep <= 1.45) h = Math.max(h, 9)
         else if (ep <= 2.1) h = Math.max(h, lerp(9, h, smoothstep(1.45, 2.1, ep)))
+        /* the maker's seam — a hollow the first builders left in the west
+           rim, sealed again by their heir's illusion (see the game's secrets) */
+        if (x >= 23 && x <= 24 && z >= -46 && z <= -45) h = 1
 
         /* ---- the burned homestead plot, south of the village fence ---- */
         h = this.plateRect(h, x, z, -45, -40, 29, 33, 7, 2)
@@ -455,6 +458,9 @@ export class WorldV3 {
           this.surf[this.idx(x, z)] = S_STONE // the warning rim
         }
       }
+    /* the maker's seam floor — chiseled like the rest of the bed */
+    for (let x = 23; x <= 24; x++)
+      for (let z = -46; z <= -45; z++) this.surf[this.idx(x, z)] = S_ASH
 
     /* ---- the meadow pond — one calm mirror on the west lawn ----
        one block deep, ring-flattened so the step in AND out is 1 */
@@ -987,6 +993,13 @@ export class WorldV3 {
       this.b('darkstone', dx, floorY - 1, dz)
     }
 
+    /* the maker's seam — the hollow in the west rim (carved in the
+       heightmap): darkstone walls + a low vault roof; its mouth is
+       sealed by the game's illusion blocks, not by real stone */
+    this.fill('darkstone', 23, 24, floorY + 2, floorY + 3, -46, -45) // the vault roof
+    this.b('coal', 25, floorY, -47) // a coal seam on the floor, pointing at it
+    this.b('darkstone', 26, floorY, -46) // spilled rubble by the mouth
+
     // the rockfall that seals the stair — pure visual; the game clamps
     // the body until the Flame King falls, then this group is hidden
     const rubble = new THREE.Group()
@@ -1020,6 +1033,12 @@ export class WorldV3 {
   /** the Flame King is dead — the Vale cracks, the rockfall rolls clear */
   setPitOpen(open: boolean) {
     if (this.pitRubble) this.pitRubble.visible = !open
+  }
+
+  /** secrets: illusion walls live in the same collision grid as stone —
+      the game toggles their cells when the spell breaks */
+  markSolid(x: number, y: number, z: number, on: boolean) {
+    this.solid[this.cellIdx(Math.round(x), Math.round(z), Math.round(y))] = on ? 1 : 0
   }
 
   /* ================= PARISH HILL — church, graveyard, arena ================= */
@@ -1191,6 +1210,19 @@ export class WorldV3 {
     this.clearCol('stonebrick', -30, y0, y0 + 1, -35) // the east door
     this.fill('stonebrick', -33, -30, y0 + 3, y0 + 3, -36, -34) // slab roof
     this.fill('plank', -32, -31, y0, y0, -35, -35) // the tomb slab
+
+    /* the church's west vault — a sealed sacristy hidden behind a wall
+       that shimmers. The wall cells (x −41, z −30/−29, 2 high) are the
+       game's illusion; the vault itself is real stonework. */
+    this.clearCol('stonebrick', -41, y0, y0 + 1, -30) // the illusion mouth
+    this.clearCol('stonebrick', -41, y0, y0 + 1, -29)
+    this.col('mossy', -44, -30, y0, y0 + 2) // the sacristy shell
+    this.col('mossy', -44, -29, y0, y0 + 2)
+    this.fill('mossy', -44, -42, y0, y0 + 2, -31, -31)
+    this.fill('mossy', -44, -42, y0, y0 + 2, -28, -28)
+    this.fill('stonebrick', -44, -42, y0 + 3, y0 + 3, -31, -28) // its roof
+    this.b('plank', -43, y0, -30) // a shelf the priests left
+    this.b('glow', -43, y0 + 2, -29) // a candle that still waits
   }
 
   /* ================= ASH WASTES ================= */
@@ -1360,6 +1392,17 @@ export class WorldV3 {
     this.b('plank', 44, y0, -17)
     this.b('coal', 45, y0, -16)
     this.b('darkstone', 43, y0 + 1, -19) // half-fallen bunk
+
+    /* the warden's closet — a sealed cell off the barracks' north wall.
+       The wall cells (x 43/44, z −22) are the game's illusion; this
+       shell is real, and the garrison's prize still waits inside. */
+    this.clearCol('cobble', 43, y0, y0 + 1, -22) // the illusion mouth
+    this.clearCol('cobble', 44, y0, y0 + 1, -22)
+    this.fill('cobble', 42, 44, y0, y0 + 1, -26, -26) // the cell's shell
+    this.fill('cobble', 41, 41, y0, y0 + 1, -25, -24)
+    this.fill('cobble', 45, 45, y0, y0 + 1, -25, -24)
+    this.fill('cobble', 42, 44, y0 + 2, y0 + 2, -26, -24) // its roof
+    this.b('crate', 42, y0, -25) // what the wardens locked away
 
     /* the garrison well west of the aisle */
     this.b('cobble', 25, y0, -17)

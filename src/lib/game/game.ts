@@ -21,11 +21,11 @@ import { blockMaterials } from './textures'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy, CoalLordEnemy, setNgMult } from './enemy'
-import { createSword, createShield, createMerchant, createSmith, animMerchantIdle, animMerchantGreet, animSmithIdle, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createArrowBundle, type SwordStyle } from './models'
+import { createSword, createShield, createMerchant, createSmith, animMerchantIdle, animMerchantGreet, animSmithIdle, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createArrowBundle, createChest, createKeyProp, createRingProp, type SwordStyle } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
 import {
-  ITEMS, ALL_SLOTS, SLOT_LABEL, equipLoad, maxLoadFor, rollTier, TIER_INFO, armorTotals,
+  ITEMS, ALL_SLOTS, SLOT_LABEL, equipLoad, maxLoadFor, rollTier, TIER_INFO, armorTotals, charmTotals,
   rollLoot, bossLoot, defaultEquip, sellValueOf, upgradeCost, upgradeMult, MAX_UPGRADE, SMITH_LINES,
   type ItemId, type EquipSlot, type EquippedMap, type ItemDef, type DmgType, type LootRoll,
   type UpgradeCost,
@@ -106,6 +106,8 @@ export interface InvHud {
   souls: number
   /** standing close enough to the merchant to trade */
   nearMerchant: boolean
+  /** the worn charms' whispers, one line per active passive */
+  charmLines: string[]
 }
 
 export interface InvItemView {
@@ -121,6 +123,7 @@ export interface InvItemView {
   /** what the grey merchant pays for one unit */
   sell: number
   ammo?: boolean
+  key?: boolean
   dmg?: number
   spd?: number
   block?: number
@@ -1383,6 +1386,36 @@ export class Game {
   private castFailT = -9
   private tmpColor = new THREE.Color()
 
+  /* ---- the Vale's secrets: chests, keys, illusion walls (category 2) ---- */
+  /** a chest of the Vale — some locked, some not; all of them honest wood */
+  private chests: {
+    group: THREE.Group
+    lid: THREE.Group
+    x: number
+    z: number
+    y: number
+    locked: boolean
+    key?: ItemId
+    loot: LootRoll[]
+    opened: boolean
+    openT: number
+  }[] = []
+  /** keys and stray charms that wait in the world, turning slowly */
+  private pickups: { id: ItemId; mesh: THREE.Group; light: THREE.PointLight | null; x: number; z: number }[] = []
+  /** illusion walls — blocks that are not blocks; the shimmer betrays them */
+  private illusions: {
+    group: THREE.Group
+    cells: [number, number, number][]
+    x: number
+    z: number
+    mats: THREE.MeshLambertMaterial[]
+    broken: boolean
+    fade: number
+    phase: number
+  }[] = []
+  /** the HP the worn charms lend — tracked so unequipping takes it back */
+  private charmHp = 0
+
   /* ---- the story: memorial stones of the Vale ---- */
   private loreStones: { id: string; title: string; group: THREE.Group; light: THREE.PointLight; seen: boolean; justRead: boolean }[] = []
   private loreOpenId: string | null = null
@@ -1509,6 +1542,9 @@ export class Game {
     this.smith.group.position.set(SMITH.x, sY, SMITH.z)
     this.smith.group.rotation.y = Math.PI * 0.92 // faces the road, watching for customers
     scene.add(this.smith.group)
+
+    /* ---- the Vale's secrets: chests, keys, walls that are not walls ---- */
+    this.buildSecrets(scene)
     /* ---- the grey merchant's market stall — a proper travelling
        shop: striped awning, stocked back-shelf, counter wares, a
        hanging coin-sign, crates, barrels and a crimson banner ---- */
@@ -2196,6 +2232,217 @@ export class Game {
     return this.inv.find((s) => s.id === id)?.n ?? 0
   }
 
+  /* ================= THE VALE'S SECRETS — chests, keys, illusions ================= */
+
+  /** every secret of category 2, placed once at world build:
+      five chests (two locked), two keys waiting in the world, one
+      stray ring on the Old Circle, and three illusion walls. */
+  private buildSecrets(scene: THREE.Scene) {
+    const top = (x: number, z: number) => this.world.surfaceAt(x, z)
+
+    /* ---- the chests ---- */
+    const addChest = (
+      x: number, z: number, locked: boolean, key: ItemId | undefined, loot: LootRoll[], rotY = 0
+    ) => {
+      const { group, lid } = createChest(locked)
+      const y = top(x, z)
+      group.position.set(x, y, z)
+      group.rotation.y = rotY
+      scene.add(group)
+      this.chests.push({ group, lid, x, z, y, locked, key, loot, opened: false, openT: 0 })
+    }
+    // the burned homestead — tucked behind the forge wall, a starter secret
+    addChest(-40.5, 33.5, false, undefined, [{ id: 'ring_ember_knight', n: 1 }], Math.PI * 0.15)
+    // the crypt — ON the tomb slab, under lock: the grey dead keep the grey tithe
+    addChest(-31.5, -35.5, true, 'key_crypt', [{ id: 'amulet_souls', n: 1 }, { id: 'ember_iron', n: 1 }], Math.PI)
+    // the watchtower ruin — the beacon-keeper's pay, under lock
+    addChest(10.5, 3.5, true, 'key_tower', [{ id: 'ring_ashwalker', n: 1 }, { id: 'arrow_fire', n: 6 }], Math.PI * 0.7)
+    // the church sacristy — behind the shimmering west wall
+    addChest(-42.5, -29.5, false, undefined, [{ id: 'amulet_vigil', n: 1 }], Math.PI * 0.5)
+    // the warden's closet — behind the barracks' shimmering north wall
+    addChest(44, -24.5, false, undefined, [{ id: 'amulet_iron_skin', n: 1 }, { id: 'iron_chunk', n: 2 }], Math.PI * 0.85)
+    // the maker's seam — behind the pit's shimmering rim, the last secret
+    addChest(23.5, -45.5, false, undefined, [{ id: 'ring_first_maker', n: 1 }], Math.PI * 0.5)
+
+    /* ---- the keys & the stray charm, waiting in the open ---- */
+    const addPickup = (id: ItemId, x: number, z: number, lightColor: number | null) => {
+      const isRing = ITEMS[id]?.cat === 'charm'
+      const mesh = isRing ? createRingProp() : createKeyProp(id === 'key_tower')
+      const y = top(x, z) + 0.55
+      mesh.position.set(x, y, z)
+      scene.add(mesh)
+      let light: THREE.PointLight | null = null
+      if (lightColor !== null) {
+        light = new THREE.PointLight(lightColor, 1.6, 5.5, 1.8)
+        light.position.set(x, y + 0.4, z)
+        scene.add(light)
+      }
+      this.pickups.push({ id, mesh, light, x, z })
+    }
+    // the crypt key — the graveyard keeps it beside its mourner
+    addPickup('key_crypt', -24.5, -27.5, 0xffe2a0)
+    // the tower key — the hermit's cold fire keeps it warm
+    addPickup('key_tower', 30.6, 21.4, 0xffe2a0)
+    // the clinging ring — the Old Circle's ember points to it
+    addPickup('ring_cling', 3.4, 48.6, 0xffc86a)
+
+    /* ---- the illusion walls ---- */
+    const addIllusion = (
+      cells: [number, number, number][], matKey: string, tint: number
+    ) => {
+      const group = new THREE.Group()
+      const base = this.world.mats[matKey] as THREE.MeshLambertMaterial | undefined
+      const mats: THREE.MeshLambertMaterial[] = []
+      for (const [x, y, z] of cells) {
+        const m = new THREE.MeshLambertMaterial({
+          color: (base ? base.color.clone() : new THREE.Color(tint)) as THREE.Color,
+          map: base?.map ?? null,
+        })
+        m.userData.illusion = true
+        mats.push(m)
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), m)
+        mesh.position.set(x, y + 0.5, z)
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+        group.add(mesh)
+        this.world.markSolid(x, y, z, true)
+      }
+      scene.add(group)
+      this.illusions.push({
+        group, cells,
+        x: cells.reduce((a, c) => a + c[0], 0) / cells.length,
+        z: cells.reduce((a, c) => a + c[2], 0) / cells.length,
+        mats, broken: false, fade: 1, phase: Math.random() * Math.PI * 2,
+      })
+    }
+    // the church sacristy — west wall of the parish church
+    addIllusion([[-41, 13, -30], [-41, 14, -30], [-41, 13, -29], [-41, 14, -29]], 'stonebrick', 0x9a9484)
+    // the warden's closet — the barracks' north wall of the fortress
+    addIllusion([[43, 10, -22], [44, 10, -22]], 'cobble', 0x8a8578)
+    // the maker's seam — the pit's west rim mouth
+    addIllusion([[24, 2, -46], [24, 3, -46], [24, 2, -45], [24, 3, -45]], 'darkstone', 0x3a3438)
+  }
+
+  /** the secret tick — shimmer, bobbing keys, swinging lids */
+  private updateSecrets(dt: number) {
+    // illusion walls breathe — a faint warm shimmer betrays the spell
+    for (const il of this.illusions) {
+      if (il.broken) {
+        if (il.fade <= 0) continue
+        il.fade = Math.max(0, il.fade - dt / 0.6)
+        for (const m of il.mats) {
+          m.transparent = true
+          m.opacity = il.fade
+        }
+        if (il.fade <= 0) il.group.visible = false
+        continue
+      }
+      const pulse = 0.16 + Math.sin(this.time * 1.7 + il.phase) * 0.12
+      for (const m of il.mats) m.emissiveIntensity = pulse
+      for (const m of il.mats) m.emissive.setRGB(0.28, 0.2, 0.12)
+    }
+    // the lids swing when they open
+    for (const c of this.chests) {
+      if (!c.opened || c.openT >= 1) continue
+      c.openT = Math.min(1, c.openT + dt / 0.45)
+      c.lid.rotation.x = -1.85 * (1 - Math.pow(1 - c.openT, 3))
+    }
+    // keys and stray charms turn in place, dreaming of a hand
+    for (const p of this.pickups) {
+      p.mesh.rotation.y += dt * 1.4
+      p.mesh.position.y = this.world.surfaceAt(p.x, p.z) + 0.55 + Math.sin(this.time * 2.1 + p.x) * 0.09
+    }
+  }
+
+  /** the prompt + interaction for chests, keys, illusions — called by detectPrompt/interact */
+  private nearestSecret(): { prompt: string; act: () => void } | null {
+    const px = this.player.pos.x
+    const pz = this.player.pos.z
+    let bestD = Infinity
+    let bestPrompt = ''
+    let bestAct: (() => void) | null = null
+    const consider = (d: number, prompt: string, act: () => void) => {
+      if (d < 2.0 && d < bestD) {
+        bestD = d
+        bestPrompt = prompt
+        bestAct = act
+      }
+    }
+    // unopened chests
+    for (const c of this.chests) {
+      if (c.opened) continue
+      const d = Math.hypot(px - c.x, pz - c.z)
+      const name = c.locked && c.key ? ITEMS[c.key]?.name : null
+      const canUnlock = !c.locked || (c.key && this.countOf(c.key) > 0)
+      consider(
+        d,
+        canUnlock ? 'باز کردن صندوق' : `صندوقِ قفل‌شده — ${name} لازم است`,
+        () => this.openChest(c)
+      )
+    }
+    // illusion walls — the shimmer wants a hand
+    for (const il of this.illusions) {
+      if (il.broken) continue
+      const d = Math.hypot(px - il.x, pz - il.z)
+      consider(d, 'دیوارِ مشکوک — افسون را بشکن', () => this.breakIllusion(il))
+    }
+    // world pickups — keys and stray charms
+    for (const p of this.pickups) {
+      const d = Math.hypot(px - p.x, pz - p.z)
+      consider(d, `برداشتن ${ITEMS[p.id]?.name ?? 'گمشده'}`, () => this.collectPickup(p))
+    }
+    return bestAct ? { prompt: bestPrompt, act: bestAct } : null
+  }
+
+  /** a chest opens: the lock answers or refuses, the loot pops out */
+  private openChest(c: (typeof this.chests)[number]) {
+    if (c.locked) {
+      if (!c.key || this.countOf(c.key) <= 0) {
+        this.showToast('قفل است — کلیدش را پیدا کن')
+        this.sfx.hiss()
+        return
+      }
+      this.removeItem(c.key, 1)
+      this.showToast(`${ITEMS[c.key].name} مصرف شد`)
+    }
+    c.opened = true
+    c.openT = 0
+    this.sfx.reveal()
+    const at = new THREE.Vector3(c.x, c.y + 0.5, c.z)
+    this.spawnBurst(at, 0xffd76a, 24, 3, 1.1, 0.16)
+    this.spawnLoot(c.loot, at)
+  }
+
+  /** an illusion wall dissolves — the Vale exhales */
+  private breakIllusion(il: (typeof this.illusions)[number]) {
+    if (il.broken) return
+    il.broken = true
+    for (const [x, y, z] of il.cells) this.world.markSolid(x, y, z, false)
+    this.sfx.cast()
+    this.sfx.hiss()
+    const mid = new THREE.Vector3(il.x, il.group.children[0].position.y, il.z)
+    this.spawnBurst(mid, 0xcfc4ae, 30, 3.6, 1.0, 0.2)
+    this.spawnBurst(mid, 0x8fd97a, 12, 2.4, 0.8, 0.14)
+    this.showToast('افسون فرو ریخت — راز درّه آشکار شد')
+    this.emit(true)
+  }
+
+  /** a key or stray charm joins the bag */
+  private collectPickup(p: (typeof this.pickups)[number]) {
+    const idx = this.pickups.indexOf(p)
+    if (idx < 0) return
+    this.pickups.splice(idx, 1)
+    this.engine.scene.remove(p.mesh)
+    if (p.light) this.engine.scene.remove(p.light)
+    this.addItem(p.id, 1)
+    this.sfx.shard()
+    const it = ITEMS[p.id]
+    this.spawnText(it?.name ?? '', '#ffd54a', p.mesh.position.clone().add(new THREE.Vector3(0, 0.8, 0)))
+    this.spawnBurst(p.mesh.position, 0xffd76a, 16, 2.4)
+    this.save()
+    this.emit(true)
+  }
+
   /** forge-heat: +3 glows cherry-red, +5 burns like the pit itself */
   private applySwordHeat(sword: THREE.Group | null, lv: number) {
     if (!sword || lv <= 0) return
@@ -2263,17 +2510,19 @@ export class Game {
     const tier = rollTier(load, max)
     const info = TIER_INFO[tier]
     const armor = armorTotals(this.eq)
+    // the charms whisper — rings & amulets tilt every number a little
+    const charm = charmTotals(this.eq)
     // the forge lives in the blade: a re-tempered edge cuts deeper
     const forgeMult = upgradeMult(this.upgrades[rhId ?? ''] ?? 0)
     this.player.loadout = {
-      weaponMult: (rh?.dmg ? rh.dmg / 30 : 1) * forgeMult,
+      weaponMult: (rh?.dmg ? rh.dmg / 30 : 1) * forgeMult * charm.dmgMul,
       weaponSpd: rh?.spd ?? 1,
       block: lh?.block ?? 0,
-      def: armor.def,
-      fire: armor.fire,
-      blast: armor.blast,
-      walkMult: info.walk,
-      sprintMult: info.sprint,
+      def: Math.min(0.75, armor.def + charm.soak),
+      fire: Math.min(0.8, armor.fire + charm.soak),
+      blast: Math.min(0.8, armor.blast + charm.soak),
+      walkMult: info.walk * charm.walkMul,
+      sprintMult: info.sprint * charm.walkMul,
       rollMult: info.roll,
       rollCostMult: info.rollCost,
       canRoll: tier !== 'over',
@@ -2281,6 +2530,15 @@ export class Game {
       load,
       maxLoad: max,
       aiming: lh?.cat === 'bow',
+      stamRegenMul: charm.stamRegen,
+      soulsMul: charm.soulsMul,
+    }
+    // the vigil's lent breath: max HP follows the worn charms
+    const newCharmHp = charm.hp
+    if (newCharmHp !== this.charmHp) {
+      this.player.maxHp = Math.max(30, this.player.maxHp - this.charmHp + newCharmHp)
+      this.player.hp = Math.min(this.player.hp, this.player.maxHp)
+      this.charmHp = newCharmHp
     }
     this.refreshEquipmentVisuals()
   }
@@ -2339,9 +2597,9 @@ export class Game {
       this.showToast(`${def.name} مهمات است — با کمان شلیک می‌شود`)
       return
     }
-    // materials belong to the forge, not the body
+    // materials belong to the forge, not the body — keys wait for their door
     if (def.cat === 'material') {
-      this.showToast(`${def.name} — کوره‌بان این را می‌خواهد، نه سنت`)
+      this.showToast(def.key ? `${def.name} — درِ خودش را پیدا کن` : `${def.name} — کوره‌بان این را می‌خواهد، نه سنت`)
       return
     }
     // must own it — in the bag, or already worn somewhere (move semantics)
@@ -2352,6 +2610,9 @@ export class Game {
       slot = !this.eq.rh1 ? 'rh1' : !this.eq.rh2 ? 'rh2' : this.rhActive === 1 ? 'rh1' : 'rh2'
     } else if (def.slot === 'lh') {
       slot = !this.eq.lh1 ? 'lh1' : !this.eq.lh2 ? 'lh2' : this.lhActive === 1 ? 'lh1' : 'lh2'
+    } else if (def.slot === 'charm') {
+      // two quiet slots — the older charm is displaced, never destroyed
+      slot = !this.eq.charm1 ? 'charm1' : !this.eq.charm2 ? 'charm2' : 'charm1'
     } else {
       slot = def.slot
     }
@@ -2570,7 +2831,7 @@ export class Game {
         id: it.id, name: it.name, icon: it.icon, cat: it.cat,
         weight: it.weight, n: slot ? 1 : Math.max(1, this.countOf(id)),
         equipped: slot ? this.eq[slot] === id : ALL_SLOTS.some((s) => this.eq[s] === id),
-        tier: it.tier, desc: it.desc, ammo: !!it.ammo, sell: sellValueOf(it.id),
+        tier: it.tier, desc: it.desc, ammo: !!it.ammo, key: !!it.key, sell: sellValueOf(it.id),
         dmg: it.dmg, spd: it.spd, block: it.block, bowDmg: it.bowDmg,
         def: it.def, fire: it.fire, blast: it.blast,
       }
@@ -2585,6 +2846,14 @@ export class Game {
     const tier = rollTier(load, max)
     const info = TIER_INFO[tier]
     const armor = armorTotals(this.eq)
+    const charm = charmTotals(this.eq)
+    const charmLines: string[] = []
+    if (charm.dmgMul !== 1) charmLines.push(`آسیب +${Math.round((charm.dmgMul - 1) * 100)}٪`)
+    if (charm.soulsMul !== 1) charmLines.push(`روح +${Math.round((charm.soulsMul - 1) * 100)}٪`)
+    if (charm.walkMul !== 1) charmLines.push(`سرعت +${Math.round((charm.walkMul - 1) * 100)}٪`)
+    if (charm.stamRegen !== 1) charmLines.push(`ریجن استقامت +${Math.round((charm.stamRegen - 1) * 100)}٪`)
+    if (charm.hp > 0) charmLines.push(`جان بیشینه +${charm.hp}`)
+    if (charm.soak > 0) charmLines.push(`کاهش آسیب ورودی +${Math.round(charm.soak * 100)}٪`)
     return {
       slots, rhActive: this.rhActive, lhActive: this.lhActive, bag,
       load: Math.round(load * 10) / 10, maxLoad: max,
@@ -2592,6 +2861,7 @@ export class Game {
       def: Math.round(armor.def * 100), fire: Math.round(armor.fire * 100), blast: Math.round(armor.blast * 100),
       souls: Math.floor(this.player.souls),
       nearMerchant: Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 3.4,
+      charmLines,
     }
   }
 
@@ -2610,6 +2880,12 @@ export class Game {
     }
     if (bestLoot) {
       this.collectLoot(bestLoot)
+      return
+    }
+    // the Vale's secrets — chests, shimmering walls, waiting keys
+    const secret = this.nearestSecret()
+    if (secret) {
+      secret.act()
       return
     }
     // a memorial stone — read the Vale's memory
@@ -2958,14 +3234,15 @@ export class Game {
   }
 
   onEnemyKilled(e: Enemy) {
-    // soul orb flies to player
+    // soul orb flies to player — worn charms sweeten the tithe
     const orb = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.28, 0.28),
       new THREE.MeshBasicMaterial({ color: 0x59ff6a })
     )
     orb.position.copy(e.pos).add(new THREE.Vector3(0, 1.2, 0))
     this.engine.scene.add(orb)
-    this.orbs.push({ mesh: orb, t: 0, amount: e.soulsValue(), from: orb.position.clone() })
+    const soulGain = Math.round(e.soulsValue() * this.player.loadout.soulsMul)
+    this.orbs.push({ mesh: orb, t: 0, amount: soulGain, from: orb.position.clone() })
     // their gear may hit the ground — a little inheritance from the dead
     // (lords skip the common table — their signature rig is guaranteed)
     const drops = e.isBoss ? [] : rollLoot(e.lootKind)
@@ -4056,6 +4333,9 @@ export class Game {
       const qty = bestLoot.n > 1 ? ` ×${bestLoot.n}` : ''
       return def ? `برداشتن ${def.name}${qty}` : 'برداشتن غنیمت'
     }
+    // the Vale's secrets — chests, shimmering walls, waiting keys
+    const secret = this.nearestSecret()
+    if (secret) return secret.prompt
     // memorial stones — seen ones invite a re-reading
     for (const s of this.loreStones) {
       if (Math.hypot(this.player.pos.x - s.group.position.x, this.player.pos.z - s.group.position.z) < 2.1) {
@@ -4206,6 +4486,7 @@ export class Game {
       this.updateBonfire(dt)
       this.updateMerchant(dt)
       this.updateSmith(dt)
+      this.updateSecrets(dt)
       this.updateEffects(dt)
       this.updateLoot(dt)
       this.updateCameraFollow(dt, false)
@@ -4236,6 +4517,7 @@ export class Game {
       this.world.update(dt)
       this.updateBonfire(dt)
       this.updateMerchant(dt)
+      this.updateSecrets(dt)
       this.updateEffects(dt)
       this.updateLoot(dt)
       this.updateCameraFollow(dt, false)
@@ -4436,6 +4718,7 @@ export class Game {
 
     this.world.update(dt)
     this.updateBonfire(dt)
+    this.updateSecrets(dt)
     this.updateLoot(dt)
     this.updateEffects(dt)
     this.updateOrbs(dt)

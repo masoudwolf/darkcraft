@@ -64,6 +64,8 @@ export interface Loadout {
   load: number
   maxLoad: number
   aiming: boolean // the active left-hand item is a bow
+  stamRegenMul: number // charms whisper here — rings & amulets
+  soulsMul: number
 }
 
 export const DEFAULT_LOADOUT: Loadout = {
@@ -71,6 +73,7 @@ export const DEFAULT_LOADOUT: Loadout = {
   def: 0, fire: 0, blast: 0,
   walkMult: 1, sprintMult: 1, rollMult: 1, rollCostMult: 1, canRoll: true,
   tier: 'fast', load: 5.5, maxLoad: 35, aiming: false,
+  stamRegenMul: 1, soulsMul: 1,
 }
 
 export class Player {
@@ -613,10 +616,10 @@ export class Player {
     this.staminaDelay -= dt
     if (this.staminaDelay <= 0) {
       if (!this.busy) {
-        this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * dt)
+        this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * this.loadout.stamRegenMul * dt)
       } else if (this.state === 'block') {
         // slow regen while guarding
-        this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * 0.35 * dt)
+        this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * this.loadout.stamRegenMul * 0.35 * dt)
       }
     }
 

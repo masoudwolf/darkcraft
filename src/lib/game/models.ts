@@ -2135,3 +2135,123 @@ export function createArmorDrop(slot: 'head' | 'chest' | 'hands' | 'legs' | 'cap
   }
   return g
 }
+
+/* ================= THE VALE'S CHESTS — Minecraft-true, DS-honest ================= */
+
+/** a blocky chest: wood body, dark frame, iron bands, a gold latch.
+    The lid is pivoted at the back edge so openChest() can swing it.
+    `locked` adds a gold lock plate — the tell that a key is wanted. */
+export function createChest(locked = false): { group: THREE.Group; lid: THREE.Group } {
+  const g = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const wood = lam(0x8a5a2b)
+  const woodDark = lam(0x5e3c1c)
+  const iron = lam(0x4a4a52)
+  const gold = lam(0xd9a83a)
+
+  // the base — feet to lid-line
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.5, 0.56), wood)
+  base.position.y = 0.25
+  base.castShadow = true
+  base.receiveShadow = true
+  g.add(base)
+  // dark frame posts + feet — the Minecraft chest border language
+  for (const [px, pz] of [[-0.38, -0.24], [0.38, -0.24], [-0.38, 0.24], [0.38, 0.24]] as const) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.1), woodDark)
+    post.position.set(px, 0.25, pz)
+    g.add(post)
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.12), iron)
+    foot.position.set(px, 0.035, pz)
+    g.add(foot)
+  }
+  // iron bands wrapping the base
+  for (const bx of [-0.22, 0.22]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.5, 0.58), iron)
+    band.position.set(bx, 0.25, 0)
+    g.add(band)
+  }
+
+  // the lid — pivoted at the back-top edge so rotation swings it open
+  const lid = new THREE.Group()
+  lid.position.set(0, 0.5, -0.28)
+  const lidTop = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.26, 0.56), wood)
+  lidTop.position.set(0, 0.13, 0.28)
+  lidTop.castShadow = true
+  lid.add(lidTop)
+  for (const bx of [-0.22, 0.22]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.58), iron)
+    band.position.set(bx, 0.13, 0.28)
+    lid.add(band)
+  }
+  // the latch — a gold tooth on the lid's front lip
+  const latch = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.08), gold)
+  latch.position.set(0, 0.08, 0.56)
+  lid.add(latch)
+  g.add(lid)
+
+  // locked chests wear their promise openly
+  if (locked) {
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.06), gold)
+    plate.position.set(0, 0.52, 0.3)
+    g.add(plate)
+    const keyhole = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.12, 0.08), lam(0x1a1410))
+    keyhole.position.set(0, 0.52, 0.34)
+    g.add(keyhole)
+  }
+  return { group: g, lid }
+}
+
+/** a small golden key floating over the world — what a found key looks like */
+export function createKeyProp(gold = false): THREE.Group {
+  const g = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const metal = lam(gold ? 0xd9a83a : 0x9aa0a8)
+  const ring = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.05), metal)
+  const hole = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.07), lam(0x14100c))
+  hole.position.z = 0.02
+  ring.add(hole)
+  ring.position.y = 0.16
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.05), metal)
+  stem.position.y = -0.1
+  const tooth1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.05), metal)
+  tooth1.position.set(0.07, -0.24, 0)
+  const tooth2 = tooth1.clone()
+  tooth2.position.y = -0.15
+  g.add(ring, stem, tooth1, tooth2)
+  // the glint halo — keys want to be found
+  const glow = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.75, 0.3),
+    new THREE.MeshBasicMaterial({ color: gold ? 0xffd76a : 0xc8d2e0, transparent: true, opacity: 0.16, depthWrite: false })
+  )
+  g.add(glow)
+  return g
+}
+
+/** a ring charm as a world prop — a tiny square gold band, gem heart */
+export function createRingProp(): THREE.Group {
+  const g = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const gold = lam(0xd9a83a)
+  // a square band out of four bars — Minecraft keeps its curves square
+  const r = 0.13
+  const t = 0.05
+  const bars: [number, number, number, number][] = [
+    [0, r, r * 2, t], [0, -r, r * 2, t], [r, 0, t, r * 2 - t * 2], [-r, 0, t, r * 2 - t * 2],
+  ]
+  for (const [bx, bz, w, d] of bars) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), gold)
+    bar.position.set(bx, 0, bz)
+    g.add(bar)
+  }
+  const gem = new THREE.Mesh(
+    new THREE.BoxGeometry(0.09, 0.09, 0.09),
+    new THREE.MeshBasicMaterial({ color: 0xffb03a })
+  )
+  gem.position.y = 0.12
+  const glow = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.55, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0xffc86a, transparent: true, opacity: 0.14, depthWrite: false })
+  )
+  g.add(gem, glow)
+  return g
+}
