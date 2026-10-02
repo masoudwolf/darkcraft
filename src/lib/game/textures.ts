@@ -343,7 +343,7 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
 
 /* ================= CHARACTER TEXTURES ================= */
 
-export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame' | 'merchant'
+export type CharKind = 'player' | 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame' | 'merchant' | 'coal' | 'smith'
 
 interface CharTexs {
   skin: THREE.Texture
@@ -385,13 +385,15 @@ function getCharTexs(kind: CharKind): CharTexs {
     blaze: [[236, 176, 52], 24],
     bossflame: [[52, 42, 44], 10],
     merchant: [[206, 166, 124], 12],
+    coal: [[40, 35, 40], 8],
+    smith: [[188, 148, 108], 12],
   }
   const [sb, sv] = skinBase[kind]
 
   /* lords render at the vanilla 16px resolution — twice the pixel count
      of the common mobs, because a boss fills the screen and every plate
      of his armor is read by the player up close */
-  const S = kind === 'boss' || kind === 'bossflame' ? 16 : 8
+  const S = kind === 'boss' || kind === 'bossflame' || kind === 'coal' ? 16 : 8
 
   /* ---------- FACES (8x8 common mobs, 16x16 lords) ---------- */
   const faceTex = makeTex(S, 30, (c, r, s) => {
@@ -559,6 +561,53 @@ function getCharTexs(kind: CharKind): CharTexs {
       return
     }
 
+    if (kind === 'coal') {
+      // the First Coal — a hollowed Builder's face: a cracked basalt
+      // death-mask, white-hot sight-holes, a molten fault splitting it
+      fillNoise(c, r, s, [44, 38, 44], 7)
+      // plate seams of the mask
+      px(c, 0, 5, 'rgba(24,20,24,0.9)', 16, 1)
+      px(c, 7, 0, 'rgba(24,20,24,0.75)', 1, 16)
+      // sunken sight-holes — white-hot cores in black wells
+      px(c, 2, 6, 'rgba(0,0,0,0.85)', 4, 3)
+      px(c, 10, 6, 'rgba(0,0,0,0.85)', 4, 3)
+      px(c, 3, 7, '#fff0c0', 2, 1)
+      px(c, 11, 7, '#fff0c0', 2, 1)
+      px(c, 3, 6, 'rgba(255,214,130,0.7)', 1, 1)
+      px(c, 12, 6, 'rgba(255,214,130,0.7)', 1, 1)
+      // the molten fault — a jagged burning line down the left side
+      px(c, 4, 2, '#ff8a2a', 1, 2)
+      px(c, 5, 4, '#ffa63a', 1, 2)
+      px(c, 4, 9, '#ff7a1e', 1, 2)
+      px(c, 5, 11, 'rgba(255,138,42,0.8)', 1, 2)
+      px(c, 4, 13, 'rgba(255,122,30,0.6)', 1, 2)
+      // a grim seam of a mouth, one ember tooth still lit
+      px(c, 6, 12, 'rgba(10,8,10,0.95)', 7, 1)
+      px(c, 9, 12, '#ff9a2e')
+      // weathering + soot runs
+      px(c, 12, 3, 'rgba(16,14,16,0.8)', 2, 1)
+      px(c, 1, 10, 'rgba(16,14,16,0.7)', 1, 2)
+      px(c, 13, 10, 'rgba(255,122,30,0.35)', 1, 2)
+      return
+    }
+
+    if (kind === 'smith') {
+      // the forge-keeper: soot-smudged, one singed brow, a blacksmith's
+      // black beard, burn-scarred cheek
+      px(c, 1, 3, 'rgba(60,52,46,0.9)', 2, 1)
+      px(c, 5, 3, 'rgba(60,52,46,0.5)', 2, 1) // the singed brow
+      px(c, 1, 4, '#1c1410')
+      px(c, 2, 4, '#3a2a18')
+      px(c, 5, 4, '#3a2a18')
+      px(c, 6, 4, '#1c1410')
+      px(c, 3, 5, 'rgba(0,0,0,0.2)', 2, 1)
+      px(c, 5, 5, 'rgba(120,80,50,0.6)') // old burn scar
+      px(c, 1, 6, 'rgba(24,18,14,0.95)', 6, 2) // coal-black beard
+      px(c, 2, 7, 'rgba(16,12,10,0.9)', 4, 1)
+      px(c, 3, 5, 'rgba(90,60,36,0.4)') // soot smudge
+      return
+    }
+
     // player — classic minecraft eyes + brow + mouth
     px(c, 1, 4, '#ffffff')
     px(c, 2, 4, '#4a4ac0')
@@ -605,6 +654,25 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 3, 11, 'rgba(255,122,30,0.5)', 1, 2)
         px(c, 2, 3, 'rgba(70,60,66,0.8)', 2, 1)
         px(c, 12, 13, 'rgba(70,60,66,0.7)', 2, 1)
+        return
+      }
+      if (kind === 'coal') {
+        // the mask's flank — basalt plates, a burning fault, chain holes
+        fillNoise(c, r, s, [46, 40, 46], 7)
+        px(c, 7, 0, 'rgba(26,22,26,0.9)', 2, 16)
+        px(c, 0, 8, 'rgba(26,22,26,0.9)', 16, 1)
+        px(c, 3, 2, 'rgba(255,138,42,0.85)', 1, 3)
+        px(c, 12, 5, 'rgba(255,122,30,0.7)', 1, 2)
+        px(c, 5, 11, 'rgba(255,122,30,0.8)', 1, 3)
+        px(c, 10, 12, 'rgba(255,166,58,0.6)', 1, 2)
+        px(c, 2, 6, 'rgba(90,80,90,0.6)', 2, 1)
+        px(c, 13, 9, 'rgba(16,14,16,0.8)', 2, 1)
+        return
+      }
+      if (kind === 'smith') {
+        // soot-stained scalp, bald crown shining with sweat
+        fillNoise(c, r, s, [176, 138, 100], 10)
+        blotch(c, r, s, 'rgba(40,32,26,0.5)', 2, 1, 1)
         return
       }
       fillNoise(c, r, s, sb, sv)
@@ -685,6 +753,29 @@ function getCharTexs(kind: CharKind): CharTexs {
         for (const x of [2, 5, 8, 11, 14]) px(c, x, 7, '#ff7a1e', 2, 2)
         px(c, 8, 4, 'rgba(255,194,61,0.9)', 1, 2)
         px(c, 4, 10, 'rgba(255,122,30,0.6)', 2, 1)
+        return
+      }
+      if (kind === 'coal') {
+        // the Builder's broken crown — stumps of shattered pillars,
+        // their sockets still warm, a burning heart-crack at the center
+        fillNoise(c, r, s, [38, 33, 38], 7)
+        px(c, 0, 0, 'rgba(24,20,24,0.9)', 16, 2)
+        px(c, 0, 14, 'rgba(24,20,24,0.9)', 16, 2)
+        for (const x of [1, 5, 9, 13]) {
+          px(c, x, 3, 'rgba(70,62,72,0.9)', 2, 4) // pillar stump
+          px(c, x, 7, 'rgba(24,20,24,0.9)', 2, 1) // its socket shadow
+        }
+        px(c, 7, 5, '#ff8a2a', 2, 6) // the burning heart-crack
+        px(c, 7, 9, '#ffc23d', 1, 2)
+        px(c, 4, 11, 'rgba(255,122,30,0.6)', 1, 2)
+        px(c, 11, 10, 'rgba(255,122,30,0.5)', 1, 2)
+        return
+      }
+      if (kind === 'smith') {
+        // the forge-keeper's bald crown — scorched at the rim
+        fillNoise(c, r, s, [182, 142, 104], 10)
+        px(c, 0, 0, 'rgba(60,48,38,0.7)', 8, 1)
+        blotch(c, r, s, 'rgba(30,24,20,0.4)', 2, 1, 1)
         return
       }
       if (kind === 'creeper') {
@@ -801,6 +892,42 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 0, 15, 'rgb(24,18,20)', 16, 1)
         return
       }
+      if (kind === 'coal') {
+        // the Builder's chest — basalt slab-plates over a blazing core,
+        // a smith's chain-belt, cracked and breathing embers
+        fillNoise(c, r, s, [46, 40, 46], 7)
+        px(c, 0, 0, 'rgba(26,22,26,0.95)', 16, 2)
+        px(c, 7, 2, 'rgba(26,22,26,0.85)', 2, 12) // plate seam
+        // the core — a burning fist-wide fault at the chest's center
+        px(c, 5, 5, '#ff7a1e', 6, 5)
+        px(c, 6, 6, '#ffc23d', 4, 3)
+        px(c, 7, 7, '#fff4c8', 2, 2)
+        px(c, 4, 9, 'rgba(20,12,10,0.85)', 8, 1) // grate bar
+        px(c, 3, 4, 'rgba(255,122,30,0.7)', 1, 2)
+        px(c, 12, 6, 'rgba(255,122,30,0.6)', 1, 2)
+        // chain belt of the forge-days
+        px(c, 0, 12, '#3a3640', 16, 2)
+        for (const x of [2, 5, 8, 11, 14]) px(c, x, 12, '#585264')
+        // ragged hem of stone
+        px(c, 0, 14, 'rgb(34,29,33)', 16, 2)
+        px(c, 2, 14, 'rgba(255,122,30,0.4)', 1, 1)
+        px(c, 13, 15, 'rgba(255,122,30,0.5)', 1, 1)
+        return
+      }
+      if (kind === 'smith') {
+        // bare chest under a nailed leather apron — the forge-keeper's plate
+        fillNoise(c, r, s, [168, 126, 92], 11)
+        px(c, 1, 2, '#6a4a2c', 6, 6) // apron body
+        px(c, 1, 2, '#7a5634', 6, 1) // apron top fold
+        px(c, 2, 3, '#3a2a18') // nail
+        px(c, 5, 3, '#3a2a18')
+        px(c, 2, 5, '#3a2a18')
+        px(c, 5, 5, '#3a2a18')
+        px(c, 0, 8, '#4a3320', 8, 1) // belt
+        px(c, 3, 8, '#c9a44a', 2, 1) // buckle
+        blotch(c, r, s, 'rgba(60,44,30,0.4)', 2, 1, 1)
+        return
+      }
       if (kind === 'creeper') {
         fillNoise(c, r, s, [84, 162, 84], 20)
         blotch(c, r, s, 'rgba(30,80,30,0.9)', 6, 2, 2)
@@ -880,6 +1007,28 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 0, 12, 'rgba(120,84,20,0.9)', 16, 1)
         px(c, 0, 13, 'rgb(30,24,28)', 16, 3)
         for (const x of [3, 7, 11]) px(c, x, 13, 'rgb(120,124,132)')
+        return
+      }
+      if (kind === 'coal') {
+        // slab pauldron, a burning fault down the arm, a stone fist
+        fillNoise(c, r, s, [46, 40, 46], 7)
+        px(c, 0, 0, 'rgba(26,22,26,0.95)', 16, 2)
+        px(c, 1, 1, 'rgba(72,64,74,0.9)', 14, 2)
+        px(c, 0, 4, 'rgba(26,22,26,0.9)', 16, 1)
+        px(c, 7, 5, '#ff8a2a', 2, 4) // burning fault
+        px(c, 6, 9, 'rgba(255,122,30,0.6)', 1, 1)
+        px(c, 0, 10, 'rgba(26,22,26,0.85)', 16, 1)
+        px(c, 0, 12, '#4a444e', 16, 2) // wrist band
+        px(c, 0, 14, 'rgb(38,33,38)', 16, 2) // fist
+        for (const x of [3, 6, 9, 12]) px(c, x, 14, 'rgba(90,80,90,0.7)') // knuckle seams
+        return
+      }
+      if (kind === 'smith') {
+        // bare sooty arm + rolled cuff + a burn-scared hand
+        fillNoise(c, r, s, [172, 132, 96], 11)
+        px(c, 0, 0, 'rgba(90,64,40,0.9)', 8, 2) // rolled cuff
+        px(c, 0, 6, 'rgba(40,30,22,0.6)', 8, 1) // soot line
+        blotch(c, r, s, 'rgba(120,80,50,0.5)', 1, 1, 1)
         return
       }
       if (kind === 'skeleton') {
@@ -964,6 +1113,27 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 8, 10, '#ff7a1e', 1, 3)
         px(c, 0, 14, 'rgb(28,22,24)', 16, 2)
         px(c, 0, 15, 'rgb(184,134,42)', 16, 1)
+        return
+      }
+      if (kind === 'coal') {
+        // stone cuisse, a burning crack at the knee, a heavy basalt foot
+        fillNoise(c, r, s, [44, 38, 44], 7)
+        px(c, 7, 0, 'rgba(26,22,26,0.9)', 2, 6)
+        px(c, 4, 3, 'rgba(255,122,30,0.75)', 1, 2)
+        px(c, 0, 6, 'rgba(26,22,26,0.9)', 16, 1)
+        px(c, 0, 7, '#4a444e', 16, 2) // knee band
+        fillNoise2(c, r, s, [40, 35, 40], 7, 9, 14)
+        px(c, 8, 10, '#ff8a2a', 1, 2)
+        px(c, 0, 13, 'rgba(26,22,26,0.95)', 16, 1)
+        px(c, 0, 14, 'rgb(36,31,36)', 16, 2) // foot
+        px(c, 2, 15, 'rgba(90,80,90,0.7)', 3, 1)
+        return
+      }
+      if (kind === 'smith') {
+        // heavy trousers + scorch-marked boots
+        fillNoise(c, r, s, [56, 46, 38], 10)
+        px(c, 0, 6, 'rgba(30,24,18,0.95)', 8, 2)
+        px(c, 2, 2, 'rgba(20,16,12,0.5)', 2, 1) // scorch
         return
       }
       if (kind === 'merchant') {
@@ -1301,7 +1471,7 @@ const bladeMatCache = new Map<string, THREE.MeshLambertMaterial>()
 
 /** painted blade faces per sword style — fuller, glints, rust, granite */
 export function bladeMaterial(
-  style: 'iron' | 'rust' | 'stone' | 'obsidian' | 'greatsword' | 'kingblade'
+  style: 'iron' | 'rust' | 'stone' | 'obsidian' | 'greatsword' | 'kingblade' | 'coalblade'
 ): THREE.MeshLambertMaterial {
   const hit = bladeMatCache.get(style)
   if (hit) return hit
@@ -1312,6 +1482,7 @@ export function bladeMaterial(
     obsidian: [42, 34, 38],
     greatsword: [148, 154, 148],
     kingblade: [42, 34, 38],
+    coalblade: [36, 30, 36],
   }
   const B = base[style]
   const tex = makeTex(16, style.length * 977 + 13, (c, r, s) => {
@@ -1342,6 +1513,11 @@ export function bladeMaterial(
     } else if (style === 'obsidian' || style === 'kingblade') {
       for (let i = 0; i < 5; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,122,30)')
       for (let i = 0; i < 8; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 2.2))
+    } else if (style === 'coalblade') {
+      // chiseled bedrock — pale chisel-marks + ember flecks in the grain
+      for (let i = 0; i < 10; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 1.5), 2, 1)
+      for (let i = 0; i < 6; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,150,50)', 1, 1 + Math.floor(r() * 2))
+      for (let i = 0; i < 4; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 0.6), 2, 1)
     }
   })
   const mat = new THREE.MeshLambertMaterial({ map: tex })

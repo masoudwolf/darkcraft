@@ -400,6 +400,155 @@ function ShopModal({
   )
 }
 
+/* ================= the forge — weapon upgrades ================= */
+
+function SmithModal({
+  hud,
+  onUpgrade,
+  onClose,
+}: {
+  hud: HudState
+  onUpgrade: (id: string) => void
+  onClose: () => void
+}) {
+  const smith = hud.smith
+  if (!smith) return null
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 px-4" dir="rtl">
+      <div className="fadein-anim flex max-h-[94vh] w-[min(94vw,560px)] flex-col overflow-hidden rounded-none border-2 border-black bg-zinc-950/95 shadow-[6px_6px_0_rgba(0,0,0,0.6)]">
+        <div className="flex items-center gap-2 border-b border-white/10 px-5 py-4">
+          <span className="text-2xl" aria-hidden>⚒️</span>
+          <div>
+            <h3 className="text-lg font-black text-amber-200">کوره‌بانِ یادمان‌ها</h3>
+            <p className="text-xs text-white/55">«{smith.line}»</p>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+            <span className="flex items-center gap-1.5 font-bold text-emerald-300">
+              <EmeraldIcon size={16} /> {smith.souls.toLocaleString('en-US')}
+            </span>
+            <span className="flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1 text-white/80">
+                <span aria-hidden>⛓️</span> آهن ×{smith.iron}
+              </span>
+              <span className="flex items-center gap-1 text-orange-300">
+                <span aria-hidden>🔥</span> اخگرآهن ×{smith.ember}
+              </span>
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {smith.blades.map((b) => {
+              const maxed = !b.cost
+              const cost = b.cost
+              const can = b.affordable
+              return (
+                <div
+                  key={b.id}
+                  className="flex items-center justify-between gap-2 rounded-none border border-white/10 bg-white/5 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-white">
+                      <span aria-hidden>{b.icon}</span>
+                      <span className={b.equipped ? 'text-amber-300' : ''}>{b.name}</span>
+                      {b.equipped && <span className="font-pixel text-[8px] text-amber-300/80">تجهیز شده</span>}
+                      <span
+                        className={`rounded-sm border px-1.5 py-px font-pixel text-[9px] ${
+                          b.lv >= 5
+                            ? 'border-orange-400/60 bg-orange-950/60 text-orange-300'
+                            : b.lv >= 3
+                              ? 'border-red-500/50 bg-red-950/50 text-red-300'
+                              : b.lv > 0
+                                ? 'border-white/25 bg-white/10 text-white/80'
+                                : 'border-white/15 bg-transparent text-white/40'
+                        }`}
+                        dir="ltr"
+                      >
+                        +{b.lv}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-white/45" dir="rtl">
+                      آسیب کنونی {b.dmg}
+                      {!maxed && cost
+                        ? ` ← بعدی: ${cost.souls} سول · ⛓️${cost.iron}${cost.ember > 0 ? ` · 🔥${cost.ember}` : ''}`
+                        : ' — تیغه در کمال رسیده است'}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={maxed || !can}
+                    onClick={() => onUpgrade(b.id)}
+                    className="h-8 shrink-0 rounded-none border border-black/60 bg-amber-800 px-3 font-pixel text-xs text-amber-100 hover:bg-amber-700 disabled:opacity-30"
+                  >
+                    {maxed ? 'کامل' : 'آبکاری'}
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+
+          <p className="mt-3 text-center text-[11px] leading-4 text-white/40">
+            هر درجهٔ آبکاری آسیب تیغه را +۱۴٪ می‌کند — در +۳ لبه سرخ می‌شود و در +۵ می‌سوزد.
+            <br />
+            آهن از دشمنان می‌ریزد؛ اخگرآهن از لردها و قهرمان‌ها. آبدیدگی‌ها برای همیشه می‌مانند.
+          </p>
+        </div>
+
+        <div className="border-t border-white/10 px-5 py-4">
+          <Button onClick={onClose} className="h-10 w-full rounded-none border-2 border-black/70 bg-zinc-800 font-bold text-white shadow-[3px_3px_0_rgba(0,0,0,0.55)] hover:bg-zinc-700">
+            بستن کوره (Esc)
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ================= the ending — kindle, or let it fade ================= */
+
+function EndingChoiceModal({
+  onLit,
+  onFade,
+}: {
+  onLit: () => void
+  onFade: () => void
+}) {
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/85 px-4" dir="rtl">
+      <p className="fadein-anim max-w-lg text-center text-sm leading-7 text-white/70">
+        بسترِ ذغالِ نخستین پیشِ توست.
+        <br />
+        اخگرِ درونت، آخرین آتشِ جهان است — آن را به کار بگیر، یا بگذار شب بیاید.
+      </p>
+      <div className="mt-8 flex w-[min(92vw,560px)] flex-col gap-4 sm:flex-row">
+        <button
+          onClick={onLit}
+          className="fadein-anim flex-1 border-2 border-amber-500/70 bg-gradient-to-b from-amber-900/60 to-amber-950/80 px-6 py-7 text-center transition-colors hover:from-amber-800/70"
+        >
+          <div className="text-3xl" aria-hidden>🔥</div>
+          <div className="mt-2 text-lg font-black text-amber-200">افروز کن</div>
+          <div className="mt-1 text-[11px] leading-5 text-white/55">
+            اخگر را در ذغال فرو ببر — آتشِ نخستین باز بگیرد و درّه زنده بماند
+          </div>
+        </button>
+        <button
+          onClick={onFade}
+          className="fadein-anim flex-1 border-2 border-sky-800/70 bg-gradient-to-b from-zinc-900/80 to-black px-6 py-7 text-center transition-colors hover:from-zinc-800/80"
+        >
+          <div className="text-3xl" aria-hidden>🌑</div>
+          <div className="mt-2 text-lg font-black text-sky-200">بگذار خاموش شود</div>
+          <div className="mt-1 text-[11px] leading-5 text-white/55">
+            اخگر را زمین بگذار — عصرِ تاریک بیاید و جهان، راهِ خودش را برود
+          </div>
+        </button>
+      </div>
+      <p className="mt-6 text-[11px] text-white/35">این انتخاب برای همیشه در ذخیره می‌ماند — و مسیرِ بیداریِ دوباره را می‌گشاید</p>
+    </div>
+  )
+}
+
 /* ================= inventory & equipment (Dark-Souls style) ================= */
 
 const TIER_STYLE: Record<string, string> = {
@@ -568,6 +717,7 @@ function InventoryModal({
                       <span className={`truncate text-xs font-bold ${TIER_STYLE[it.tier]}`}>{it.name}</span>
                       {it.n > 1 && <span className="font-pixel text-[9px] text-white/60">×{it.n}</span>}
                       {it.ammo && <span className="rounded-sm border border-sky-700/60 bg-sky-950/50 px-1 py-px font-pixel text-[8px] text-sky-300">مهمات</span>}
+                      {it.cat === 'material' && <span className="rounded-sm border border-amber-700/60 bg-amber-950/50 px-1 py-px font-pixel text-[8px] text-amber-300">مواد</span>}
                       {it.equipped && <span className="mr-auto font-pixel text-[9px] text-amber-300/90">تجهیز شده</span>}
                     </button>
                     <button
@@ -734,6 +884,9 @@ type MenuPage = 'root' | 'settings' | 'exit'
 function MainMenu({
   onStart,
   hasSave,
+  ngPlus,
+  ended,
+  onNgPlus,
   onClear,
   onViewer,
   onMapPreview,
@@ -745,6 +898,9 @@ function MainMenu({
 }: {
   onStart: () => void
   hasSave: boolean
+  ngPlus: number
+  ended: boolean
+  onNgPlus: () => void
   onClear: () => void
   onViewer: () => void
   onMapPreview: () => void
@@ -776,8 +932,18 @@ function MainMenu({
           onClick={onStart}
           className="h-12 w-full border-2 border-black/80 bg-emerald-700 font-bold text-white shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-emerald-600"
         >
-          {hasSave ? 'ادامه‌ی بازی' : 'شروع بازی'}
+          {ngPlus > 0 ? `ادامه‌ی بازی — چرخهٔ ${ngPlus + 1}` : hasSave ? 'ادامه‌ی بازی' : 'شروع بازی'}
         </Button>
+        {(ngPlus > 0 || ended) && (
+          <Button
+            size="lg"
+            onClick={onNgPlus}
+            className="h-11 w-full border-2 border-amber-500/60 bg-amber-900/60 font-bold text-amber-200 shadow-[4px_4px_0_rgba(0,0,0,0.6)] hover:bg-amber-800/70"
+          >
+            🔥 بیداریِ دوباره — NG+{ngPlus + 1}
+            <span className="mt-0.5 block text-[10px] font-normal text-amber-100/70">دشمنان قوی‌تر، سول‌ها بیشتر — تجهیزات و آبدیدگی‌ها می‌مانند</span>
+          </Button>
+        )}
         <Button
           size="lg"
           onClick={onStory}
@@ -1403,6 +1569,9 @@ export default function GameClient() {
         <MainMenu
           onStart={start}
           hasSave={hasSave}
+          ngPlus={hud?.ngPlus ?? 0}
+          ended={hud?.ended ?? false}
+          onNgPlus={() => gameRef.current?.startNgPlus()}
           onClear={clearSave}
           onViewer={openViewer}
           onMapPreview={openMapPreview}
@@ -1475,6 +1644,27 @@ export default function GameClient() {
           sub="۴۵۰۰ سول به دست آمد"
           sub2="اخگری بزرگ کنار خاکسترش بر زمین افتاده است..."
           accent="#ff8a3a"
+        />
+      )}
+      {hud?.banner === 'coalfell' && phase === 'playing' && (
+        <BossFell
+          title="ذغالِ نخستین فرونشست!"
+          sub="۸۰۰۰ سول به دست آمد"
+          sub2="بسترِ آتش اکنون بی‌صاحب است... و اخگرِ تو، آخرین انتخابِ جهان"
+          accent="#ffc23d"
+        />
+      )}
+      {phase === 'ending' && (
+        <EndingChoiceModal
+          onLit={() => gameRef.current?.chooseEnding('lit')}
+          onFade={() => gameRef.current?.chooseEnding('fade')}
+        />
+      )}
+      {phase === 'smith' && hud && (
+        <SmithModal
+          hud={hud}
+          onUpgrade={(id) => gameRef.current?.upgradeWeapon(id)}
+          onClose={() => gameRef.current?.closeSmith()}
         />
       )}
       {phase === 'rest' && hud && (

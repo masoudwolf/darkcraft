@@ -4,7 +4,7 @@ import {
   animCreeperWalk, animCreeperIdle, animSkeletonWalk, animBowIdle, animWitherWalk,
   animAttack, animHit, animDead,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
-  animBowDraw, animBowShoot, animPoke, lerp, setBowDraw, setNocked, bowDrawAmount,
+  animBowDraw, animBowShoot, animPoke, animCast, lerp, setBowDraw, setNocked, bowDrawAmount,
   resetPose, setOpacity, setFlash, setFlashWhite, dressChampion, type Humanoid,
 } from './models'
 import {
@@ -13,6 +13,7 @@ import {
   V3_BOSS1_ARENA,
   V3_GATE2,
   V3_BOSS2_CENTER,
+  V3_COAL_ARENA,
   V3_HALF,
   V3_LAVA_POOLS,
   type WorldV3,
@@ -38,6 +39,27 @@ export interface EnemyOpts {
   name?: string
   /** mini-lord: ember aura, title-card intro, guaranteed relic drop */
   champion?: boolean
+  /** bare-handed lords — no blade is bolted to the right arm */
+  fists?: boolean
+}
+
+/* ---------------- NG+ scaling ----------------
+   every cycle the Vale remembers more of its war: bodies harden,
+   souls fatten. One module-level multiplier, set by the Game before
+   any enemy exists, read by every constructor. */
+let NG_MULT = 1
+
+export function setNgMult(m: number) {
+  NG_MULT = Math.max(1, m)
+}
+
+export function ngMult(): number {
+  return NG_MULT
+}
+
+/** scale a stat for the current NG+ cycle */
+function ng(n: number): number {
+  return Math.round(n * NG_MULT)
 }
 
 export class Enemy {
@@ -76,14 +98,14 @@ export class Enemy {
   /** the owning game — gives mobs knowledge of closed gates & arena walls */
   game?: import('./game').Game
 
-  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame', spawn: THREE.Vector3, opts: EnemyOpts) {
+  constructor(scene: THREE.Scene, kind: 'zombie' | 'boss' | 'creeper' | 'skeleton' | 'wither' | 'blaze' | 'bossflame' | 'coal', spawn: THREE.Vector3, opts: EnemyOpts) {
     this.opts = opts
     this.hp = opts.hp
     this.maxHp = opts.hp
     this.isBoss = !!opts.isBoss
     this.name = opts.name ?? 'Hollow'
     this.champion = !!opts.champion
-    const sworded = kind === 'zombie' || kind === 'boss' || kind === 'wither' || kind === 'bossflame'
+    const sworded = (kind === 'zombie' || kind === 'boss' || kind === 'wither' || kind === 'bossflame') && !opts.fists
     this.h = createHumanoid(kind, opts.scale, {
       sword: sworded,
       // the lordly blades are built long and broad — a smaller scalar
@@ -111,6 +133,15 @@ export class Enemy {
   /** which loot table this breed rolls from on death */
   get lootKind(): string {
     return 'zombie'
+  }
+
+  /** NG+ tempering — scale this body's stats for a harder cycle */
+  harden(m: number) {
+    this.opts.hp = Math.round(this.opts.hp * m)
+    this.opts.dmg = Math.round(this.opts.dmg * m)
+    this.opts.souls = Math.round(this.opts.souls * m)
+    this.maxHp = this.opts.hp
+    this.hp = this.maxHp
   }
 
   reset() {
@@ -525,7 +556,7 @@ export class Enemy {
     return this.opts.windup
   }
 
-  protected strikeDur() {
+  protected strikeDur(): number {
     return this.isBoss ? 0.32 : 0.22
   }
 
@@ -845,14 +876,14 @@ export class BossEnemy extends Enemy {
 
   constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
     super(scene, 'boss', spawn, {
-      hp: 680,
-      dmg: 38,
+      hp: ng(680),
+      dmg: ng(38),
       speed: 3.1,
       aggro: 60,
       atkRange: 3.3,
       windup: 0.85,
       recover: 0.95,
-      souls: 3000,
+      souls: ng(3000),
       scale: 2.25,
       isBoss: true,
       name: 'شوالیه‌ی زامبی کهن',
@@ -1683,14 +1714,14 @@ export class BossFlameEnemy extends Enemy {
 
   constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
     super(scene, 'bossflame', spawn, {
-      hp: 850,
-      dmg: 34,
+      hp: ng(850),
+      dmg: ng(34),
       speed: 3.2,
       aggro: 60,
       atkRange: 3.0,
       windup: 0.8,
       recover: 0.9,
-      souls: 4500,
+      souls: ng(4500),
       scale: 2.35,
       isBoss: true,
       name: 'پادشاه شعله',
@@ -1996,6 +2027,296 @@ export class BossFlameEnemy extends Enemy {
     if (this.alive) {
       this.pos.x = Math.max(V3_BOSS2_CENTER.x - 6.4, Math.min(V3_BOSS2_CENTER.x + 6.4, this.pos.x))
       this.pos.z = Math.max(V3_BOSS2_CENTER.z - 6.4, Math.min(V3_BOSS2_CENTER.z + 6.4, this.pos.z))
+    }
+  }
+}
+
+/* ============================================================
+   THE FIRST COAL — final lord of the Vale
+   ------------------------------------------------------------
+   The last Builder who leapt into the forge-pit and burned
+   forever. A hollowed giant of chiseled basalt, split by the
+   very fire he fed: slams the bedrock with fists of stone,
+   sweeps with the weight of a falling tower, rips burning
+   faults out of the floor, and hurls molten rock.
+   ============================================================ */
+
+type CoalMove = 'slam' | 'sweep' | 'nova' | 'rock'
+
+export class CoalLordEnemy extends Enemy {
+  private pick: CoalMove = 'slam'
+  private poise = 0
+  private maxPoise = 230
+  private phase2Done = false
+  private introDone = false
+
+  constructor(scene: THREE.Scene, spawn: THREE.Vector3) {
+    super(scene, 'coal', spawn, {
+      hp: ng(1150),
+      dmg: ng(40),
+      speed: 3.0,
+      aggro: 60,
+      atkRange: 3.4,
+      windup: 0.85,
+      recover: 0.95,
+      souls: ng(8000),
+      scale: 2.6,
+      isBoss: true,
+      name: 'ذغالِ نخستین',
+      fists: true,
+    })
+    this.active = false
+  }
+
+  phase2() {
+    return this.hp < this.maxHp * 0.5
+  }
+
+  reset() {
+    super.reset()
+    this.active = false
+    this.pick = 'slam'
+    this.poise = 0
+    this.phase2Done = false
+    this.introDone = false
+    setFlash(this.h, 0)
+  }
+
+  cineRoarStep(dt: number) {
+    this.state = 'roar'
+    this.stateT = (this.stateT + dt) % this.roarDur()
+    this.roarAnim(this.stateT / this.roarDur())
+  }
+
+  finishIntro() {
+    this.introDone = true
+    this.state = 'idle'
+    this.stateT = 0
+  }
+
+  update(dt: number, player: Player, game: Game) {
+    if (this.active && !this.introDone && !this.dead) {
+      this.introDone = true
+      this.state = 'roar'
+      this.stateT = 0
+      game.onBoss3Intro(this.pos)
+    }
+    if (!this.phase2Done && !this.dead && this.hp > 0 && this.hp < this.maxHp * 0.5) {
+      this.phase2Done = true
+      this.state = 'roar'
+      this.stateT = 0
+      game.onBoss3Phase2()
+    }
+    super.update(dt, player, game)
+    // the core burns brighter as the body forgets
+    if (this.phase2Done && !this.dead) {
+      const pulse = 0.16 + Math.sin(this.animT * 5.4) * 0.08
+      setFlash(this.h, this.flash * 0.55 + pulse)
+    }
+  }
+
+  takeDamage(dmg: number, game: Game, fromX: number, fromZ: number) {
+    const wasRoar = this.state === 'roar'
+    const roarT = this.stateT
+    const wasStaggered = this.state === 'stagger'
+    super.takeDamage(dmg, game, fromX, fromZ)
+    if (this.dead) return
+    if (wasRoar) {
+      this.state = 'roar'
+      this.stateT = roarT
+      return
+    }
+    if (wasStaggered) {
+      this.state = 'stagger'
+      return
+    }
+    this.poise += dmg
+    if (this.poise >= this.maxPoise) {
+      this.poise = 0
+      this.state = 'stagger'
+      this.stateT = 0
+      game.onBossStagger(this.pos)
+    }
+  }
+
+  protected speed() {
+    return this.opts.speed * (this.phase2() ? 1.22 : 1)
+  }
+
+  protected moveAnim(t: number, f = 1) {
+    animWalk(this.h, t, f * 1.05)
+  }
+
+  protected attackCooldown() {
+    return this.phase2() ? 0.45 + Math.random() * 0.3 : 0.95 + Math.random() * 0.5
+  }
+
+  protected wantsAttack(dist: number, angDiff: number): boolean {
+    if (dist > 7.5) return true // rock / nova range
+    if (this.phase2() && dist > 5.5) return true
+    if (dist <= 3.6) return true
+    return Math.abs(angDiff) > 1.5 && dist < 5.2
+  }
+
+  protected windupDur() {
+    const base =
+      this.pick === 'nova' ? 0.95 : this.pick === 'slam' ? 0.9 : this.pick === 'rock' ? 0.8 : 0.6
+    return this.phase2() ? base * 0.78 : base
+  }
+
+  protected strikeDur() {
+    switch (this.pick) {
+      case 'slam': return 0.6
+      case 'sweep': return 0.42
+      case 'nova': return 0.55
+      case 'rock': return 0.45
+    }
+  }
+
+  protected strikeImpactP() {
+    if (this.pick === 'slam') return 0.55
+    if (this.pick === 'sweep') return 0.45
+    if (this.pick === 'nova') return 0.5
+    return 0.55
+  }
+
+  protected onWindupStart(_game: Game | undefined, dist: number, _angDiff: number) {
+    if (dist > 7.5) {
+      this.pick = Math.random() < 0.55 ? 'rock' : 'nova'
+    } else if (dist < 2.6) {
+      this.pick = Math.random() < 0.62 ? 'slam' : 'sweep'
+    } else if (this.phase2() && Math.random() < 0.4) {
+      this.pick = 'nova'
+    } else {
+      this.pick = Math.random() < 0.5 ? 'sweep' : 'slam'
+    }
+  }
+
+  protected onStrikeStart(_player: Player, game: Game) {
+    if (this.pick === 'rock') {
+      // a fault of molten rock torn from the bedrock, hurled two-handed
+      const from = this.pos.clone().add(new THREE.Vector3(0, 3.1, 0))
+      const to = game.player.pos.clone().add(new THREE.Vector3(0, 0.9, 0))
+      const n = this.phase2() ? 2 : 1
+      for (let i = 0; i < n; i++) {
+        const t2 = to.clone()
+        if (i > 0) {
+          t2.x += (Math.random() - 0.5) * 2.4
+          t2.z += (Math.random() - 0.5) * 2.4
+        }
+        game.spawnFireball(from, t2, Math.round(this.opts.dmg * 0.52))
+      }
+      game.sfx.fireShoot()
+    }
+  }
+
+  protected windupAnim(p: number) {
+    resetPose(this.h)
+    if (this.pick === 'slam') {
+      this.h.armR.rotation.x = -3.0 * p
+      this.h.armL.rotation.x = -2.85 * p
+      this.h.root.rotation.x = -0.14 * p
+      setFlashWhite(this.h, p * 0.22)
+    } else if (this.pick === 'sweep') {
+      this.h.armR.rotation.x = -2.3 * p
+      this.h.armR.rotation.z = -0.85 * p
+      this.h.root.rotation.y = 0.55 * p
+    } else if (this.pick === 'nova') {
+      // both fists driven into the bedrock — the fault opens
+      this.h.armR.rotation.x = -2.6 * p
+      this.h.armL.rotation.x = -2.6 * p
+      this.h.root.position.y = -0.1 * p
+      setFlashWhite(this.h, p * 0.4)
+    } else {
+      // rock — the whole body winds like a catapult
+      this.h.armR.rotation.x = -2.9 * p
+      this.h.armL.rotation.x = -2.2 * p
+      this.h.root.rotation.y = 0.4 * p
+      this.h.head.rotation.x = -0.3 * p
+    }
+  }
+
+  protected strikeAnim(p: number) {
+    switch (this.pick) {
+      case 'slam': animSlam(this.h, p); break
+      case 'sweep': animSweep(this.h, p); break
+      case 'nova': animStomp(this.h, p); break
+      case 'rock': animCast(this.h, p); break
+    }
+  }
+
+  protected strikeMove(_dt: number, _p: number, _player: Player, _game: Game) {
+    // the Coal fights from his feet — no charging
+  }
+
+  protected recoverAnim(p: number) {
+    resetPose(this.h)
+    if (this.pick === 'slam') {
+      this.h.armR.rotation.x = 0.5 * (1 - p)
+      this.h.armL.rotation.x = 0.45 * (1 - p)
+      this.h.root.rotation.x = 0.2 * (1 - p)
+    } else if (this.pick === 'sweep') {
+      this.h.armR.rotation.x = -0.55 * (1 - p)
+      this.h.armR.rotation.z = 0.8 * (1 - p)
+      this.h.root.rotation.y = -1.05 * (1 - p)
+    } else if (this.pick === 'nova') {
+      this.h.root.position.y = -0.08 * (1 - p)
+      this.h.armR.rotation.x = -0.9 * (1 - p)
+      this.h.armL.rotation.x = -0.9 * (1 - p)
+    } else {
+      this.h.armR.rotation.x = -1.1 * (1 - p)
+      this.h.armL.rotation.x = -1.4 * (1 - p)
+    }
+  }
+
+  protected doStrike(player: Player, game: Game, dist: number, angleToPlayer: number) {
+    if (this.pick === 'slam') {
+      if (dist < 4.6) {
+        const dmg = Math.round(this.opts.dmg * 1.12 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      }
+      game.onBoss3Slam(this.pos)
+    } else if (this.pick === 'sweep') {
+      const reach = this.opts.atkRange + 1.1
+      let angDiff = angleToPlayer - this.yaw
+      while (angDiff > Math.PI) angDiff -= Math.PI * 2
+      while (angDiff < -Math.PI) angDiff += Math.PI * 2
+      if (dist < reach && Math.abs(angDiff) < 2.15) {
+        const dmg = Math.round(this.opts.dmg * 0.86 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      }
+    } else if (this.pick === 'nova') {
+      // the bedrock cracks in a ring — standing close is standing wrong
+      game.onBoss3Nova(this.pos)
+      if (dist < 6.2) {
+        const dmg = Math.round(this.opts.dmg * 0.72 * (0.9 + Math.random() * 0.2))
+        if (player.takeDamage(dmg, this.pos.x, this.pos.z, game)) game.onPlayerHit(dmg)
+      }
+    }
+    // rock damage rides the fireball itself
+  }
+
+  protected roarDur() { return 2.0 }
+  protected roarAnim(p: number) { animRoar(this.h, p) }
+  protected staggerDur() { return 1.9 }
+  protected staggerAnim(p: number) {
+    animStagger(this.h, p, this.animT)
+    this.staggerBeats(p, 0xff8a3a)
+  }
+  protected deathDur() { return 1.8 }
+  protected deathAnim(p: number) { animBossDead(this.h, p) }
+  protected deathFxAt() { return 0.42 }
+  protected spawnDeathFx(game: Game) {
+    // the Coal shatters — his body crumbles to ash on its knees
+    game.onBossCollapse(this.pos, this.h)
+  }
+
+  /** the Coal never leaves his pit */
+  protected clamp() {
+    super.clamp()
+    if (this.alive) {
+      this.pos.x = Math.max(V3_COAL_ARENA.x0, Math.min(V3_COAL_ARENA.x1, this.pos.x))
+      this.pos.z = Math.max(V3_COAL_ARENA.z0, Math.min(V3_COAL_ARENA.z1, this.pos.z))
     }
   }
 }

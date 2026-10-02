@@ -61,6 +61,11 @@ export const V3_BOSS2_CENTER = { x: 34, z: -14 }
 /** boss-2 fog line (the fortress gatehouse) */
 export const V3_GATE2 = { x: 34, z: -6.5 }
 export const V3_PYRO_ITEM = { x: 32, z: 14 }
+/** the First Coal's pit — the sunken caldera north of the fortress */
+export const V3_COAL_CENTER = { x: 34.5, z: -47.5 }
+export const V3_COAL_ARENA = { x0: 26, x1: 43, z0: -50.5, z1: -41.8 }
+/** the rockfall that seals the pit stair until the Flame King falls */
+export const V3_PIT_RUBBLE = { x0: 44.5, x1: 48.5, z0: -41.5, z1: -38.2 }
 /** lava hazards the undead refuse to wade into */
 export const V3_LAVA_POOLS: [number, number, number][] = [
   [30, 25, 2],
@@ -150,6 +155,15 @@ export const REGIONS_V3: RegionV3[] = [
     design: 'مثل Sen\'s Fortress: دیوار بیرونی، حیاط درونی، تختِ شاه به‌عنوان نقطهٔ فرارِ چشم — هندسه‌ی سه‌لایه‌ای که یک نگاه خوانده می‌شود.',
     cam: { x: 34, z: -14, y: 14, dist: 42, theta: 0.2, phi: 0.62 },
   },
+  {
+    id: 'pit',
+    name: 'گودال گداخته',
+    sub: 'بسترِ ذغالِ نخستین — جایی که جهان آغاز شد',
+    dot: '#ff4a1f',
+    desc: 'شکافی که مرگِ پادشاهِ شعله در زمین گشود: پله‌های سنگی از حاشیهٔ خاکسترگاه پایین می‌رود و به دهانه‌ای گود می‌رسد — کفِ سنگِ ناتری، حلقهٔ صخرهٔ سرخ‌داغ، و در میانِ آن حوضِ گدازه‌ای که نفس می‌کشد. ستون‌های ابسیدینِ شکسته و چکشِ نیم‌مدهٔ یک سازنده، بسترِ خوابِ آخرین لرد را نشان می‌دهند. ذغالِ نخستین آن‌جاست — سازنده‌ای خالی که هنوز با چکشِ شکسته‌اش، جهان را می‌سازد و نمی‌داند.',
+    design: 'آرنای نهایی: دهانهٔ بسته = دیوار طبیعی، پلهٔ واحد = تنها راه؛ قلب گدازه وسط صحنه، هم خطر است هم چراغ.',
+    cam: { x: 34.5, z: -46, y: 8, dist: 30, theta: 0.1, phi: 0.72 },
+  },
 ]
 
 /* ================================================================== */
@@ -177,6 +191,8 @@ const RAMPS: RampDef[] = [
   { x0: -11, z0: -2, x1: -6, z1: 14, h0: 9, h1: 8, w: 2.2, shortcut: true },
   // leg S3 — the last steps, aimed at the crossroads arch (flat 8)
   { x0: -6, z0: 14, x1: -2, z1: 19, h0: 8, h1: 8, w: 2.2, shortcut: true },
+  // ---- THE COAL STAIR — down into the Molten Pit (sealed by rockfall) ----
+  { x0: 47, z0: -39.5, x1: 41, z1: -43.5, h0: 6, h1: 2, w: 2.4 },
 ]
 
 export class WorldV3 {
@@ -202,9 +218,11 @@ export class WorldV3 {
     this.buildTerrain()
     this.buildShrine()
     this.buildVillage()
+    this.buildForge()
     this.buildParish()
     this.buildWastes()
     this.buildFortress()
+    this.buildPit()
     this.buildMeadow()
     this.buildFogGates()
     this.buildSky()
@@ -314,6 +332,15 @@ export class WorldV3 {
         /* ---- CINDER FORTRESS courtyard incl. the gate apron ---- */
         h = this.plateRect(h, x, z, 21, 47, -33, -3, 9, 2.5)
 
+        /* ---- THE MOLTEN PIT — a sunken caldera north of the fortress,
+           floor of chiseled netherstone at h1, ringed by a h9 cliff rim.
+           The COAL STAIR ramp (cut with the roads, below) is the only way
+           in or out — the pit fights for you. ---- */
+        const ep = Math.hypot((x - 34.5) / 10, (z + 45.5) / 5.8)
+        if (ep <= 1) h = 1
+        else if (ep <= 1.45) h = Math.max(h, 9)
+        else if (ep <= 2.1) h = Math.max(h, lerp(9, h, smoothstep(1.45, 2.1, ep)))
+
         /* ---- the burned homestead plot, south of the village fence ---- */
         h = this.plateRect(h, x, z, -45, -40, 29, 33, 7, 2)
 
@@ -409,6 +436,24 @@ export class WorldV3 {
       for (let z = -37; z <= -32; z++) {
         this.heights[this.idx(x, z)] = 5
         this.surf[this.idx(x, z)] = S_LAVA
+      }
+
+    /* ---- the Molten Pit floor — chiseled netherstone, stone rim ---- */
+    for (let x = 20; x <= 50; x++)
+      for (let z = -54; z <= -38; z++) {
+        const ep = Math.hypot((x - 34.5) / 10, (z + 45.5) / 5.8)
+        if (ep <= 1) this.surf[this.idx(x, z)] = S_ASH // the chiseled netherstone floor
+        else if (ep <= 1.8) this.surf[this.idx(x, z)] = S_STONE
+      }
+    /* ---- the pit's burning heart — a lava lung in the south basin ---- */
+    for (let x = 31; x <= 38; x++)
+      for (let z = -46; z <= -42; z++) {
+        if (Math.hypot((x - 34.5) / 2.6, (z + 44.2) / 1.9) <= 1) {
+          this.heights[this.idx(x, z)] = 1
+          this.surf[this.idx(x, z)] = S_LAVA
+        } else if (Math.hypot((x - 34.5) / 3.4, (z + 44.2) / 2.7) <= 1) {
+          this.surf[this.idx(x, z)] = S_STONE // the warning rim
+        }
       }
 
     /* ---- the meadow pond — one calm mirror on the west lawn ----
@@ -867,6 +912,114 @@ export class WorldV3 {
     this.b('mossy', -44, ry0, 31)
     this.b('cobble', -41, ry0, 29)
     this.deadTree('log', -39, this.getH(-39, 33) + 1, 33, 2)
+  }
+
+  /* ================= THE FORGE — the smith's rebuilt home ================= */
+
+  /* the burned homestead plot (x -45..-40, z 29..33, floor h7) is where
+     the fire came through and never left — and where the forge-keeper
+     stayed, rebuilding his furnace from his own ashes. The old chimney
+     now vents HIS furnace; the anvil sits where the table stood. */
+  private buildForge() {
+    const ry0 = 8
+    // the furnace — a cobble box rising against the old chimney, a
+    // burning mouth facing the yard, a darkstone crown venting soot
+    this.fill('cobble', -44, -43, ry0, ry0 + 2, 32, 33)
+    this.fill('darkstone', -44, -43, ry0 + 3, ry0 + 3, 32, 33)
+    this.b('coal', -44, ry0 + 4, 32)
+    this.b('coal', -43, ry0 + 4, 33)
+    this.b('glow', -44, ry0 + 1, 31) // the mouth, burning
+    this.b('glow', -43, ry0 + 1, 31)
+    const forgeLight = new THREE.PointLight(0xff7a30, 2.2, 10, 1.7)
+    forgeLight.position.set(-43.5, ry0 + 2.6, 31.2)
+    this.group.add(forgeLight)
+    // the anvil — log foot, darkstone body, where every blade is judged
+    this.b('log', -41, ry0, 32)
+    this.b('darkstone', -41, ry0 + 1, 32)
+    // quench barrel + fuel + crate of blanks by the wall
+    this.b('crate', -42, ry0, 33)
+    this.b('coal', -40, ry0, 31)
+    this.b('coal', -40, ry0, 30)
+    this.fill('crate', -45, -45, ry0, ry0 + 1, 29, 29)
+    // iron blanks laid out on the charred floor, waiting for the hammer
+    this.b('darkstone', -42, ry0, 31)
+    this.b('darkstone', -41, ry0, 30)
+  }
+
+  /* ================= THE MOLTEN PIT — the final arena ================= */
+
+  /* a sunken caldera north of the fortress: chiseled netherstone floor
+     (h1) ringed by a h9 cliff, one stair (the COAL STAIR) as the only
+     way in. A lava lung burns in the south basin; broken obsidian
+     spires, ember vents and a half-buried builder's hammer dress the
+     bed where the First Coal waits. The stair head is sealed by a
+     rockfall until the Flame King falls — then the Vale cracks open. */
+  private pitRubble: THREE.Group | null = null
+
+  private buildPit() {
+    const floorY = 2 // top face of the h1 floor
+    // broken obsidian spires around the arena's edge — the pit's crown
+    const spires: [number, number, number][] = [
+      [27, -41, 3], [42, -42, 4], [28, -50, 4], [40, -50, 3], [36, -51, 2], [31, -52, 2],
+    ]
+    for (const [sx, sz, h] of spires) {
+      this.col('darkstone', sx, sz, floorY, floorY + h - 1)
+      this.b('coal', sx, floorY + h, sz)
+    }
+    // ember vents — cracks in the bedrock breathing fire (lit)
+    for (const [vx, vz] of [[30, -44], [39, -47], [33, -50]] as const) {
+      this.b('cobble', vx, floorY - 1, vz)
+      this.b('glow', vx, floorY, vz)
+    }
+    const ventLight1 = new THREE.PointLight(0xff6a20, 1.6, 12, 1.8)
+    ventLight1.position.set(30.5, floorY + 1.4, -43.5)
+    this.group.add(ventLight1)
+    const ventLight2 = new THREE.PointLight(0xff6a20, 1.6, 12, 1.8)
+    ventLight2.position.set(39.5, floorY + 1.4, -46.5)
+    this.group.add(ventLight2)
+    // the Builder's hammer — half-buried where he dropped it, leaping in
+    this.fill('log', 33, 33, floorY, floorY + 2, -52, -52)
+    this.fill('darkstone', 32, 35, floorY + 2, floorY + 3, -52, -52)
+    this.b('coal', 31, floorY, -52)
+    this.b('coal', 36, floorY, -53)
+    // scattered obsidian shards + cooling coal beds
+    for (const [dx, dz] of [[29, -46], [38, -43], [26, -48], [41, -49], [35, -49]] as const) {
+      this.b('darkstone', dx, floorY - 1, dz)
+    }
+
+    // the rockfall that seals the stair — pure visual; the game clamps
+    // the body until the Flame King falls, then this group is hidden
+    const rubble = new THREE.Group()
+    const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+    const cobble = this.mats.cobble as THREE.Material
+    const coal = this.mats.coal as THREE.Material
+    const stone = this.mats.stone as THREE.Material
+    const seedR = mulberry32(5150)
+    for (let x = 45; x <= 48; x++) {
+      for (let z = -41; z <= -38; z++) {
+        const n = Math.floor(seedR() * 3)
+        for (let i = 0; i <= n; i++) {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), i === 0 ? cobble : seedR() < 0.4 ? coal : stone)
+          m.position.set(x + (seedR() - 0.5) * 0.3, 6.5 + i + 0.5 + seedR() * 0.2, z + (seedR() - 0.5) * 0.3)
+          m.rotation.y = seedR() * 0.6
+          m.castShadow = true
+          m.receiveShadow = true
+          rubble.add(m)
+        }
+      }
+    }
+    // a warning cairn on the approach — travelers marked the slide
+    const cairn = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), lam(0x8a8578))
+    cairn.position.set(49.5, 7.5, -38.5)
+    rubble.add(cairn)
+    rubble.visible = true // sealed until the Flame King falls
+    this.group.add(rubble)
+    this.pitRubble = rubble
+  }
+
+  /** the Flame King is dead — the Vale cracks, the rockfall rolls clear */
+  setPitOpen(open: boolean) {
+    if (this.pitRubble) this.pitRubble.visible = !open
   }
 
   /* ================= PARISH HILL — church, graveyard, arena ================= */
@@ -1413,10 +1566,11 @@ export class WorldV3 {
     this.motesBase = base
     this.motesPhase = phase
 
-    /* ember columns above the lava pools + the moat */
+    /* ember columns above the lava pools + the moat + the pit's heart */
     const pools: [number, number][] = [
       ...V3_LAVA_POOLS.map(([x, z]) => [x, z] as [number, number]),
       [34, -34.5],
+      [34.5, -44.2],
     ]
     const E = 100
     const eb = new Float32Array(E * 3)

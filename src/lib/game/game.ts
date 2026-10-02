@@ -11,25 +11,29 @@ import {
   V3_BOSS2_CENTER as BOSS2_CENTER,
   V3_PYRO_ITEM as PYRO_ITEM,
   V3_LAVA_POOLS as LAVA_POOLS,
+  V3_COAL_CENTER as COAL_CENTER,
+  V3_COAL_ARENA as COAL_ARENA,
+  V3_PIT_RUBBLE as PIT_RUBBLE,
   V3_HALF,
   V3_SURF_NAMES,
 } from './worldV3'
 import { blockMaterials } from './textures'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
-import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
-import { createSword, createShield, createMerchant, animMerchantIdle, animMerchantGreet, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createArrowBundle, type SwordStyle } from './models'
+import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy, CoalLordEnemy, setNgMult } from './enemy'
+import { createSword, createShield, createMerchant, createSmith, animMerchantIdle, animMerchantGreet, animSmithIdle, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createArrowBundle, type SwordStyle } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
 import {
   ITEMS, ALL_SLOTS, SLOT_LABEL, equipLoad, maxLoadFor, rollTier, TIER_INFO, armorTotals,
-  rollLoot, bossLoot, defaultEquip, sellValueOf,
+  rollLoot, bossLoot, defaultEquip, sellValueOf, upgradeCost, upgradeMult, MAX_UPGRADE, SMITH_LINES,
   type ItemId, type EquipSlot, type EquippedMap, type ItemDef, type DmgType, type LootRoll,
+  type UpgradeCost,
 } from './items'
 
 /* ================= HUD STATE ================= */
 
-export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop' | 'inventory' | 'lore'
+export type Phase = 'menu' | 'playing' | 'dead' | 'rest' | 'paused' | 'shop' | 'smith' | 'inventory' | 'lore' | 'ending'
 export interface HudState {
   phase: Phase
   hp: number
@@ -48,13 +52,21 @@ export interface HudState {
   bossHp: number
   bossMax: number
   prompt: string | null
-  banner: 'died' | 'bossfell' | 'bossfell2' | null
+  banner: 'died' | 'bossfell' | 'bossfell2' | 'coalfell' | null
   blocking: boolean
   pyro: number
   maxPyro: number
   pyroUnlocked: boolean
   /** shop snapshot — null unless the shop panel is open */
   shop: ShopHud | null
+  /** the forge-keeper's panel — null unless the forge is open */
+  smith: SmithHud | null
+  /** the ending choice stands open — kindle, or let it fade */
+  ending: boolean
+  /** NG+ cycle count (0 = first life) */
+  ngPlus: number
+  /** an ending has been chosen — the road of re-awakening is open */
+  ended: boolean
   /** a memorial stone is being read */
   lore: LoreHud | null
   /** memories recovered so far / total stones standing in the Vale */
@@ -130,6 +142,27 @@ export interface ShopHud {
   sellables: { id: ItemId; name: string; icon: string; n: number; equipped: boolean; sell: number; tier: string }[]
 }
 
+/** the forge-keeper's panel — blades, embers, and the price of glory */
+export interface SmithHud {
+  souls: number
+  /** materials in the bag */
+  iron: number
+  ember: number
+  /** the smith's idle line */
+  line: string
+  /** every blade in the bag, with its forge-grade and next cost */
+  blades: {
+    id: ItemId
+    name: string
+    icon: string
+    lv: number
+    dmg: number
+    equipped: boolean
+    cost: UpgradeCost | null
+    affordable: boolean
+  }[]
+}
+
 /** a memorial stone being read (phase 'lore') */
 export interface LoreHud {
   id: string
@@ -198,6 +231,12 @@ export interface SaveData {
   lore?: string[]
   /** one-time cinematics already seen (intro shot, post-boss beat, regions) */
   cine?: { intro?: boolean; beat1?: boolean; regions?: string[] }
+  /** forge-grades per blade id — the smith remembers his work */
+  upgrades?: Record<string, number>
+  /** how many NG+ cycles this ash has walked */
+  ngPlus?: number
+  /** the ending this ember chose: 'lit' kindled the Coal, 'fade' let it sleep */
+  ending?: 'lit' | 'fade'
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -241,7 +280,11 @@ const REGIONS = [
   { id: 'wastes', name: 'خاکسترگاه', sub: 'سرزمینِ سوختهٔ شرق', x0: 20, x1: 56, z0: -2, z1: 38 },
   { id: 'village', name: 'دهکدهٔ فراموش‌شده', sub: 'خانه‌هایی که خالی ماندند', x0: -52, x1: -12, z0: 2, z1: 28 },
   { id: 'shrine', name: 'زیارتگاهِ نخستین', sub: 'آتشگاهِ آغاز و پایان', x0: -12, x1: 12, z0: 18, z1: 40 },
+  { id: 'pit', name: 'گودالِ گداخته', sub: 'بسترِ ذغالِ نخستین', x0: 20, x1: 55, z0: -55, z1: -38 },
 ]
+
+/** the forge-keeper — he never left the house the fire took */
+const SMITH = { x: -42, z: 30.6 }
 
 
 /* ================= PARTICLES / EFFECTS ================= */
@@ -1248,6 +1291,7 @@ export class Game {
   enemies: Enemy[] = []
   boss: BossEnemy
   boss2: BossFlameEnemy
+  boss3: CoalLordEnemy
   phase: Phase = 'menu'
   onState?: (s: HudState) => void
 
@@ -1263,8 +1307,10 @@ export class Game {
   private hurtFlash = 0
   private deadT = 0
   private bannerT = 0
-  private banner: 'died' | 'bossfell' | 'bossfell2' | null = null
+  private banner: 'died' | 'bossfell' | 'bossfell2' | 'coalfell' | null = null
   private prompt: string | null = null
+  /** the ending choice awaiting an answer + its countdown */
+  private endingPending = 0
   private fogPassT = 0
   private fogPass2T = 0
   private bossActive = false
@@ -1272,6 +1318,14 @@ export class Game {
   bossFell = false
   private boss2Active = false
   boss2Fell = false
+  /** the third lord — the First Coal in his pit */
+  private boss3Active = false
+  boss3Fell = false
+  private boss3Barrier = false
+  /** NG+ cycle this world was born into (0 = first life) */
+  private ng = 0
+  /** an ending was chosen on any cycle */
+  private ended = false
   private lockLastMove = 0
 
   /* ---- cinematics ---- */
@@ -1319,6 +1373,9 @@ export class Game {
   private merchantGreetT = 0
   private merchantGreetCd = 0
   private shopLv = { estus: 0, whet: 0, coal: 0 }
+  /** the forge-keeper + the blades he has re-tempered (persisted) */
+  private smith!: Humanoid
+  private upgrades: Record<string, number> = {}
   private pyroItem: { mesh: THREE.Group; light: THREE.PointLight } | null = null
   private emberItem: { mesh: THREE.Group; light: THREE.PointLight } | null = null
   private pyroUnlocked = false
@@ -1364,6 +1421,17 @@ export class Game {
     this.engine.onFrame = (dt) => this.loop(dt)
     ;(window as unknown as { __minesouls?: Game }).__minesouls = this
     this.loadSettings()
+
+    // NG+ cycle — read before any enemy exists so every body hardens
+    try {
+      const raw = localStorage.getItem(SAVE_KEY)
+      if (raw) {
+        const sd = JSON.parse(raw) as SaveData
+        this.ng = Math.max(0, Math.floor(sd.ngPlus ?? 0))
+        this.ended = !!sd.ending
+      }
+    } catch { /* ignore */ }
+    setNgMult(1 + this.ng * 0.45)
 
     // scene setup — dusk atmosphere: bright enough to read every region,
     // warm enough to keep the Dark Souls mood (V2's midnight hid the map)
@@ -1434,6 +1502,13 @@ export class Game {
     this.merchant.group.position.set(MERCHANT.x, mY, MERCHANT.z)
     this.merchant.group.rotation.y = mYaw
     scene.add(this.merchant.group)
+
+    /* ---- the forge-keeper: the smith of the burned homestead ---- */
+    this.smith = createSmith()
+    const sY = this.topSurfaceAt(SMITH.x, SMITH.z)
+    this.smith.group.position.set(SMITH.x, sY, SMITH.z)
+    this.smith.group.rotation.y = Math.PI * 0.92 // faces the road, watching for customers
+    scene.add(this.smith.group)
     /* ---- the grey merchant's market stall — a proper travelling
        shop: striped awning, stocked back-shelf, counter wares, a
        hanging coin-sign, crates, barrels and a crimson banner ---- */
@@ -1668,6 +1743,36 @@ export class Game {
     this.boss2 = new BossFlameEnemy(scene, boss2Spawn)
     this.boss2.world = this.world
     this.boss2.game = this
+    // boss 3 — the First Coal, asleep in his pit until the Vale cracks
+    const boss3Spawn = new THREE.Vector3(COAL_CENTER.x, 0, COAL_CENTER.z)
+    boss3Spawn.y = this.world.surfaceAt(COAL_CENTER.x, COAL_CENTER.z)
+    this.boss3 = new CoalLordEnemy(scene, boss3Spawn)
+    this.boss3.world = this.world
+    this.boss3.game = this
+    // the pit guards — wither sentries + a blaze over the lava lung
+    const pitPts: [number, number][] = [
+      [29, -43], [40, -44],
+    ]
+    for (const [x, z] of pitPts) {
+      const p = new THREE.Vector3(x, 0, z)
+      p.y = this.world.surfaceAt(x, z)
+      const w = new WitherSkeletonEnemy(scene, p)
+      w.world = this.world
+      w.game = this
+      this.enemies.push(w)
+    }
+    const pitBlaze = new THREE.Vector3(34, 0, -49)
+    pitBlaze.y = this.world.surfaceAt(34, -49)
+    const pb = new BlazeEnemy(scene, pitBlaze)
+    pb.world = this.world
+    pb.game = this
+    this.enemies.push(pb)
+
+    // NG+ cycles harden every common body (the lords temper themselves)
+    if (this.ng > 0) {
+      const m = 1 + this.ng * 0.45
+      for (const e of this.enemies) e.harden(m)
+    }
 
     // the pyromancy flame, waiting in the wastes' entrance ruins
     this.buildPyroItem()
@@ -1696,6 +1801,7 @@ export class Game {
     const list = [...this.enemies]
     if (!this.bossFell) list.push(this.boss)
     if (!this.boss2Fell) list.push(this.boss2)
+    if (!this.boss3Fell) list.push(this.boss3)
     return list
   }
 
@@ -1703,7 +1809,18 @@ export class Game {
   private get activeBoss(): Enemy | null {
     if (this.bossActive && !this.bossFell) return this.boss
     if (this.boss2Active && !this.boss2Fell) return this.boss2
+    if (this.boss3Active && !this.boss3Fell) return this.boss3
     return null
+  }
+
+  /** walking surface INCLUDING built blocks (crates, floors, anvils) */
+  private topSurfaceAt(x: number, z: number): number {
+    let y = this.world.surfaceAt(x, z)
+    for (let i = 0; i < 4; i++) {
+      if (this.world.solidStruct(Math.round(x), Math.round(y), Math.round(z))) y++
+      else break
+    }
+    return y
   }
 
   /* ================= PUBLIC API (for React) ================= */
@@ -1798,11 +1915,15 @@ export class Game {
     for (const e of this.enemies) e.reset()
     if (!this.bossFell) this.boss.reset()
     if (!this.boss2Fell) this.boss2.reset()
+    if (!this.boss3Fell) this.boss3.reset()
     this.bossActive = false
     this.boss2Active = false
+    this.boss3Active = false
     this.bossActiveBarrier = false
     this.boss2Barrier = false
+    this.boss3Barrier = false
     this.world.setFogGatesVisible(!this.bossFell, !this.boss2Fell)
+    this.world.setPitOpen(this.boss2Fell) // the rockfall obeys the Flame King's fate
     this.save()
     this.sfx.bonfire()
     // free the cursor! pointer lock retargets every click to the canvas,
@@ -1956,6 +2077,85 @@ export class Game {
     this.emit(true)
   }
 
+  /* ================= THE FORGE — weapon upgrades ================= */
+
+  openSmith() {
+    if (this.phase !== 'playing') return
+    this.phase = 'smith'
+    this.engine.input.releaseLock()
+    this.wasLocked = false
+    this.sfx.souls()
+    this.emit(true)
+  }
+
+  closeSmith() {
+    if (this.phase !== 'smith') return
+    this.phase = 'playing'
+    if (!this.engine.input.isTouch) this.engine.input.requestLock()
+    this.wasLocked = false
+    this.emit(true)
+  }
+
+  /** the smith re-tempers one blade in the bag — souls + iron + ember-iron */
+  upgradeWeapon(id: ItemId) {
+    if (this.phase !== 'smith') return
+    const it = ITEMS[id]
+    if (!it || it.cat !== 'sword') return
+    const lv = this.upgrades[id] ?? 0
+    const cost = upgradeCost(lv)
+    if (!cost) return
+    if (this.countOf(id) <= 0) return
+    if (this.player.souls < cost.souls) return
+    if (this.countOf('iron_chunk') < cost.iron) return
+    if (this.countOf('ember_iron') < cost.ember) return
+    this.player.souls -= cost.souls
+    if (cost.iron > 0) this.removeItem('iron_chunk', cost.iron)
+    if (cost.ember > 0) this.removeItem('ember_iron', cost.ember)
+    this.upgrades[id] = lv + 1
+    this.refreshLoadout()
+    this.sfx.heavy()
+    this.sfx.levelUp()
+    // sparks fly at the anvil — the smith's yard answers the hammer
+    const anvil = new THREE.Vector3(SMITH.x + 1, this.topSurfaceAt(SMITH.x + 1, SMITH.z + 1.4) + 0.6, SMITH.z + 1.4)
+    this.spawnBurst(anvil, 0xffc23d, 16, 2.6, 0.5, 0.1)
+    this.spawnBurst(anvil, 0xff8a2a, 10, 1.8, 0.6, 0.14)
+    this.showToast(`${it.name} → +${lv + 1}`)
+    this.save()
+    this.emit(true)
+  }
+
+  /** the forge-keeper's panel snapshot */
+  private smithHud(): SmithHud {
+    const blades = this.inv
+      .filter((e) => ITEMS[e.id]?.cat === 'sword')
+      .map((e) => {
+        const lv = this.upgrades[e.id] ?? 0
+        const cost = upgradeCost(lv)
+        const affordable =
+          !!cost &&
+          this.player.souls >= cost.souls &&
+          this.countOf('iron_chunk') >= cost.iron &&
+          this.countOf('ember_iron') >= cost.ember
+        return {
+          id: e.id,
+          name: ITEMS[e.id].name,
+          icon: ITEMS[e.id].icon,
+          lv,
+          dmg: Math.round((ITEMS[e.id].dmg ?? 0) * upgradeMult(lv)),
+          equipped: ALL_SLOTS.some((s) => this.eq[s] === e.id),
+          cost,
+          affordable,
+        }
+      })
+    return {
+      souls: Math.floor(this.player.souls),
+      iron: this.countOf('iron_chunk'),
+      ember: this.countOf('ember_iron'),
+      line: SMITH_LINES[Math.floor(this.time / 11) % SMITH_LINES.length],
+      blades,
+    }
+  }
+
   levelUp(stat: 'vit' | 'end' | 'str') {
     if (this.phase !== 'rest') return
     const cost = this.nextCost()
@@ -1992,6 +2192,36 @@ export class Game {
 
   countOf(id: ItemId): number {
     return this.inv.find((s) => s.id === id)?.n ?? 0
+  }
+
+  /** forge-heat: +3 glows cherry-red, +5 burns like the pit itself */
+  private applySwordHeat(sword: THREE.Group | null, lv: number) {
+    if (!sword || lv <= 0) return
+    const heat = Math.min(1, lv / 5)
+    sword.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!(mesh instanceof THREE.Mesh)) return
+      const m = mesh.material as THREE.MeshLambertMaterial
+      if (!m || Array.isArray(m) || !(m as THREE.MeshLambertMaterial).isMeshLambertMaterial) return
+      // only the metal parts heat up — keep grips/wraps dark (they're brown/dark)
+      const c = m.color
+      const lum = c.r * 0.4 + c.g * 0.5 + c.b * 0.55
+      if (lum < 0.32) return
+      if (!m.userData.heatBase) {
+        m.userData.heatBase = { r: c.r, g: c.g, b: c.b }
+      }
+      const base = m.userData.heatBase as { r: number; g: number; b: number }
+      // lerp the blade toward ember-red, then white-hot at +5
+      const t = lv >= 5 ? 0.85 : 0.35 + heat * 0.35
+      c.setRGB(
+        base.r + (1 - base.r) * t,
+        base.g + (0.32 - base.g) * t * 0.9,
+        base.b + (0.12 - base.b) * t * 0.8
+      )
+      if (lv >= 5) {
+        m.emissive = new THREE.Color(0x5a1e08)
+      }
+    })
   }
 
   private addItem(id: ItemId, n = 1) {
@@ -2031,8 +2261,10 @@ export class Game {
     const tier = rollTier(load, max)
     const info = TIER_INFO[tier]
     const armor = armorTotals(this.eq)
+    // the forge lives in the blade: a re-tempered edge cuts deeper
+    const forgeMult = upgradeMult(this.upgrades[rhId ?? ''] ?? 0)
     this.player.loadout = {
-      weaponMult: rh?.dmg ? rh.dmg / 30 : 1,
+      weaponMult: (rh?.dmg ? rh.dmg / 30 : 1) * forgeMult,
       weaponSpd: rh?.spd ?? 1,
       block: lh?.block ?? 0,
       def: armor.def,
@@ -2057,6 +2289,7 @@ export class Game {
     const rhId = this.eq[this.rhActive === 1 ? 'rh1' : 'rh2']
     const rh = rhId ? ITEMS[rhId] : null
     setPlayerSword(h, (rh?.style ?? 'iron') as SwordStyle, rh?.scale ?? 1)
+    this.applySwordHeat(h.sword, this.upgrades[rhId ?? ''] ?? 0)
     h.sword!.visible = rh?.cat === 'sword'
     // left hand: shield OR bow, whichever is active
     const lhId = this.eq[this.lhActive === 1 ? 'lh1' : 'lh2']
@@ -2102,6 +2335,11 @@ export class Game {
     // arrows are ammo — they ride in the quiver, never in a hand
     if (def.ammo) {
       this.showToast(`${def.name} مهمات است — با کمان شلیک می‌شود`)
+      return
+    }
+    // materials belong to the forge, not the body
+    if (def.cat === 'material') {
+      this.showToast(`${def.name} — کوره‌بان این را می‌خواهد، نه سنت`)
       return
     }
     // must own it — in the bag, or already worn somewhere (move semantics)
@@ -2384,6 +2622,11 @@ export class Game {
       this.openShop()
       return
     }
+    // the forge-keeper
+    if (Math.hypot(this.player.pos.x - SMITH.x, this.player.pos.z - SMITH.z) < 2.7) {
+      this.openSmith()
+      return
+    }
     // bloodstain
     if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
       this.player.souls += this.bloodstain.amount
@@ -2516,6 +2759,8 @@ export class Game {
         lhA: this.lhActive,
         lore: this.loreStones.filter((s) => s.seen).map((s) => s.id),
         cine: this.cineSeen,
+        upgrades: this.upgrades,
+        ngPlus: this.ng,
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -2591,6 +2836,13 @@ export class Game {
       }
       this.rhActive = d.rhA === 2 ? 2 : 1
       this.lhActive = d.lhA === 2 ? 2 : 1
+      // ---- the smith's ledger — forge-grades survive the cycle ----
+      this.upgrades = {}
+      if (d.upgrades && typeof d.upgrades === 'object') {
+        for (const [k, v] of Object.entries(d.upgrades)) {
+          if (ITEMS[k]?.cat === 'sword') this.upgrades[k] = Math.max(0, Math.min(MAX_UPGRADE, Math.floor(v as number)))
+        }
+      }
       // ---- memorial stones already read ----
       const readLore = Array.isArray(d.lore) ? d.lore : []
       for (const st of this.loreStones) {
@@ -2715,14 +2967,16 @@ export class Game {
     // their gear may hit the ground — a little inheritance from the dead
     // (lords skip the common table — their signature rig is guaranteed)
     const drops = e.isBoss ? [] : rollLoot(e.lootKind)
-    // champions always drop their guarded relic
+    // champions always drop their guarded relic + a vein of ember-iron
     if (e.champion && e.champLoot) {
       drops.push({ id: e.champLoot as ItemId, n: 1 })
+      drops.push({ id: 'ember_iron', n: 1 })
       this.spawnText('غنیمتِ بزرگ!', '#ffd54a', e.pos.clone().add(new THREE.Vector3(0, 3.2, 0)))
     }
     if (drops.length > 0) this.spawnLoot(drops, e.pos)
     if (e === this.boss) this.onBossKilled()
     else if (e === this.boss2) this.onBoss2Killed()
+    else if (e === this.boss3) this.onBoss3Killed()
     this.emit(true)
   }
 
@@ -2746,7 +3000,8 @@ export class Game {
     this.save()
   }
 
-  /** the Flame King falls — the Great Ember is his legacy */
+  /** the Flame King falls — the Great Ember is his legacy, and his death
+      cracks the earth north of the fortress: the pit stair opens */
   private onBoss2Killed() {
     this.boss2Fell = true
     this.boss2Active = false
@@ -2759,7 +3014,133 @@ export class Game {
     // the Flame King's own obsidian rig: blade + crown/plate/cape
     this.spawnLoot(bossLoot(2), this.boss2.pos)
     this.spawnEmber()
+    // the Vale cracks open — the way to the First Coal lies bare
+    this.world.setPitOpen(true)
+    this.spawnText('زمین می‌لرزد... ریزشِ سنگِ شمال فرو می‌ریزد!', '#ff8a3a', this.player.pos.clone().add(new THREE.Vector3(0, 2.6, 0)))
+    this.shake = Math.max(this.shake, 0.7)
     this.save()
+  }
+
+  /** the First Coal falls — the Vale holds its breath, then the choice */
+  private onBoss3Killed() {
+    this.boss3Fell = true
+    this.boss3Active = false
+    this.boss3Barrier = false
+    this.banner = 'coalfell'
+    this.bannerT = 0
+    if (this.player.lockedTarget) this.player.lockedTarget = null
+    this.sfx.victory()
+    this.spawnLoot(bossLoot(3), this.boss3.pos)
+    // when the ash settles, the bed of the First Coal calls — choose
+    this.endingPending = 4.0
+    this.save()
+  }
+
+  /* ================= THE ENDING — kindle, or let it fade ================= */
+
+  /** after the Coal's banner fades, the choice appears */
+  private maybeOpenEnding(dt: number) {
+    if (this.endingPending <= 0) return
+    this.endingPending -= dt
+    if (this.endingPending <= 0) {
+      this.endingPending = 0
+      this.phase = 'ending'
+      this.engine.input.releaseLock()
+      this.wasLocked = false
+      this.sfx.reveal()
+      this.emit(true)
+    }
+  }
+
+  /** the ember answers: two endings, one world */
+  chooseEnding(kind: 'lit' | 'fade') {
+    if (this.phase !== 'ending') return
+    this.phase = 'playing'
+    const bed = new THREE.Vector3(34.5, this.world.surfaceAt(34.5, -44.2) + 0.6, -44.2)
+    if (kind === 'lit') {
+      this.startCinematic(
+        [
+          {
+            dur: 2.6,
+            pos: bed.clone().add(new THREE.Vector3(5.2, 3.4, 5.6)),
+            look: bed.clone(),
+            onStart: () => {
+              this.sfx.reveal()
+              this.setCaption('اخگر را در دلِ ذغالِ نخستین فرو بردی...')
+              this.spawnBurst(bed, 0xffc23d, 40, 5, 1.2, 0.2)
+              this.shake = Math.max(this.shake, 0.6)
+            },
+          },
+          {
+            dur: 3.0,
+            pos: bed.clone().add(new THREE.Vector3(-3.6, 6.4, 3.0)),
+            look: bed.clone().add(new THREE.Vector3(0, 1.6, 0)),
+            onStart: () => {
+              this.setCaption('آتشِ نخستین باز گرفت. گدازه بالا آمد، و درّه — بعد از هزار سال — نفس کشید.')
+              this.spawnBurst(bed, 0xfff0c0, 60, 6.5, 1.4, 0.24)
+              this.sfx.inferno()
+              this.shake = Math.max(this.shake, 0.9)
+            },
+          },
+          {
+            dur: 2.4,
+            pos: bed.clone().add(new THREE.Vector3(0.4, 11.5, 8.5)),
+            look: new THREE.Vector3(0, 10, 20),
+            onStart: () => this.setCaption('و در نورِ تازه، خانه‌های دهکده یک بار دیگر شکل گرفتند.'),
+          },
+        ],
+        { title: 'پایانِ افروختن', sub: 'آتش باز برگشت — و تو، نخستین اخگرِ دوباره', onEnd: () => this.exitToMenu() }
+      )
+    } else {
+      this.startCinematic(
+        [
+          {
+            dur: 2.6,
+            pos: bed.clone().add(new THREE.Vector3(5.2, 3.4, 5.6)),
+            look: bed.clone(),
+            onStart: () => {
+              this.sfx.reveal()
+              this.setCaption('اخگر را زمین گذاشتی و پشت کردی...')
+            },
+          },
+          {
+            dur: 3.0,
+            pos: bed.clone().add(new THREE.Vector3(-4.2, 5.6, 3.4)),
+            look: bed.clone().add(new THREE.Vector3(0, 1.0, 0)),
+            onStart: () => {
+              this.setCaption('شعله کوچک شد، کوچک‌تر... تا فقط گدازه‌ای آبی در تاریکی بماند.')
+              this.spawnBurst(bed, 0x6a8aff, 30, 3, 1.2, 0.18)
+            },
+          },
+          {
+            dur: 2.4,
+            pos: bed.clone().add(new THREE.Vector3(0.4, 11.5, 8.5)),
+            look: new THREE.Vector3(0, 10, 20),
+            onStart: () => this.setCaption('شبِ سازندگان فرا رسید — اما هر شب، سهمِ خودش از سپیده را دارد.'),
+          },
+        ],
+        { title: 'پایانِ خاموشی', sub: 'عصرِ تاریک — و اخگری که راهش را جدا کرد', onEnd: () => this.exitToMenu() }
+      )
+    }
+    // the ending itself is written into the save — the choice stands forever
+    try {
+      const raw = localStorage.getItem(SAVE_KEY)
+      const d: SaveData = raw ? JSON.parse(raw) : {}
+      d.ending = kind
+      localStorage.setItem(SAVE_KEY, JSON.stringify(d))
+    } catch { /* ignore */ }
+    this.emit(true)
+  }
+
+  /** wake the ash again — the world restarts harder, the character remains */
+  startNgPlus() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY)
+      const d: SaveData = raw ? JSON.parse(raw) : {}
+      d.ngPlus = (d.ngPlus ?? 0) + 1
+      localStorage.setItem(SAVE_KEY, JSON.stringify(d))
+    } catch { /* ignore */ }
+    window.location.reload()
   }
 
   /** the boss drops a glowing estus shard — permanent +1 flask capacity */
@@ -3149,6 +3530,94 @@ export class Game {
     this.spawnLavaPool(pos.x, pos.z)
   }
 
+  /* ---- the First Coal's callbacks ---- */
+
+  onBoss3Intro(pos: THREE.Vector3) {
+    this.sfx.bossRoar()
+    this.shake = Math.max(this.shake, 0.5)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 2.8, 0)), 0xff7a1e, 30, 4)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xffc23d, 18, 2.6, 0.8, 0.2)
+  }
+
+  onBoss3Phase2() {
+    this.sfx.phaseRoar()
+    this.sfx.inferno()
+    this.shake = Math.max(this.shake, 0.6)
+    const c = this.boss3.pos.clone().add(new THREE.Vector3(0, 2.8, 0))
+    this.spawnBurst(c, 0xff7a1e, 40, 5)
+    this.spawnBurst(this.boss3.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xffc23d, 24, 3.4, 0.8, 0.22)
+  }
+
+  onBoss3Slam(pos: THREE.Vector3) {
+    this.shake = Math.max(this.shake, 0.55)
+    this.sfx.heavy()
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xb0a080, 26, 4.8, 0.6, 0.24)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.25, 0)), 0xff8a3a, 16, 2.6, 0.7, 0.26)
+    this.waves.push(new Shockwave(this, pos.clone(), 5.2, 15))
+  }
+
+  /** the nova — the bedrock cracks in a burning ring */
+  onBoss3Nova(pos: THREE.Vector3) {
+    this.sfx.inferno()
+    this.shake = Math.max(this.shake, 0.7)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xff7a1e, 40, 6, 0.9, 0.24)
+    this.spawnBurst(pos.clone().add(new THREE.Vector3(0, 1.0, 0)), 0xffc23d, 24, 4.2, 0.7, 0.2)
+    this.waves.push(new Shockwave(this, pos.clone(), 6.6, 17, 0xffa044))
+  }
+
+  /** the pit's lord wakes when the unkindled descends into his bed */
+  private startBoss3Intro() {
+    const boss = this.boss3
+    const bp = boss.pos.clone()
+    const bed = new THREE.Vector3(34.5, this.world.surfaceAt(34.5, -44.2), -44.2)
+    const chest = bp.clone().add(new THREE.Vector3(0, 3.0, 0))
+    const toBoss = bp.clone().sub(bed)
+    toBoss.y = 0
+    if (toBoss.lengthSq() < 0.01) toBoss.set(0, 0, -1)
+    toBoss.normalize()
+    const side = new THREE.Vector3(-toBoss.z, 0, toBoss.x)
+    // low across the lava → arc across his front → rise to the wide pit
+    const k1 = bed.clone().add(new THREE.Vector3(2.4, 1.2, 2.0))
+    const k2 = bp.clone().addScaledVector(toBoss, 6.0).addScaledVector(side, -7.0)
+    k2.y = bp.y + 3.6
+    const k3 = bed.clone().add(new THREE.Vector3(0.5, 9.5, 9.5))
+    this.cineSafe(k1, chest)
+    this.cineSafe(k2, chest)
+    this.cineSafe(k3, chest)
+    this.startCinematic(
+      [
+        {
+          dur: 1.9,
+          pos: k1,
+          look: chest,
+          onStart: () => {
+            this.onBoss3Intro(bp)
+            this.setCaption('از دلِ بسترِ سرد... سازنده‌ای خالی برمی‌خیزد')
+          },
+        },
+        { dur: 2.3, pos: k2, look: chest },
+        {
+          dur: 1.7,
+          pos: k3,
+          look: chest.clone().add(new THREE.Vector3(0, 0.6, 0)),
+          onStart: () => this.setCaption('او هنوز می‌سازد؛ چیزی که ساخته را نمی‌بیند. نامش، ذغالِ نخستین است.'),
+        },
+      ],
+      {
+        title: boss.name,
+        sub: 'آخرینِ سازندگان',
+        actor: boss,
+        onEnd: () => {
+          boss.finishIntro()
+          this.boss3Active = true
+          this.boss3Barrier = true
+          boss.active = true
+          this.save()
+        },
+      }
+    )
+  }
+
   /** a temporary molten patch left by the Flame King's slam */
   private spawnLavaPool(x: number, z: number) {
     const base = this.world.mats.lava as THREE.MeshBasicMaterial
@@ -3510,10 +3979,14 @@ export class Game {
     }
     if (!this.bossFell) this.boss.reset()
     if (!this.boss2Fell) this.boss2.reset()
+    if (!this.boss3Fell) this.boss3.reset()
     this.bossActive = false
     this.bossActiveBarrier = false
     this.boss2Active = false
     this.boss2Barrier = false
+    this.boss3Active = false
+    this.boss3Barrier = false
+    this.world.setPitOpen(this.boss2Fell)
     for (const o of this.orbs) this.engine.scene.remove(o.mesh)
     this.orbs = []
     this.fogPassT = 0
@@ -3549,6 +4022,17 @@ export class Game {
     if (this.boss2Barrier && !this.boss2Fell) {
       p.x = Math.max(BOSS2_CENTER.x - 7.2, Math.min(BOSS2_CENTER.x + 7.2, p.x))
       p.z = Math.max(BOSS2_CENTER.z - 7.2, Math.min(BOSS2_CENTER.z + 7.2, p.z))
+    }
+    // the rockfall seals the pit stair until the Flame King falls
+    if (!this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
+      if (p.z < PIT_RUBBLE.z1 + 0.55 && p.x > PIT_RUBBLE.x0 - 0.6 && p.x < PIT_RUBBLE.x1 + 0.6) {
+        p.z = PIT_RUBBLE.z1 + 0.55
+      }
+    }
+    // the Coal's arena seals behind his intro — the pit fights for him
+    if (this.boss3Barrier && !this.boss3Fell) {
+      p.x = Math.max(COAL_ARENA.x0, Math.min(COAL_ARENA.x1, p.x))
+      p.z = Math.max(COAL_ARENA.z0, Math.min(COAL_ARENA.z1, p.z))
     }
   }
 
@@ -3599,6 +4083,16 @@ export class Game {
     if (bPos.distanceTo(this.player.pos) < 2.6) return 'استراحت در آتش کمپ'
     if (Math.hypot(this.player.pos.x - MERCHANT.x, this.player.pos.z - MERCHANT.z) < 2.7) {
       return 'گفتگو با بازرگان'
+    }
+    if (Math.hypot(this.player.pos.x - SMITH.x, this.player.pos.z - SMITH.z) < 2.7) {
+      return 'گفتگو با کوره‌بان — ارتقای سلاح'
+    }
+    // the rockfall sealing the pit stair
+    if (!this.boss2Fell &&
+      this.player.pos.x > PIT_RUBBLE.x0 - 1.5 && this.player.pos.x < PIT_RUBBLE.x1 + 1.5 &&
+      this.player.pos.z > PIT_RUBBLE.z0 - 1.5 && this.player.pos.z < PIT_RUBBLE.z1 + 1.5
+    ) {
+      return 'ریزش سنگ — راهِ پایین بسته است (پادشاهِ شعله هنوز زنده است)'
     }
     if (!this.bossActive && !this.bossFell && this.player.pos.z < GATE1.z + 3.2 && this.player.pos.z > GATE1.z - 0.4 &&
       this.player.pos.x > GATE1.lane0 && this.player.pos.x < GATE1.lane1
@@ -3692,6 +4186,37 @@ export class Game {
       this.updateMerchant(dt)
       this.updateEffects(dt)
       this.updateLoot(dt)
+      this.updateCameraFollow(dt, false)
+      this.drawMinimap()
+      this.emit(false)
+      return
+    }
+
+    if (this.phase === 'smith') {
+      // Escape leaves the forge
+      if (input.consume('Escape')) {
+        this.closeSmith()
+        return
+      }
+      this.world.update(dt)
+      this.updateBonfire(dt)
+      this.updateMerchant(dt)
+      this.updateSmith(dt)
+      this.updateEffects(dt)
+      this.updateLoot(dt)
+      this.updateCameraFollow(dt, false)
+      this.drawMinimap()
+      this.emit(false)
+      return
+    }
+
+    if (this.phase === 'ending') {
+      // the world holds its breath while the choice stands
+      this.world.update(dt)
+      this.updateBonfire(dt)
+      this.updateMerchant(dt)
+      this.updateSmith(dt)
+      this.updateEffects(dt)
       this.updateCameraFollow(dt, false)
       this.drawMinimap()
       this.emit(false)
@@ -3903,12 +4428,16 @@ export class Game {
     // fallen lords keep updating so their cinematic death animation + FX can play out
     this.boss.update(dt, this.player, this)
     this.boss2.update(dt, this.player, this)
+    this.boss3.update(dt, this.player, this)
 
     this.world.update(dt)
     this.updateBonfire(dt)
     this.updateLoot(dt)
     this.updateEffects(dt)
     this.updateOrbs(dt)
+
+    // the ending choice waits for the banner to fade
+    this.maybeOpenEnding(dt)
 
     // prompt
     this.prompt = this.fogPassT > 0 || this.fogPass2T > 0 ? null : this.detectPrompt()
@@ -3917,10 +4446,19 @@ export class Game {
     // banner timer
     if (this.banner) {
       this.bannerT += rawDt
-      if ((this.banner === 'bossfell' || this.banner === 'bossfell2') && this.bannerT > 3.6) {
+      if ((this.banner === 'bossfell' || this.banner === 'bossfell2' || this.banner === 'coalfell') && this.bannerT > 3.6) {
         this.banner = null
         this.emit(true)
       }
+    }
+
+    // the Coal wakes when the unkindled steps onto his bed
+    if (!this.boss3Active && !this.boss3Fell && !this.cine && this.boss2Fell) {
+      const pp = this.player.pos
+      const inPit =
+        pp.x > 25 && pp.x < 44.5 && pp.z < -40.5 && pp.z > -53 &&
+        pp.y < 6 // down at the floor, not on the rim
+      if (inPit) this.startBoss3Intro()
     }
 
     // hurt vignette decay
@@ -3930,6 +4468,7 @@ export class Game {
     this.vignette.style.opacity = String(vig)
 
     this.updateMerchant(dt)
+    this.updateSmith(dt)
     this.updateCameraFollow(dt, false)
     this.updateReticle()
     this.drawMinimap()
@@ -3985,6 +4524,24 @@ export class Game {
     }
     // lantern flicker
     this.merchantLamp.intensity = 1.5 + Math.sin(this.time * 11) * 0.2 + Math.random() * 0.12
+  }
+
+  /** the forge-keeper — he turns to his customers and leans on his hammer */
+  private updateSmith(dt: number) {
+    const dx = this.player.pos.x - SMITH.x
+    const dz = this.player.pos.z - SMITH.z
+    const near = Math.hypot(dx, dz)
+    const homeYaw = Math.PI * 0.92
+    if (near < 5) {
+      const target = Math.atan2(dx, dz)
+      let d = target - this.smith.group.rotation.y
+      while (d > Math.PI) d -= Math.PI * 2
+      while (d < -Math.PI) d += Math.PI * 2
+      this.smith.group.rotation.y += d * Math.min(1, 2.6 * dt)
+    } else {
+      this.smith.group.rotation.y += (homeYaw - this.smith.group.rotation.y) * Math.min(1, dt)
+    }
+    animSmithIdle(this.smith, this.time)
   }
 
   /** loot drops bob & spin; player-dropped litter crumbles when expired */
@@ -4221,6 +4778,10 @@ export class Game {
                 })),
             }
           : null,
+      smith: this.phase === 'smith' ? this.smithHud() : null,
+      ending: this.phase === 'ending',
+      ngPlus: this.ng,
+      ended: this.ended,
       inv: this.phase === 'inventory' ? this.invHud() : null,
       lore:
         this.phase === 'lore' && this.loreOpenId

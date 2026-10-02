@@ -29,7 +29,7 @@ export interface Humanoid {
   capePivot?: THREE.Group | null
 }
 
-export type SwordStyle = 'iron' | 'rust' | 'stone' | 'obsidian' | 'greatsword' | 'kingblade'
+export type SwordStyle = 'iron' | 'rust' | 'stone' | 'obsidian' | 'greatsword' | 'kingblade' | 'coalblade'
 
 export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group {
   const g = new THREE.Group()
@@ -78,6 +78,27 @@ export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group 
     mk(0.16, 0.84, 0.02, glow(0xff7a1e), 0, 0.67, -0.035)
     mk(0.1, 0.16, 0.06, blade, 0, 1.22) // tip
     mk(0.13, 0.09, 0.11, lam(0xb8862a), 0, -0.25) // gold pommel
+    g.scale.setScalar(scale)
+    return g
+  }
+
+  if (style === 'coalblade') {
+    // the First Coal's own edge — a blade the hollowed Builder chiseled
+    // from the bedrock of the pit: obsidian plates over a living ember
+    // spine, gold furniture of the old kingdom, a coal-shard pommel
+    mk(0.09, 0.32, 0.09, lam(0x1c161a), 0, -0.06) // charred grip
+    mk(0.1, 0.045, 0.1, lam(0x3a2f36), 0, 0.03) // stone wraps
+    mk(0.1, 0.045, 0.1, lam(0x3a2f36), 0, -0.05)
+    mk(0.48, 0.08, 0.12, lam(0xb8862a), 0, 0.16) // gold crossguard
+    mk(0.1, 0.1, 0.1, glow(0xffc23d), -0.27, 0.2) // hot guard mounts
+    mk(0.1, 0.1, 0.1, glow(0xffc23d), 0.27, 0.2)
+    mk(0.16, 0.94, 0.08, blade, 0, 0.72) // broad dark blade
+    mk(0.06, 0.86, 0.02, glow(0xff7a1e), 0, 0.7, 0.045) // ember spine
+    mk(0.06, 0.86, 0.02, glow(0xff7a1e), 0, 0.7, -0.045)
+    mk(0.07, 0.7, 0.024, glow(0xffc23d), 0, 0.68, 0) // the white-hot heart
+    mk(0.11, 0.16, 0.07, blade, 0, 1.26) // tip
+    mk(0.13, 0.09, 0.11, lam(0x2a2428), 0, -0.27) // coal pommel
+    mk(0.07, 0.05, 0.07, glow(0xff8a2a), 0, -0.33) // its burning seam
     g.scale.setScalar(scale)
     return g
   }
@@ -809,6 +830,139 @@ export function createHumanoid(
     }
   }
 
+  if (kind === 'coal') {
+    // THE FIRST COAL — the hollowed last Builder: a giant cased in
+    // chiseled basalt slabs, split by a blazing core, dragging the
+    // broken halves of his hammer behind his shoulders like a yoke.
+    const basalt = new THREE.MeshLambertMaterial({ color: 0x2e2830 })
+    const basaltDark = new THREE.MeshLambertMaterial({ color: 0x1e191f })
+    const basaltLight = new THREE.MeshLambertMaterial({ color: 0x4a424e })
+    const gold = new THREE.MeshLambertMaterial({ color: 0xb8862a })
+    mats.all.push(basalt, basaltDark, basaltLight, gold)
+    const ember = new THREE.MeshBasicMaterial({ color: 0xff7a1e })
+    const emberHot = new THREE.MeshBasicMaterial({ color: 0xffc23d })
+    const emberWhite = new THREE.MeshBasicMaterial({ color: 0xfff0c0 })
+    extras.push(ember, emberHot, emberWhite)
+    // massive slab collar + chest over-plates that widen the silhouette
+    spinInner.add(
+      mkMesh(0.64, 0.08, 0.4, basaltLight, 0, 1.52, 0),
+      mkMesh(0.66, 0.42, 0.34, basalt, 0, 1.24, 0),
+      mkMesh(0.1, 0.42, 0.35, basaltDark, -0.29, 1.24, 0),
+      mkMesh(0.1, 0.42, 0.35, basaltDark, 0.29, 1.24, 0),
+      mkMesh(0.66, 0.1, 0.31, basaltDark, 0, 0.86, 0)
+    )
+    // the blazing core — a fist-wide fault breathing at the chest's heart
+    const coreGlow = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.05), emberHot)
+    coreGlow.position.set(0, 1.24, 0.185)
+    const coreHalo = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.3, 0.03), ember)
+    coreHalo.position.set(0, 1.24, 0.172)
+    spinInner.add(coreGlow, coreHalo)
+    for (const gy of [-0.07, 0, 0.07]) {
+      spinInner.add(mkMesh(0.26, 0.034, 0.02, basaltDark, 0, 1.24 + gy, 0.215))
+    }
+    // burning faults splitting the chest + the chain belt of his craft
+    const faultL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.02), ember)
+    faultL.position.set(-0.14, 1.28, 0.175)
+    const faultR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.02), ember)
+    faultR.position.set(0.15, 1.3, 0.175)
+    spinInner.add(faultL, faultR)
+    for (const sx of [-1, 1]) {
+      const link = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.36), basaltLight)
+      link.position.set(sx * 0.1, 0.85, 0)
+      spinInner.add(link)
+    }
+    // slab pauldrons — taller, blunter than the knight's spikes
+    addPauldrons(spinInner, extras, 0.42, 0x2e2830, 0x1e191f, 1.5, false)
+    for (const sx of [-1, 1]) {
+      spinInner.add(mkMesh(0.12, 0.16, 0.12, basaltLight, sx * 0.43, 1.68, 0))
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.02), ember)
+      seam.position.set(sx * 0.43, 1.66, 0.065)
+      spinInner.add(seam)
+    }
+    // faulds of cracked stone with ember gaps
+    addFaulds(spinInner, basaltDark, 0.74)
+    for (const sx of [-1, 1]) {
+      const gap = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.06), ember)
+      gap.position.set(sx * 0.215, 0.74, 0.06)
+      spinInner.add(gap)
+    }
+    // limb plates — every arm drags a chain, every leg a broken brace
+    for (const [arm, sx] of [
+      [armL, 1],
+      [armR, -1],
+    ] as const) {
+      limbPlate(arm, 0.32, 0.15, 0.32, -0.14, basalt)
+      limbPlate(arm, 0.31, 0.19, 0.31, -0.48, basaltDark)
+      limbPlate(arm, 0.32, 0.1, 0.33, -0.68, basaltLight)
+      const chain = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.3, 0.045), basaltLight)
+      chain.position.set(sx * 0.14, -0.36, 0)
+      arm.add(chain)
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.05), ember)
+      seam.position.set(sx * 0.13, -0.3, 0.001)
+      arm.add(seam)
+    }
+    for (const leg of [legL, legR]) {
+      limbPlate(leg, 0.28, 0.2, 0.28, -0.16, basalt)
+      limbPlate(leg, 0.3, 0.09, 0.3, -0.35, basaltLight)
+      limbPlate(leg, 0.27, 0.24, 0.27, -0.58, basaltDark)
+      limbPlate(leg, 0.27, 0.08, 0.35, -0.71, basaltDark, 0.03)
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.04), ember)
+      seam.position.set(0, -0.55, 0.15)
+      leg.add(seam)
+    }
+    // the broken hammer-yoke — the Builder's tool, snapped in half,
+    // hanging off both shoulders: the silhouette of a craft gone hollow
+    const handleMat = new THREE.MeshLambertMaterial({ color: 0x5a4026 })
+    mats.all.push(handleMat)
+    for (const sx of [-1, 1]) {
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.9, 0.09), handleMat)
+      handle.position.set(sx * 0.34, 1.05, -0.28)
+      handle.rotation.z = sx * 0.5
+      handle.rotation.x = 0.12
+      const headBlock = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.24), basaltLight)
+      headBlock.position.set(sx * 0.56, 1.52, -0.3)
+      headBlock.rotation.z = sx * 0.5
+      const hotSeam = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.05, 0.26), ember)
+      hotSeam.position.set(sx * 0.56, 1.5, -0.3)
+      hotSeam.rotation.z = sx * 0.5
+      spinInner.add(handle, headBlock, hotSeam)
+    }
+    // the broken crown — stumps of pillars around a burning heart-crack
+    for (const [px2, pz2, h] of [[-0.2, 0.18, 0.2], [0.2, 0.18, 0.18], [-0.19, -0.16, 0.16], [0.19, -0.16, 0.22]] as const) {
+      head.add(mkMesh(0.09, h, 0.09, basaltLight, px2, 0.3 + h / 2, pz2))
+    }
+    const crownCrack = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.06), emberHot)
+    crownCrack.position.set(0, 0.42, 0)
+    head.add(crownCrack)
+    // the white-hot sight-holes burn out of the mask
+    for (const sx of [-1, 1]) {
+      const glow = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.03), emberHot)
+      glow.position.set(sx * 0.115, 0.02, 0.256)
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.034), emberWhite)
+      core.position.set(sx * 0.115, 0.02, 0.262)
+      head.add(glow, core)
+    }
+  }
+
+  if (kind === 'smith') {
+    // THE FORGE-KEEPER — a soot-black smith: leather apron face-plate,
+    // a hammer holstered at the belt, tongs hanging from a shoulder loop
+    const leather = new THREE.MeshLambertMaterial({ color: 0x6a4a2c })
+    const leatherDark = new THREE.MeshLambertMaterial({ color: 0x4a3320 })
+    mats.all.push(leather, leatherDark)
+    // apron front-plate over the torso
+    spinInner.add(
+      mkMesh(0.44, 0.5, 0.06, leather, 0, 1.12, 0.15),
+      mkMesh(0.48, 0.08, 0.07, leatherDark, 0, 1.34, 0.15),
+      mkMesh(0.46, 0.1, 0.06, leatherDark, 0, 0.9, 0.15)
+    )
+    // tongs loop over the left shoulder
+    spinInner.add(mkMesh(0.06, 0.34, 0.06, leatherDark, -0.2, 1.42, -0.05))
+    const tongL = mkMesh(0.04, 0.3, 0.04, leatherDark, -0.2, 1.22, -0.1)
+    tongL.rotation.x = 0.35
+    spinInner.add(tongL)
+  }
+
   if (kind === 'wither') {
     // ember eyes smoldering inside the charcoal skull
     addGlowEyes(head, extras, 0xff7b24)
@@ -1523,6 +1677,42 @@ export function createMerchant(): Humanoid {
   pack.position.set(0, 0.05, -0.26)
   h.body.parent!.add(pack) // attach beside the torso (body is inside spin)
   return h
+}
+
+/** the forge-keeper: a hammer holstered at the hip, bare sooty arms */
+export function createSmith(): Humanoid {
+  const h = createHumanoid('smith', 1.08)
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  // the smith's hammer rides in the right hand — head down, resting
+  const hammer = new THREE.Group()
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.62, 0.07), lam(0x5a4026))
+  shaft.castShadow = true
+  shaft.position.y = -0.18
+  const headB = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.14), lam(0x3a3a42))
+  headB.castShadow = true
+  headB.position.y = -0.5
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.03, 0.16), lam(0x2a2a30))
+  band.position.y = -0.44
+  hammer.add(shaft, headB, band)
+  hammer.position.set(0, -0.66, 0.06)
+  hammer.rotation.x = 0.35
+  h.armR.add(hammer)
+  return h
+}
+
+/** forge idle: the smith leans on his hammer, coals breathe behind him */
+export function animSmithIdle(h: Humanoid, t: number) {
+  resetPose(h)
+  const b = Math.sin(t * 1.4)
+  h.root.position.y = b * 0.012
+  h.root.rotation.z = Math.sin(t * 0.7) * 0.025
+  // hammer arm rests low, weight on the heel of the hand
+  h.armR.rotation.x = 0.12 + b * 0.04
+  h.armR.rotation.z = -0.14
+  // free arm occasionally wipes the brow
+  h.armL.rotation.x = -0.1 + Math.max(0, Math.sin(t * 0.7)) * -0.5
+  h.armL.rotation.z = 0.12
+  h.head.rotation.y = Math.sin(t * 0.5) * 0.14
 }
 
 /** trade-post idle: weight shifts, staff taps, the hood scans for customers */

@@ -19,7 +19,7 @@ export type ItemId = string
 
 export type ArmorSlot = 'head' | 'chest' | 'hands' | 'legs' | 'cape'
 export type EquipSlot = 'rh1' | 'rh2' | 'lh1' | 'lh2' | ArmorSlot
-export type ItemCategory = 'sword' | 'shield' | 'bow' | 'armor'
+export type ItemCategory = 'sword' | 'shield' | 'bow' | 'armor' | 'material'
 export type DmgType = 'phys' | 'fire' | 'blast'
 
 export interface ItemDef {
@@ -228,6 +228,18 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     tier: 'boss', dmg: 64, spd: 0.8, style: 'obsidian', scale: 1.32,
   }),
 
+  /* ---- smithing materials — the forge remembers what the world forgot ---- */
+  iron_chunk: I({
+    id: 'iron_chunk', name: 'تکه‌سنگ آهن', cat: 'material', slot: 'rh', weight: 1.6,
+    icon: '⛓️', desc: 'رگه‌ای خام از آهنِ درّه. سازندگان با چنین سنگ‌هایی، جهان را بلوک به بلوک بالا کشیدند. کوره‌بان می‌تواند آن را در دلِ کوره آب کند و به تیغه‌ی تو بیامیزد.',
+    tier: 'common',
+  }),
+  ember_iron: I({
+    id: 'ember_iron', name: 'اخگرآهن', cat: 'material', slot: 'rh', weight: 1.9,
+    icon: '🔥', desc: 'آهنی که در خاکسترگاه پخته شد و هنوز از درون گرم است. فقط لردها و قهرمان‌ها آن را حمل می‌کنند؛ فلزی که خاطره‌ی آتش را نگه داشته، تنها با آتشِ بیشتر رام می‌شود.',
+    tier: 'rare',
+  }),
+
   /* ---- champion relics — guarded by the mini-lords of the Vale ---- */
   captain_blade: I({
     id: 'captain_blade', name: 'تیغِ سردار', cat: 'sword', slot: 'rh', weight: 5.2,
@@ -238,6 +250,23 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: 'warden_shield', name: 'سپرِ نگهبانِ گور', cat: 'shield', slot: 'lh', weight: 4.0,
     icon: '🛡️', desc: 'سپری از آلیاژِ شمع و قیر که روی قبرِ بی‌نامِ نخستین آویخته بودند. شعله‌ی ریزِ لبه‌اش هرگز تمام نمی‌شود؛ می‌گویند هر کس که سپر را بلند کند، یک عمرِ نگهبانی به عهده می‌گیرد.',
     tier: 'boss', block: 0.93, tint: 0xb9a86a,
+  }),
+
+  /* ---- THE FIRST COAL — the last lord of the Vale ---- */
+  coalblade: I({
+    id: 'coalblade', name: 'تیغِ ذغالِ نخستین', cat: 'sword', slot: 'rh', weight: 9.0,
+    icon: '⚔️', desc: 'تیغه‌ای که سازنده‌ی خالی، از خودِ زغالِ نخستین تراشید. رگه‌ی اخگر در دلِ ابسیدینش می‌تپد — همان آتشی که جهان را آفرید، حالا در دستِ توست. ساختن یا سوزاندن؛ انتخاب با تو.',
+    tier: 'boss', dmg: 72, spd: 0.82, style: 'coalblade', scale: 1.3,
+  }),
+  coal_crown: I({
+    id: 'coal_crown', name: 'تاجِ سازنده‌ی خالی', cat: 'armor', slot: 'head', weight: 2.8,
+    icon: '👑', desc: 'تاجی از پایه‌های شکسته‌ی ستون‌ها؛ یادگارِ روزی که صاحبش، معبدِ نخستین را بلند می‌کرد. ترک‌هایش هنوز نفس می‌کشند — گرم و سرخ، مثل خاطره‌ای که نمی‌خواهد برود.',
+    tier: 'boss', def: 0.12, fire: 0.22, tint: 0x241e22, tint2: 0x171215,
+  }),
+  coal_plate: I({
+    id: 'coal_plate', name: 'سینه‌پوشِ بسترِ ذغال', cat: 'armor', slot: 'chest', weight: 5.4,
+    icon: '🥋', desc: 'صفحاتی از سنگِ گداخته‌ی کفِ گودال؛ قلبِ کوره‌ای که هزار سال تنها سوخت. آن را که بپوشی، صدای چکشِ سازندگان را در نبضِ خودت می‌شنوی.',
+    tier: 'boss', def: 0.18, fire: 0.18, tint: 0x241e22, tint2: 0x171215,
   }),
 }
 
@@ -321,6 +350,7 @@ const TABLES: Record<string, Table> = {
     { id: 'hollow_tunic', p: 0.028 },
     { id: 'hollow_wraps', p: 0.028 },
     { id: 'hollow_trousers', p: 0.028 },
+    { id: 'iron_chunk', p: 0.17, n: [1, 2] },
   ],
   skeleton: [
     { id: 'bone_bow', p: 0.16 },
@@ -331,6 +361,7 @@ const TABLES: Record<string, Table> = {
     { id: 'bone_gloves', p: 0.023 },
     { id: 'bone_greaves', p: 0.023 },
     { id: 'tattered_cape', p: 0.07 },
+    { id: 'iron_chunk', p: 0.15 },
   ],
   wither: [
     { id: 'stone_cleaver', p: 0.11 },
@@ -339,9 +370,10 @@ const TABLES: Record<string, Table> = {
     { id: 'wither_gauntlets', p: 0.028 },
     { id: 'wither_greaves', p: 0.028 },
     { id: 'ashen_cape', p: 0.07 },
+    { id: 'iron_chunk', p: 0.2, n: [1, 2] },
   ],
-  creeper: [{ id: 'creeper_hide', p: 0.22 }],
-  blaze: [{ id: 'blaze_cape', p: 0.17 }],
+  creeper: [{ id: 'creeper_hide', p: 0.22 }, { id: 'iron_chunk', p: 0.16 }],
+  blaze: [{ id: 'blaze_cape', p: 0.17 }, { id: 'ember_iron', p: 0.24 }],
 }
 
 /** roll a mob's loot — independent chances, stacked ammo counts */
@@ -359,14 +391,54 @@ export function rollLoot(kind: string, rnd: () => number = Math.random): LootRol
 }
 
 /** the lords drop their signature blade + one special armor piece */
-export function bossLoot(boss: 1 | 2, rnd: () => number = Math.random): LootRoll[] {
+export function bossLoot(boss: 1 | 2 | 3, rnd: () => number = Math.random): LootRoll[] {
   if (boss === 1) {
     const armor = rnd() < 0.5 ? 'knight_helm' : 'knight_chest'
-    return [{ id: 'iron_greatsword', n: 1 }, { id: armor, n: 1 }]
+    return [{ id: 'iron_greatsword', n: 1 }, { id: armor, n: 1 }, { id: 'ember_iron', n: 1 }]
   }
-  const armor = ['flame_crown', 'flame_chest', 'flame_cape'][Math.floor(rnd() * 3)]
-  return [{ id: 'obsidian_greatsword', n: 1 }, { id: armor, n: 1 }]
+  if (boss === 2) {
+    const armor = ['flame_crown', 'flame_chest', 'flame_cape'][Math.floor(rnd() * 3)]
+    return [{ id: 'obsidian_greatsword', n: 1 }, { id: armor, n: 1 }, { id: 'ember_iron', n: 2 }]
+  }
+  const armor = rnd() < 0.5 ? 'coal_crown' : 'coal_plate'
+  return [{ id: 'coalblade', n: 1 }, { id: armor, n: 1 }, { id: 'ember_iron', n: 3 }]
 }
+
+/* ---------------- the forge — weapon upgrades ---------------- */
+
+export const MAX_UPGRADE = 5
+
+/** damage multiplier of a blade forged to `lv` (+14% per ember-grade) */
+export function upgradeMult(lv: number): number {
+  return 1 + Math.max(0, Math.min(MAX_UPGRADE, lv)) * 0.14
+}
+
+export interface UpgradeCost {
+  souls: number
+  iron: number
+  ember: number
+}
+
+/** price of taking a blade from (lv) to (lv+1) — null at +5 */
+export function upgradeCost(lv: number): UpgradeCost | null {
+  switch (lv) {
+    case 0: return { souls: 350, iron: 2, ember: 0 }
+    case 1: return { souls: 700, iron: 3, ember: 0 }
+    case 2: return { souls: 1200, iron: 4, ember: 1 }
+    case 3: return { souls: 2000, iron: 5, ember: 2 }
+    case 4: return { souls: 3200, iron: 6, ember: 3 }
+    default: return null
+  }
+}
+
+/** the blacksmith's lines — he forges to remember the heat of creation */
+export const SMITH_LINES: string[] = [
+  'فلز دروغ نمی‌گوید؛ یا می‌بندد یا نمی‌بندد. کاش یادگیری هم این‌قدر رک بود.',
+  'من هم شاگردِ سازندگان بودم. دستم هنوز چکش را بلد است؛ نامِ چیزی که می‌ساختم را دیگر نه.',
+  'این تیغه را که می‌آوری، خاطره‌هایش را هم آورده‌ای. هر گرما، یکی‌اش را آزاد می‌کند.',
+  'اخگرآهن را از سردارها بگیر. فلزی که آتش را به یاد دارد، فقط زیر چکشِ من آرام می‌شود.',
+  'تیغه‌ی داغ می‌درخشد، اما تو داغش نکن — رو و آرام. مثل سوگند.',
+]
 
 /** the default loadout of every new unkindled */
 export function defaultEquip(): EquippedMap {
