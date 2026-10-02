@@ -5,7 +5,7 @@ import {
   animAttack, animHit, animDead,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
   animBowDraw, animBowShoot, animPoke, lerp, setBowDraw, setNocked, bowDrawAmount,
-  resetPose, setOpacity, setFlash, setFlashWhite, type Humanoid,
+  resetPose, setOpacity, setFlash, setFlashWhite, dressChampion, type Humanoid,
 } from './models'
 import {
   V3_BONFIRE,
@@ -86,8 +86,13 @@ export class Enemy {
     const sworded = kind === 'zombie' || kind === 'boss' || kind === 'wither' || kind === 'bossflame'
     this.h = createHumanoid(kind, opts.scale, {
       sword: sworded,
-      swordScale: kind === 'boss' ? 1.9 : kind === 'bossflame' ? 2.1 : 1,
+      // the lordly blades are built long and broad — a smaller scalar
+      // keeps them in proportion to their wielder
+      swordScale: kind === 'boss' ? 1.25 : kind === 'bossflame' ? 1.3 : 1,
     })
+    // mini-lords wear the regalia of their station: horns, a pauldron,
+    // a ragged half-cape
+    if (this.champion) dressChampion(this.h, kind === 'wither' ? 'wither' : 'bone')
     this.pos.copy(spawn)
     this.home.copy(spawn)
     this.spawnHome.copy(spawn)

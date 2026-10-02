@@ -29,7 +29,7 @@ export interface Humanoid {
   capePivot?: THREE.Group | null
 }
 
-export type SwordStyle = 'iron' | 'rust' | 'stone' | 'obsidian'
+export type SwordStyle = 'iron' | 'rust' | 'stone' | 'obsidian' | 'greatsword' | 'kingblade'
 
 export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group {
   const g = new THREE.Group()
@@ -44,6 +44,44 @@ export function createSword(scale = 1, style: SwordStyle = 'iron'): THREE.Group 
     g.add(mesh)
     return mesh
   }
+
+  if (style === 'greatsword') {
+    // a great-lord's blade — wrapped grip, sweeping crossguard with
+    // drooping quillons, a garnet ricasso and a wide battered fuller
+    mk(0.09, 0.3, 0.09, lam(0x3a2e20), 0, -0.05) // long leather grip
+    mk(0.1, 0.045, 0.1, lam(0x241c14), 0, 0.05) // grip wraps
+    mk(0.1, 0.045, 0.1, lam(0x241c14), 0, -0.02)
+    mk(0.44, 0.07, 0.11, lam(0x4a4038), 0, 0.16) // broad crossguard
+    mk(0.09, 0.12, 0.09, lam(0x4a4038), -0.25, 0.1) // drooping quillons
+    mk(0.09, 0.12, 0.09, lam(0x4a4038), 0.25, 0.1)
+    mk(0.09, 0.09, 0.09, lam(0x8a1d1d), 0, 0.23) // garnet at the ricasso
+    mk(0.15, 0.86, 0.07, blade, 0, 0.69) // wide blade
+    mk(0.05, 0.78, 0.074, lam(0x6a7268), 0, 0.67) // fuller column
+    mk(0.1, 0.14, 0.06, blade, 0, 1.19) // tip
+    mk(0.12, 0.08, 0.1, lam(0x4a4038), 0, -0.25) // pommel
+    mk(0.06, 0.05, 0.06, lam(0x8a1d1d), 0, -0.31) // pommel gem
+    g.scale.setScalar(scale)
+    return g
+  }
+
+  if (style === 'kingblade') {
+    // the king's obsidian falchion — gold furniture and an edge that
+    // never stops burning
+    mk(0.09, 0.3, 0.09, lam(0x2a1c10), 0, -0.05) // grip
+    mk(0.11, 0.04, 0.11, lam(0xb8862a), 0, 0.04) // gold grip rings
+    mk(0.11, 0.04, 0.11, lam(0xb8862a), 0, -0.03)
+    mk(0.46, 0.07, 0.11, lam(0xb8862a), 0, 0.16) // gold crossguard
+    mk(0.1, 0.09, 0.1, glow(0xffc23d), -0.26, 0.19) // hot guard tips
+    mk(0.1, 0.09, 0.1, glow(0xffc23d), 0.26, 0.19)
+    mk(0.14, 0.9, 0.07, blade, 0, 0.69) // blade
+    mk(0.16, 0.84, 0.02, glow(0xff7a1e), 0, 0.67, 0.035) // molten edge
+    mk(0.16, 0.84, 0.02, glow(0xff7a1e), 0, 0.67, -0.035)
+    mk(0.1, 0.16, 0.06, blade, 0, 1.22) // tip
+    mk(0.13, 0.09, 0.11, lam(0xb8862a), 0, -0.25) // gold pommel
+    g.scale.setScalar(scale)
+    return g
+  }
+
   mk(0.07, 0.2, 0.07, lam(0x6e4f30), 0, 0) // handle
   mk(0.26, 0.06, 0.09, lam(guardC), 0, 0.13) // guard
   mk(0.11, 0.62, 0.06, blade, 0, 0.47) // blade
@@ -283,6 +321,169 @@ function addPauldrons(
   }
 }
 
+/* ---------- lordly dressing helpers — the bosses earn every box ---------- */
+
+/** a slab of armor bolted onto a limb group (it swings with the arm/leg) */
+function limbPlate(
+  limb: THREE.Group,
+  w: number,
+  h: number,
+  d: number,
+  y: number,
+  mat: THREE.Material,
+  z = 0
+) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+  m.position.set(0, y, z)
+  m.castShadow = true
+  limb.add(m)
+  return m
+}
+
+/** four fauld slabs ringed around the hips — the skirt of plate armor */
+function addFaulds(parent: THREE.Object3D, mat: THREE.Material, y = 0.72) {
+  const mk = (w: number, d: number, x: number, z: number, rx: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.26, d), mat)
+    m.position.set(x, y, z)
+    m.rotation.x = rx
+    m.castShadow = true
+    parent.add(m)
+  }
+  mk(0.36, 0.07, 0, 0.18, 0.1) // front kicks out slightly
+  mk(0.36, 0.07, 0, -0.18, -0.1)
+  mk(0.07, 0.28, 0.2, 0, 0)
+  mk(0.07, 0.28, -0.2, 0, 0)
+}
+
+/** a curved horn of stacked segments rising from the head; optional
+    glowing tip for the burning crowns */
+function addHorn(
+  head: THREE.Mesh,
+  side: 1 | -1,
+  segs: { w: number; h: number; x: number; y: number; rz: number }[],
+  mat: THREE.Material,
+  tip?: { mat: THREE.Material; s: number }
+) {
+  for (const sg of segs) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sg.w, sg.h, sg.w), mat)
+    m.position.set(side * sg.x, sg.y, 0)
+    m.rotation.z = -side * sg.rz
+    m.castShadow = true
+    head.add(m)
+  }
+  if (tip) {
+    const last = segs[segs.length - 1]
+    const t = new THREE.Mesh(new THREE.BoxGeometry(tip.s, tip.s, tip.s), tip.mat)
+    t.position.set(side * (last.x + 0.05), last.y + last.h * 0.35, 0)
+    head.add(t)
+  }
+}
+
+/** a layered, battle-torn cape hanging from a pivot behind the torso.
+    `collar` bolts a band across the shoulders; `hem` glows along the
+    bottom edge (the Flame King's mantle is literally on fire). */
+function addCape(
+  parent: THREE.Object3D,
+  cloth: THREE.Material,
+  collar: THREE.Material | null,
+  hem: THREE.Material | null,
+  w: number,
+  mats: THREE.Material[]
+) {
+  mats.push(cloth)
+  const pivot = new THREE.Group()
+  pivot.position.set(0, 1.47, -0.18)
+  parent.add(pivot)
+  const seg = (ww: number, hh: number, y: number, z: number, rx: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(ww, hh, 0.03), cloth)
+    m.position.set(0, y, z)
+    m.rotation.x = rx
+    m.castShadow = true
+    pivot.add(m)
+    return m
+  }
+  const upper = seg(w, 0.5, -0.27, -0.015, 0.1)
+  if (collar) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(w * 1.04, 0.06, 0.036), collar)
+    band.position.set(0, 0.01, 0.004)
+    upper.add(band)
+  }
+  if (hem) {
+    const hemUp = new THREE.Mesh(new THREE.BoxGeometry(w * 0.98, 0.05, 0.034), hem)
+    hemUp.position.set(0, -0.23, 0.003)
+    upper.add(hemUp)
+  }
+  const lower = seg(w * 0.84, 0.42, -0.71, -0.05, -0.08)
+  if (hem) {
+    const hemLow = new THREE.Mesh(new THREE.BoxGeometry(w * 0.82, 0.05, 0.034), hem)
+    hemLow.position.set(0, -0.19, 0.003)
+    lower.add(hemLow)
+  }
+  // the hem is battle-torn — three ragged strips at uneven lengths
+  const stripW = w * 0.2
+  const strips: [number, number, number][] = [
+    [-1, 0.13, -0.99],
+    [0, 0.17, -1.0],
+    [1, 0.11, -0.98],
+  ]
+  for (const [sx, sh, sy] of strips) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(stripW, sh, 0.03), cloth)
+    s.position.set(sx * w * 0.28, sy, -0.058)
+    s.rotation.z = sx * 0.08
+    pivot.add(s)
+  }
+  return pivot
+}
+
+/** mini-lords of the Vale — curved horns, a single pauldron over the
+    sword arm and a ragged half-cape mark them as greater hollows */
+export function dressChampion(h: Humanoid, style: 'wither' | 'bone') {
+  const hornMat = new THREE.MeshLambertMaterial({ color: style === 'wither' ? 0x35313a : 0xcfc8b4 })
+  const hornDark = new THREE.MeshLambertMaterial({ color: style === 'wither' ? 0x242128 : 0xa49b86 })
+  const plate = new THREE.MeshLambertMaterial({ color: style === 'wither' ? 0x3c3842 : 0x8a8478 })
+  const capeMat = gearMaterial(
+    'cloth',
+    style === 'wither' ? 0x40363c : 0x6e6455,
+    style === 'wither' ? 0x2a242b : 0x4c453a
+  ).clone()
+  h.materials.push(hornMat, hornDark, plate, capeMat)
+  // curved horns
+  for (const sx of [-1, 1] as const) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.09), hornMat)
+    b.position.set(sx * 0.24, 0.2, 0)
+    b.rotation.z = -sx * 0.4
+    b.castShadow = true
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.07), hornDark)
+    t.position.set(sx * 0.32, 0.32, 0)
+    t.rotation.z = -sx * 0.8
+    t.castShadow = true
+    h.head.add(b, t)
+  }
+  // a single pauldron over the sword arm
+  const p = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.3), plate)
+  p.position.set(0.01, -0.05, 0)
+  p.castShadow = true
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.32), hornDark)
+  rim.position.set(0.01, -0.14, 0)
+  h.armR.add(p, rim)
+  // a ragged half-cape hung from the torso
+  const pivot = new THREE.Group()
+  pivot.position.set(0, 0.35, -0.15)
+  h.body.add(pivot)
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.026), capeMat)
+  upper.position.set(0, -0.22, -0.012)
+  upper.rotation.x = 0.12
+  upper.castShadow = true
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.026), capeMat)
+  lower.position.set(0, -0.56, -0.05)
+  lower.rotation.x = -0.1
+  lower.castShadow = true
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.026), capeMat)
+  strip.position.set(0.08, -0.79, -0.07)
+  strip.rotation.z = -0.1
+  pivot.add(upper, lower, strip)
+}
+
 export function createHumanoid(
   kind: CharKind,
   scale = 1,
@@ -382,7 +583,7 @@ export function createHumanoid(
 
   spinInner.add(legL, legR, body, armL, armR, head)
 
-  const swordStyle: SwordStyle = opts.swordStyle ?? (kind === 'boss' ? 'rust' : kind === 'wither' ? 'stone' : 'iron')
+  const swordStyle: SwordStyle = opts.swordStyle ?? (kind === 'boss' ? 'greatsword' : kind === 'bossflame' ? 'kingblade' : kind === 'wither' ? 'stone' : 'iron')
   let sword: THREE.Group | null = null
   let shield: THREE.Group | null = null
   if (opts.sword) {
@@ -404,45 +605,168 @@ export function createHumanoid(
 
   /* ---------- per-kind model dressing ---------- */
   if (kind === 'boss') {
-    // the Ancient Zombie Knight: bolted armor over a rotted body
+    // THE ANCIENT ZOMBIE KNIGHT — a rotted giant in bolted-on relic
+    // plate: gorget, layered pauldrons with spikes, full limb harness,
+    // faulds, a torn war-cape and a broken-horned great helm.
     const steel = new THREE.MeshLambertMaterial({ color: 0x7c828c })
     const steelDark = new THREE.MeshLambertMaterial({ color: 0x565a64 })
-    mats.all.push(steel, steelDark)
-    // chestplate over the torso
-    const chest = mkMesh(0.56, 0.36, 0.31, steel, 0, 1.26, 0)
-    const chestRidge = mkMesh(0.08, 0.3, 0.33, steelDark, 0, 1.28, 0)
-    // belt + tattered tabard hint
-    const belt = mkMesh(0.56, 0.09, 0.29, steelDark, 0, 0.86, 0)
-    // helm: iron band across the brow + a battle-scarred crimson crest
-    const helmBand = mkMesh(0.54, 0.1, 0.54, steel, 0, 0.19, 0)
-    helmBand.position.y = 0.19
-    const crest = mkMesh(0.08, 0.13, 0.42, new THREE.MeshLambertMaterial({ color: 0x6a1d1d }), 0, 0.31, 0)
-    head.add(helmBand, crest)
-    spinInner.add(chest, chestRidge, belt)
+    const steelLight = new THREE.MeshLambertMaterial({ color: 0x969eaa })
+    const crestMat = new THREE.MeshLambertMaterial({ color: 0x6a1d1d })
+    mats.all.push(steel, steelDark, steelLight, crestMat)
+    // gorget ringing the neck + collar plate + chest + backplate
+    spinInner.add(
+      mkMesh(0.34, 0.12, 0.34, steelDark, 0, 1.56, 0),
+      mkMesh(0.62, 0.06, 0.38, steel, 0, 1.5, 0),
+      mkMesh(0.56, 0.36, 0.31, steel, 0, 1.26, 0),
+      mkMesh(0.08, 0.3, 0.33, steelDark, 0, 1.28, 0),
+      mkMesh(0.42, 0.32, 0.06, steelDark, 0, 1.26, -0.17),
+      mkMesh(0.56, 0.09, 0.29, steelDark, 0, 0.86, 0),
+      mkMesh(0.5, 0.1, 0.26, steelLight, 0, 0.79, 0)
+    )
+    // faulds — the dead knight's skirt of plate
+    addFaulds(spinInner, steelDark, 0.72)
+    // layered pauldrons + a pair of spikes bolted on each
     addPauldrons(spinInner, extras, 0.34, 0x7c828c, 0x565a64, 1.46)
-    addGlowEyes(head, extras, 0xff2a2a)
+    for (const sx of [-1, 1]) {
+      const s1 = mkMesh(0.07, 0.18, 0.07, steelLight, sx * 0.42, 1.64, 0.09)
+      s1.rotation.z = -sx * 0.3
+      const s2 = mkMesh(0.06, 0.13, 0.06, steelDark, sx * 0.42, 1.62, -0.12)
+      s2.rotation.x = 0.35
+      spinInner.add(s1, s2)
+    }
+    // limb harness — every plate swings with its limb
+    for (const arm of [armL, armR]) {
+      limbPlate(arm, 0.29, 0.12, 0.29, -0.13, steel) // upper-arm ring
+      limbPlate(arm, 0.28, 0.17, 0.28, -0.48, steelDark) // vambrace
+      limbPlate(arm, 0.29, 0.1, 0.3, -0.68, steel) // gauntlet cuff
+    }
+    for (const leg of [legL, legR]) {
+      limbPlate(leg, 0.26, 0.22, 0.26, -0.16, steel) // cuisse
+      limbPlate(leg, 0.28, 0.1, 0.28, -0.37, steelLight) // knee cop
+      limbPlate(leg, 0.25, 0.22, 0.25, -0.57, steelDark) // greave
+      limbPlate(leg, 0.25, 0.08, 0.34, -0.71, steelDark, 0.03) // sabaton
+    }
+    // the torn war-cape of his order
+    const capeMat = gearMaterial('cloth', 0x6a2020, 0x431414).clone()
+    addCape(spinInner, capeMat, steelDark, null, 0.52, mats.all)
+    // great helm: dome, brow band, a whole horn and a broken one, crest
+    head.add(
+      mkMesh(0.56, 0.18, 0.56, steel, 0, 0.27, 0),
+      mkMesh(0.54, 0.1, 0.54, steel, 0, 0.19, 0),
+      mkMesh(0.08, 0.13, 0.42, crestMat, 0, 0.42, 0)
+    )
+    for (const [hx, hy, hz] of [[-0.2, 0.28, 0.2], [0.2, 0.28, 0.2], [-0.2, 0.28, -0.2], [0.2, 0.28, -0.2]]) {
+      head.add(mkMesh(0.05, 0.05, 0.05, steelDark, hx, hy, hz))
+    }
+    addHorn(head, -1, [
+      { w: 0.1, h: 0.14, x: 0.28, y: 0.22, rz: 0.3 },
+      { w: 0.08, h: 0.12, x: 0.37, y: 0.35, rz: 0.65 },
+      { w: 0.06, h: 0.1, x: 0.43, y: 0.46, rz: 0.95 },
+    ], new THREE.MeshLambertMaterial({ color: 0x8a8578 }))
+    addHorn(head, 1, [{ w: 0.1, h: 0.1, x: 0.28, y: 0.22, rz: 0.3 }], new THREE.MeshLambertMaterial({ color: 0x6e6754 }))
+    // burning eyes — dark socket, white-hot core
+    const eyeSocket = new THREE.MeshBasicMaterial({ color: 0x8a1414 })
+    const eyeCore = new THREE.MeshBasicMaterial({ color: 0xff3a2a })
+    extras.push(eyeSocket, eyeCore)
+    for (const sx of [-1, 1]) {
+      const socket = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.03), eyeSocket)
+      socket.position.set(sx * 0.115, 0.02, 0.258)
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.034), eyeCore)
+      core.position.set(sx * 0.115, 0.02, 0.262)
+      head.add(socket, core)
+    }
   }
 
   if (kind === 'bossflame') {
-    // the Flame King: obsidian battle-plate split by glowing lava veins
+    // THE FLAME KING — a warlord cased in gold-trimmed obsidian, split
+    // by living lava: a furnace heart, spiked pauldrons, a burning horned
+    // crown and the royal mantle whose hem is literally on fire.
     const obsidian = new THREE.MeshLambertMaterial({ color: 0x241d20 })
     const obsidianDark = new THREE.MeshLambertMaterial({ color: 0x171114 })
-    mats.all.push(obsidian, obsidianDark)
-    const chest = mkMesh(0.58, 0.4, 0.33, obsidian, 0, 1.24, 0)
-    const belt = mkMesh(0.58, 0.1, 0.31, obsidianDark, 0, 0.86, 0)
+    const obsidianLight = new THREE.MeshLambertMaterial({ color: 0x3a3034 })
+    const gold = new THREE.MeshLambertMaterial({ color: 0xb8862a })
+    const goldBright = new THREE.MeshLambertMaterial({ color: 0xdcaa48 })
+    mats.all.push(obsidian, obsidianDark, obsidianLight, gold, goldBright)
     const molten = new THREE.MeshBasicMaterial({ color: 0xff7a1e })
-    extras.push(molten)
     const moltenHot = new THREE.MeshBasicMaterial({ color: 0xffc23d })
-    extras.push(moltenHot)
+    extras.push(molten, moltenHot)
+    // gold collar + ember mantle tongues at the shoulders
+    spinInner.add(
+      mkMesh(0.6, 0.06, 0.36, gold, 0, 1.5, 0),
+      mkMesh(0.58, 0.4, 0.33, obsidian, 0, 1.24, 0),
+      mkMesh(0.05, 0.4, 0.335, gold, -0.275, 1.24, 0),
+      mkMesh(0.05, 0.4, 0.335, gold, 0.275, 1.24, 0),
+      mkMesh(0.58, 0.1, 0.31, obsidianDark, 0, 0.86, 0),
+      mkMesh(0.1, 0.08, 0.02, goldBright, 0, 0.86, 0.16)
+    )
+    const tonguePos: [number, number, number][] = [
+      [-0.26, 1.58, 0.12],
+      [0.26, 1.58, 0.12],
+      [-0.26, 1.58, -0.12],
+      [0.26, 1.58, -0.12],
+    ]
+    tonguePos.forEach((p, i) => {
+      const t = mkMesh(0.07, 0.14 + (i % 2) * 0.05, 0.07, i % 2 ? moltenHot : molten, p[0], p[1], p[2])
+      t.rotation.z = -p[0] * 0.8
+      spinInner.add(t)
+    })
+    // the furnace heart burning behind grate slats
+    const heart = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.05), moltenHot)
+    heart.position.set(0, 1.26, 0.185)
+    spinInner.add(heart)
+    for (const gy of [-0.05, 0, 0.05]) {
+      spinInner.add(mkMesh(0.23, 0.032, 0.02, obsidianDark, 0, 1.26 + gy, 0.205))
+    }
     // lava veins splitting the chestplate
     const veinL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.02), molten)
-    veinL.position.set(-0.12, 1.3, 0.17)
+    veinL.position.set(-0.12, 1.3, 0.175)
     const veinR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.02), molten)
-    veinR.position.set(0.14, 1.34, 0.17)
+    veinR.position.set(0.14, 1.34, 0.175)
     const veinC = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.02), moltenHot)
-    veinC.position.set(0, 1.28, 0.175)
-    spinInner.add(chest, belt, veinL, veinR, veinC)
+    veinC.position.set(0, 1.14, 0.18)
+    spinInner.add(veinL, veinR, veinC)
+    // faulds + ember gaps glowing between the plates
+    addFaulds(spinInner, obsidianDark, 0.72)
+    for (const sx of [-1, 1]) {
+      const gap = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.06), molten)
+      gap.position.set(sx * 0.205, 0.74, 0.06)
+      spinInner.add(gap)
+    }
+    // spiked pauldrons with lava rim + hot tips
     addPauldrons(spinInner, extras, 0.4, 0x241d20, 0x171114, 1.48, true)
+    for (const sx of [-1, 1]) {
+      const s1 = mkMesh(0.06, 0.2, 0.06, obsidianLight, sx * 0.42, 1.66, 0.1)
+      s1.rotation.z = -sx * 0.35
+      const s2 = mkMesh(0.05, 0.15, 0.05, obsidian, sx * 0.42, 1.62, -0.14)
+      s2.rotation.x = 0.4
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 0.045), moltenHot)
+      tip.position.set(sx * 0.455, 1.755, 0.1)
+      spinInner.add(s1, s2, tip)
+    }
+    // limb plates — molten veins burn along the outer face of each arm
+    for (const [arm, sx] of [
+      [armL, 1],
+      [armR, -1],
+    ] as const) {
+      limbPlate(arm, 0.3, 0.14, 0.3, -0.14, obsidian)
+      limbPlate(arm, 0.29, 0.18, 0.29, -0.48, obsidianDark)
+      limbPlate(arm, 0.3, 0.1, 0.31, -0.68, gold)
+      const vein = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.05), molten)
+      vein.position.set(sx * 0.13, -0.33, 0)
+      arm.add(vein)
+    }
+    for (const leg of [legL, legR]) {
+      limbPlate(leg, 0.27, 0.2, 0.27, -0.16, obsidian)
+      limbPlate(leg, 0.29, 0.09, 0.29, -0.35, gold) // gold knee
+      limbPlate(leg, 0.26, 0.24, 0.26, -0.58, obsidianDark)
+      limbPlate(leg, 0.26, 0.08, 0.34, -0.71, obsidianDark, 0.03) // sabaton
+      const vein = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.04), molten)
+      vein.position.set(0, -0.56, 0.145)
+      leg.add(vein)
+    }
+    // the burning royal mantle
+    const capeMat = gearMaterial('ember', 0x2a1a1e, 0x180f12).clone()
+    addCape(spinInner, capeMat, gold, molten, 0.56, mats.all)
     // a crown of five unlit flame tongues, the center one hottest
     const flameMat = new THREE.MeshBasicMaterial({ color: 0xff7a1e })
     const flameHot = new THREE.MeshBasicMaterial({ color: 0xffc23d })
@@ -457,7 +781,32 @@ export function createHumanoid(
     flame(0, 0.36, flameHot)
     flame(0.1, 0.26, flameMat, 0.07)
     flame(0.2, 0.2, flameMat, 0.08)
-    addGlowEyes(head, extras, 0xffd23d)
+    // the burning horned crown — two sweeping obsidian horns
+    addHorn(head, -1, [
+      { w: 0.1, h: 0.16, x: 0.28, y: 0.24, rz: 0.5 },
+      { w: 0.08, h: 0.14, x: 0.4, y: 0.42, rz: 0.9 },
+      { w: 0.06, h: 0.12, x: 0.48, y: 0.56, rz: 1.25 },
+    ], obsidianDark, { mat: moltenHot, s: 0.05 })
+    addHorn(head, 1, [
+      { w: 0.1, h: 0.16, x: 0.28, y: 0.24, rz: 0.5 },
+      { w: 0.08, h: 0.14, x: 0.4, y: 0.42, rz: 0.9 },
+      { w: 0.06, h: 0.12, x: 0.48, y: 0.56, rz: 1.25 },
+    ], obsidianDark, { mat: moltenHot, s: 0.05 })
+    head.add(mkMesh(0.07, 0.22, 0.07, obsidianDark, 0, 0.38, 0)) // center spike
+    const ctip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.05), moltenHot)
+    ctip.position.set(0, 0.53, 0)
+    head.add(ctip)
+    // white-hot stare — orange halo, white core
+    const eyeGlow = new THREE.MeshBasicMaterial({ color: 0xffd23d })
+    const eyeCore = new THREE.MeshBasicMaterial({ color: 0xfff4c8 })
+    extras.push(eyeGlow, eyeCore)
+    for (const sx of [-1, 1]) {
+      const socket = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.03), eyeGlow)
+      socket.position.set(sx * 0.115, 0.02, 0.258)
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.034), eyeCore)
+      core.position.set(sx * 0.115, 0.02, 0.262)
+      head.add(socket, core)
+    }
   }
 
   if (kind === 'wither') {

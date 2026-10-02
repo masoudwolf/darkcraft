@@ -303,8 +303,13 @@ function getCharTexs(kind: CharKind): CharTexs {
   }
   const [sb, sv] = skinBase[kind]
 
-  /* ---------- FACES (8x8, the soul of every mob) ---------- */
-  const faceTex = makeTex(8, 30, (c, r, s) => {
+  /* lords render at the vanilla 16px resolution — twice the pixel count
+     of the common mobs, because a boss fills the screen and every plate
+     of his armor is read by the player up close */
+  const S = kind === 'boss' || kind === 'bossflame' ? 16 : 8
+
+  /* ---------- FACES (8x8 common mobs, 16x16 lords) ---------- */
+  const faceTex = makeTex(S, 30, (c, r, s) => {
     fillNoise(c, r, s, sb, sv)
 
     if (kind === 'creeper') {
@@ -337,19 +342,45 @@ function getCharTexs(kind: CharKind): CharTexs {
     }
 
     if (kind === 'boss') {
-      // ancient knight corpse: helm shadow, burning red eyes, ragged beard
-      px(c, 0, 2, 'rgba(0,0,0,0.45)', 8, 1)
-      px(c, 1, 3, 'rgba(120,20,20,0.9)', 2, 1)
-      px(c, 5, 3, 'rgba(120,20,20,0.9)', 2, 1)
-      px(c, 1, 4, '#8a1414')
-      px(c, 6, 4, '#8a1414')
-      px(c, 2, 4, '#ff2a2a')
-      px(c, 5, 4, '#ff2a2a')
-      px(c, 1, 5, 'rgba(0,0,0,0.28)')
-      px(c, 6, 5, 'rgba(0,0,0,0.28)')
-      px(c, 3, 5, 'rgba(0,0,0,0.2)', 2, 1)
-      px(c, 2, 6, 'rgba(24,30,22,0.95)', 4, 1)
-      px(c, 1, 7, 'rgba(58,66,50,0.95)', 6, 1) // grey stubble
+      // a scarred great-helm: riveted brow, a barred visor slit with two
+      // coals burning inside, breath drilled below, rust weeping down
+      const steel = 'rgb(116,120,128)'
+      const steelD = 'rgb(78,82,90)'
+      const steelL = 'rgb(152,158,170)'
+      fillNoise(c, r, s, [108, 112, 120], 9)
+      // dome shading — dark rim, sheen across the brow
+      px(c, 0, 0, steelD, 16, 2)
+      px(c, 0, 2, 'rgba(70,74,82,0.5)', 1, 14)
+      px(c, 15, 2, 'rgba(70,74,82,0.5)', 1, 14)
+      px(c, 3, 2, steelL, 10, 1)
+      // riveted brow band
+      px(c, 0, 4, steelD, 16, 1)
+      for (const x of [1, 5, 10, 14]) px(c, x, 3, steelL)
+      // visor slit — black gap, central reinforcement bar, burning coals
+      px(c, 2, 6, '#101014', 12, 3)
+      px(c, 7, 6, steel, 2, 3)
+      px(c, 2, 6, 'rgba(0,0,0,0.45)', 12, 1)
+      px(c, 3, 6, '#6a1010', 3, 3)
+      px(c, 10, 6, '#6a1010', 3, 3)
+      px(c, 3, 7, '#8a1414')
+      px(c, 12, 7, '#8a1414')
+      px(c, 4, 7, '#ff2a2a')
+      px(c, 11, 7, '#ff2a2a')
+      // breath holes drilled in two staggered rows
+      for (const x of [4, 6, 8, 10, 12]) {
+        px(c, x, 10, 'rgba(10,10,12,0.9)')
+        px(c, x + 1, 11, 'rgba(10,10,12,0.7)')
+      }
+      // chin plate
+      px(c, 1, 13, steelD, 14, 1)
+      px(c, 1, 14, 'rgba(60,64,72,0.8)', 14, 2)
+      // battle scars + rust weeping from the seams
+      px(c, 5, 2, 'rgba(30,32,36,0.8)', 1, 3)
+      px(c, 6, 2, 'rgba(30,32,36,0.55)', 1, 2)
+      px(c, 12, 8, 'rgba(30,32,36,0.6)', 2, 1)
+      px(c, 2, 12, 'rgba(122,90,60,0.75)', 2, 2)
+      px(c, 13, 13, 'rgba(122,90,60,0.6)', 2, 1)
+      px(c, 9, 4, 'rgba(122,90,60,0.5)', 1, 2)
       return
     }
 
@@ -397,18 +428,35 @@ function getCharTexs(kind: CharKind): CharTexs {
     }
 
     if (kind === 'bossflame') {
-      // burning glare + a molten crack splitting the jaw
-      px(c, 1, 2, 'rgba(0,0,0,0.55)', 2, 1)
-      px(c, 5, 2, 'rgba(0,0,0,0.55)', 2, 1)
-      px(c, 1, 3, '#ffd23d', 2, 1)
-      px(c, 5, 3, '#ffd23d', 2, 1)
-      px(c, 2, 4, '#fff4c8')
-      px(c, 5, 4, '#fff4c8')
-      px(c, 2, 5, '#c24a18', 4, 1)
-      px(c, 3, 6, '#ff7a1e', 2, 1)
-      px(c, 1, 6, '#8a2c10')
-      px(c, 0, 4, 'rgba(255,122,30,0.6)')
-      px(c, 7, 4, 'rgba(255,122,30,0.6)')
+      // the obsidian visor of the Flame King — gold brow, a white-hot
+      // stare, a molten fissure splitting the cheek, ember-flecked jaw
+      fillNoise(c, r, s, [44, 36, 40], 7)
+      px(c, 0, 1, 'rgb(184,134,42)', 16, 2)
+      px(c, 0, 2, 'rgba(120,84,20,0.8)', 16, 1)
+      // deep sockets with white-hot cores
+      px(c, 2, 5, 'rgba(0,0,0,0.75)', 5, 4)
+      px(c, 9, 5, 'rgba(0,0,0,0.75)', 5, 4)
+      px(c, 3, 6, '#ff9a2e', 3, 2)
+      px(c, 10, 6, '#ff9a2e', 3, 2)
+      px(c, 4, 6, '#fff4c8')
+      px(c, 4, 7, '#fff4c8')
+      px(c, 11, 6, '#fff4c8')
+      px(c, 11, 7, '#fff4c8')
+      // molten fissure — a jagged diagonal burning down the right cheek
+      px(c, 12, 3, '#ff7a1e', 1, 2)
+      px(c, 11, 5, '#ff7a1e', 1, 2)
+      px(c, 10, 7, '#ff7a1e')
+      px(c, 9, 8, '#ff9a2e', 1, 2)
+      px(c, 8, 10, '#ff7a1e', 1, 2)
+      px(c, 7, 12, '#ff9a2e', 1, 2)
+      px(c, 6, 13, 'rgba(255,122,30,0.7)', 1, 2)
+      // a dark mouth split with ember teeth
+      px(c, 4, 12, 'rgba(8,6,8,0.95)', 8, 2)
+      for (const x of [5, 7, 9, 11]) px(c, x, 12, '#c24a18')
+      // heat shimmer bleeding at the edges
+      px(c, 0, 4, 'rgba(255,122,30,0.35)', 1, 8)
+      px(c, 15, 4, 'rgba(255,122,30,0.35)', 1, 8)
+      px(c, 2, 15, 'rgba(255,122,30,0.3)', 12, 1)
       return
     }
 
@@ -439,7 +487,41 @@ function getCharTexs(kind: CharKind): CharTexs {
 
   /* ---------- BODY PARTS ---------- */
   const texs: CharTexs = {
-    skin: makeTex(8, 31, (c, r, s) => {
+    skin: makeTex(S, 31, (c, r, s) => {
+      if (kind === 'boss') {
+        // great-helm flank — vertical plate seams, rivet columns,
+        // low vent slits, rust and scars
+        fillNoise(c, r, s, [104, 108, 116], 9)
+        px(c, 7, 0, 'rgba(70,74,82,0.85)', 2, 16)
+        px(c, 8, 0, 'rgba(150,158,168,0.4)', 1, 16)
+        for (const x of [3, 12]) px(c, x, 2, 'rgba(70,74,82,0.6)', 1, 12)
+        for (const y of [1, 5, 9]) {
+          px(c, 3, y, 'rgb(152,158,170)')
+          px(c, 12, y, 'rgb(152,158,170)')
+        }
+        px(c, 4, 12, 'rgba(12,12,14,0.9)', 8, 1)
+        px(c, 4, 14, 'rgba(12,12,14,0.9)', 8, 1)
+        px(c, 10, 4, 'rgba(30,32,36,0.7)', 3, 1)
+        px(c, 2, 8, 'rgba(30,32,36,0.55)', 1, 3)
+        px(c, 5, 10, 'rgba(122,90,60,0.7)', 2, 2)
+        px(c, 13, 6, 'rgba(122,90,60,0.55)', 1, 3)
+        px(c, 0, 15, 'rgba(50,54,60,0.9)', 16, 1)
+        return
+      }
+      if (kind === 'bossflame') {
+        // obsidian flank plates — gold seam ring, ember cracks, edge chips
+        fillNoise(c, r, s, [42, 34, 38], 7)
+        px(c, 7, 0, 'rgba(20,14,16,0.9)', 2, 16)
+        px(c, 0, 7, 'rgb(184,134,42)', 16, 1)
+        px(c, 0, 8, 'rgba(120,84,20,0.8)', 16, 1)
+        px(c, 11, 2, 'rgba(255,122,30,0.9)', 1, 3)
+        px(c, 10, 5, 'rgba(255,122,30,0.7)', 1, 2)
+        px(c, 12, 10, 'rgba(255,122,30,0.8)', 1, 2)
+        px(c, 3, 11, 'rgba(255,122,30,0.5)', 1, 2)
+        px(c, 2, 3, 'rgba(70,60,66,0.8)', 2, 1)
+        px(c, 12, 13, 'rgba(70,60,66,0.7)', 2, 1)
+        return
+      }
       fillNoise(c, r, s, sb, sv)
       if (kind === 'zombie') {
         blotch(c, r, s, 'rgba(44,80,40,0.85)', 5, 2, 1)
@@ -468,23 +550,24 @@ function getCharTexs(kind: CharKind): CharTexs {
         blotch(c, r, s, 'rgba(255,224,120,0.9)', 3, 2, 2)
         blotch(c, r, s, 'rgba(90,42,8,0.45)', 5, 1, 1)
       }
-      if (kind === 'bossflame') {
-        for (let i = 0; i < 3; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgba(255,122,30,0.85)', 1, 2)
-        }
-        blotch(c, r, s, 'rgba(20,14,16,0.9)', 3, 2, 1)
-      }
     }),
     face: faceTex,
-    hairTop: makeTex(8, 32, (c, r, s) => {
+    hairTop: makeTex(S, 32, (c, r, s) => {
       if (kind === 'boss') {
-        // iron helm crown with rivets and battle scratches
-        fillNoise(c, r, s, [100, 104, 112], 10)
-        px(c, 0, 0, 'rgba(60,64,72,0.9)', 8, 1)
-        px(c, 0, 7, 'rgba(60,64,72,0.9)', 8, 1)
-        px(c, 1, 1, '#565a64'); px(c, 6, 1, '#565a64')
-        px(c, 1, 6, '#565a64'); px(c, 6, 6, '#565a64')
-        blotch(c, r, s, 'rgba(150,158,168,0.8)', 3, 2, 1)
+        // helm crown — dome sheen, corner rivets, the crest mount burned
+        // dark crimson where the plume once bolted on
+        fillNoise(c, r, s, [112, 116, 124], 9)
+        px(c, 0, 0, 'rgba(60,64,72,0.9)', 16, 1)
+        px(c, 0, 15, 'rgba(60,64,72,0.9)', 16, 1)
+        px(c, 0, 0, 'rgba(60,64,72,0.7)', 1, 16)
+        px(c, 15, 0, 'rgba(60,64,72,0.7)', 1, 16)
+        px(c, 2, 1, 'rgb(150,158,168)', 12, 1)
+        for (const [x, y] of [[1, 1], [14, 1], [1, 14], [14, 14]]) px(c, x, y, 'rgb(158,164,176)', 2, 2)
+        px(c, 6, 6, '#4a1010', 4, 4)
+        px(c, 7, 7, '#6a1d1d', 2, 2)
+        px(c, 7, 0, 'rgba(90,22,22,0.8)', 2, 3)
+        px(c, 5, 9, 'rgba(30,32,36,0.6)', 2, 1)
+        px(c, 10, 3, 'rgba(122,90,60,0.6)', 2, 1)
         return
       }
       if (kind === 'zombie') {
@@ -508,9 +591,15 @@ function getCharTexs(kind: CharKind): CharTexs {
         return
       }
       if (kind === 'bossflame') {
-        fillNoise(c, r, s, [38, 30, 32], 8)
-        px(c, 2, 4, 'rgba(255,122,30,0.7)', 1, 2)
-        px(c, 6, 1, 'rgba(255,122,30,0.5)', 1, 1)
+        // the crown platform — gold ring, five flame mounts, hot cracks
+        fillNoise(c, r, s, [36, 28, 32], 7)
+        px(c, 0, 0, 'rgb(184,134,42)', 16, 2)
+        px(c, 0, 14, 'rgb(184,134,42)', 16, 2)
+        px(c, 0, 2, 'rgba(120,84,20,0.8)', 16, 1)
+        px(c, 0, 13, 'rgba(120,84,20,0.8)', 16, 1)
+        for (const x of [2, 5, 8, 11, 14]) px(c, x, 7, '#ff7a1e', 2, 2)
+        px(c, 8, 4, 'rgba(255,194,61,0.9)', 1, 2)
+        px(c, 4, 10, 'rgba(255,122,30,0.6)', 2, 1)
         return
       }
       if (kind === 'creeper') {
@@ -528,7 +617,39 @@ function getCharTexs(kind: CharKind): CharTexs {
       }
       fillNoise(c, r, s, [66, 48, 33], 12)
     }),
-    body: makeTex(8, 33, (c, r, s) => {
+    body: makeTex(S, 33, (c, r, s) => {
+      if (kind === 'boss') {
+        // plate cuirass over a torn heraldic tabard — gorget, center
+        // ridge, riveted seam, blood-soaked plate, belt, ragged hem
+        fillNoise(c, r, s, [108, 112, 120], 9)
+        px(c, 0, 0, 'rgba(70,74,82,0.95)', 16, 2)
+        px(c, 4, 0, 'rgb(150,158,168)', 8, 1)
+        px(c, 7, 2, 'rgb(150,158,168)', 2, 8)
+        px(c, 8, 2, 'rgba(70,74,82,0.5)', 1, 8)
+        px(c, 0, 6, 'rgba(70,74,82,0.85)', 16, 1)
+        for (const x of [1, 5, 10, 14]) px(c, x, 5, 'rgb(152,158,168)')
+        px(c, 0, 2, 'rgba(60,64,72,0.55)', 2, 8)
+        px(c, 14, 2, 'rgba(60,64,72,0.55)', 2, 8)
+        px(c, 3, 3, 'rgba(122,26,26,0.7)', 3, 2)
+        px(c, 2, 4, 'rgba(122,26,26,0.4)', 2, 1)
+        // the order's faded crimson chevron
+        px(c, 6, 8, 'rgba(122,30,30,0.85)', 4, 1)
+        px(c, 5, 9, 'rgba(122,30,30,0.85)', 2, 1)
+        px(c, 9, 9, 'rgba(122,30,30,0.85)', 2, 1)
+        px(c, 6, 9, 'rgba(90,22,22,0.6)', 4, 1)
+        px(c, 11, 3, 'rgba(30,32,36,0.7)', 3, 1)
+        px(c, 12, 9, 'rgba(30,32,36,0.5)', 1, 2)
+        px(c, 0, 11, '#4a3826', 16, 2)
+        px(c, 6, 11, '#8a929c', 4, 2)
+        px(c, 7, 11, '#5a626c', 2, 2)
+        px(c, 0, 13, 'rgb(48,42,38)', 16, 3)
+        px(c, 6, 13, 'rgb(100,24,24)', 4, 3)
+        px(c, 2, 13, 'rgba(20,18,16,0.9)', 2, 3)
+        px(c, 11, 14, 'rgba(20,18,16,0.9)', 2, 2)
+        px(c, 5, 15, 'rgba(20,18,16,0.95)', 1, 1)
+        px(c, 9, 15, 'rgba(20,18,16,0.95)', 2, 1)
+        return
+      }
       if (kind === 'zombie') {
         // torn teal tunic: moss stains, holes with rot showing through, ragged hem
         fillNoise(c, r, s, [44, 96, 82], 14)
@@ -541,23 +662,6 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 0, 7, 'rgba(20,30,22,0.95)', 8, 1)
         px(c, 2, 7, 'rgba(44,96,82,1)')
         px(c, 5, 7, 'rgba(52,104,88,1)')
-        return
-      }
-      if (kind === 'boss') {
-        // steel chestplate: center ridge, rivets, belt, tattered skirt
-        fillNoise(c, r, s, [108, 112, 120], 10)
-        px(c, 3, 0, 'rgba(150,158,168,0.85)', 2, 6)
-        px(c, 0, 0, 'rgba(60,64,72,0.9)', 8, 1)
-        px(c, 0, 0, 'rgba(60,64,72,0.7)', 1, 6)
-        px(c, 7, 0, 'rgba(60,64,72,0.7)', 1, 6)
-        px(c, 1, 1, '#565a64'); px(c, 6, 1, '#565a64')
-        px(c, 0, 4, '#565a64'); px(c, 7, 4, '#565a64')
-        blotch(c, r, s, 'rgba(120,26,26,0.5)', 2, 2, 1)
-        px(c, 0, 6, '#4a3826', 8, 1)
-        px(c, 3, 6, '#9aa0a8', 2, 1)
-        px(c, 0, 7, '#33383a', 8, 1)
-        px(c, 1, 7, '#22262a')
-        px(c, 5, 7, '#22262a')
         return
       }
       if (kind === 'skeleton') {
@@ -591,15 +695,25 @@ function getCharTexs(kind: CharKind): CharTexs {
         return
       }
       if (kind === 'bossflame') {
-        // obsidian plates split by glowing lava veins
-        fillNoise(c, r, s, [46, 36, 38], 8)
-        px(c, 0, 2, 'rgba(20,14,16,0.95)', 8, 1)
-        px(c, 0, 5, 'rgba(20,14,16,0.95)', 8, 1)
-        px(c, 0, 5, 'rgb(160,40,20)', 8, 1)
-        for (let i = 0; i < 4; i++) {
-          px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,122,30)', 1, 2)
-        }
-        px(c, 4, 3, 'rgb(255,200,80)')
+        // obsidian cuirass — gold-trimmed, its furnace heart burning
+        // behind grate slats, lava fissures running off the core
+        fillNoise(c, r, s, [44, 36, 40], 7)
+        px(c, 0, 0, 'rgb(184,134,42)', 16, 1)
+        px(c, 0, 4, 'rgba(20,14,16,0.95)', 16, 1)
+        px(c, 0, 10, 'rgba(20,14,16,0.95)', 16, 1)
+        px(c, 5, 5, 'rgba(255,122,30,0.95)', 6, 5)
+        px(c, 6, 6, '#ffc23d', 4, 3)
+        px(c, 7, 6, '#fff4c8', 2, 2)
+        px(c, 5, 7, 'rgba(20,12,10,0.9)', 6, 1)
+        px(c, 4, 10, '#ff7a1e', 1, 3)
+        px(c, 11, 8, '#ff7a1e', 1, 4)
+        px(c, 12, 5, 'rgba(255,122,30,0.7)', 1, 2)
+        px(c, 3, 3, 'rgba(255,122,30,0.6)', 2, 1)
+        px(c, 0, 1, 'rgb(160,116,30)', 1, 13)
+        px(c, 15, 1, 'rgb(160,116,30)', 1, 13)
+        px(c, 0, 13, 'rgb(184,134,42)', 16, 2)
+        px(c, 6, 13, 'rgb(120,84,20)', 4, 2)
+        px(c, 0, 15, 'rgb(24,18,20)', 16, 1)
         return
       }
       if (kind === 'creeper') {
@@ -626,7 +740,7 @@ function getCharTexs(kind: CharKind): CharTexs {
       }
       fillNoise(c, r, s, sb, sv)
     }),
-    arm: makeTex(8, 34, (c, r, s) => {
+    arm: makeTex(S, 34, (c, r, s) => {
       if (kind === 'player') {
         // sleeve + bare forearm
         fillNoise(c, r, s, [0, 148, 148], 14)
@@ -644,15 +758,43 @@ function getCharTexs(kind: CharKind): CharTexs {
         return
       }
       if (kind === 'boss') {
-        // pauldron + torn sleeve + gauntlet
-        px(c, 0, 0, '#7c828c', 8, 3)
-        px(c, 0, 0, 'rgba(60,64,72,0.9)', 8, 1)
-        px(c, 1, 1, '#565a64', 1, 1)
-        px(c, 5, 2, '#565a64', 1, 1)
-        fillNoise2(c, r, s, [50, 56, 50], 12, 3, 6)
-        px(c, 0, 3, 'rgba(20,24,20,0.6)', 8, 1)
-        px(c, 0, 6, '#8d939c', 8, 2)
-        px(c, 0, 6, 'rgba(60,64,72,0.8)', 8, 1)
+        // pauldron over a rotted sleeve, then vambrace bands and a
+        // riveted gauntlet — every layer of the knight's arm painted
+        fillNoise(c, r, s, [108, 112, 120], 9)
+        px(c, 0, 0, 'rgba(60,64,72,0.95)', 16, 1)
+        px(c, 1, 1, 'rgb(150,158,168)', 14, 1)
+        px(c, 2, 3, 'rgb(152,158,170)')
+        px(c, 12, 3, 'rgb(152,158,170)')
+        px(c, 0, 5, 'rgba(70,74,82,0.95)', 16, 1)
+        px(c, 0, 6, 'rgba(20,24,20,0.6)', 16, 1)
+        fillNoise2(c, r, s, [50, 56, 50], 12, 7, 11)
+        px(c, 3, 8, 'rgba(28,34,28,0.8)', 2, 2)
+        px(c, 9, 9, 'rgba(28,34,28,0.7)', 3, 1)
+        px(c, 6, 7, 'rgba(16,20,16,0.9)', 1, 2)
+        px(c, 12, 10, 'rgba(96,148,86,0.6)', 2, 1)
+        px(c, 0, 11, 'rgb(146,152,162)', 16, 2)
+        px(c, 0, 12, 'rgba(70,74,82,0.7)', 16, 1)
+        px(c, 0, 13, 'rgb(126,132,142)', 16, 1)
+        px(c, 0, 14, 'rgb(74,78,88)', 16, 2)
+        for (const x of [3, 7, 11]) px(c, x, 14, 'rgb(126,132,142)')
+        px(c, 0, 15, 'rgba(40,44,50,0.9)', 16, 1)
+        return
+      }
+      if (kind === 'bossflame') {
+        // obsidian pauldron with a gold rim, a molten vein burning down
+        // the arm, a gold bracer and a clawed gauntlet
+        fillNoise(c, r, s, [42, 34, 38], 7)
+        px(c, 0, 0, 'rgba(20,14,16,0.95)', 16, 1)
+        px(c, 1, 1, 'rgb(66,56,62)', 14, 3)
+        px(c, 0, 4, 'rgb(184,134,42)', 16, 1)
+        px(c, 7, 5, '#ff7a1e', 2, 4)
+        px(c, 8, 9, 'rgba(255,194,61,0.9)', 1, 2)
+        px(c, 6, 9, 'rgba(255,122,30,0.6)', 1, 1)
+        px(c, 0, 8, 'rgba(20,14,16,0.8)', 16, 1)
+        px(c, 0, 11, 'rgb(184,134,42)', 16, 2)
+        px(c, 0, 12, 'rgba(120,84,20,0.9)', 16, 1)
+        px(c, 0, 13, 'rgb(30,24,28)', 16, 3)
+        for (const x of [3, 7, 11]) px(c, x, 13, 'rgb(120,124,132)')
         return
       }
       if (kind === 'skeleton') {
@@ -667,13 +809,6 @@ function getCharTexs(kind: CharKind): CharTexs {
         px(c, 0, 0, 'rgba(30,28,32,0.9)', 8, 1)
         px(c, 0, 7, 'rgba(30,28,32,0.9)', 8, 1)
         px(c, 5, 4, 'rgba(255,123,36,0.7)', 1, 1)
-        return
-      }
-      if (kind === 'bossflame') {
-        fillNoise(c, r, s, [52, 42, 44], 10)
-        px(c, 0, 5, 'rgba(184,134,42,0.95)', 8, 1) // gold bracer
-        px(c, 2, 2, 'rgba(255,122,30,0.8)', 1, 2)
-        px(c, 0, 7, 'rgba(20,14,16,0.9)', 8, 1)
         return
       }
       if (kind === 'merchant') {
@@ -691,7 +826,7 @@ function getCharTexs(kind: CharKind): CharTexs {
         blotch(c, r, s, 'rgba(30,80,30,0.9)', 5, 2, 1)
       }
     }),
-    leg: makeTex(8, 35, (c, r, s) => {
+    leg: makeTex(S, 35, (c, r, s) => {
       if (kind === 'zombie') {
         fillNoise(c, r, s, [74, 66, 76], 12)
         px(c, 3, 3, 'rgba(94,84,94,0.9)', 2, 2)
@@ -700,12 +835,19 @@ function getCharTexs(kind: CharKind): CharTexs {
         return
       }
       if (kind === 'boss') {
-        // armored greave: knee plate, strap, dark boot
-        fillNoise(c, r, s, [104, 108, 116], 10)
-        px(c, 2, 2, 'rgba(150,158,168,0.9)', 4, 2)
-        px(c, 0, 4, 'rgba(58,44,30,0.95)', 8, 1)
-        px(c, 0, 6, 'rgba(60,64,70,0.95)', 8, 2)
-        px(c, 0, 0, 'rgba(60,64,72,0.7)', 8, 1)
+        // cuisse, strapped knee cop, greave and sabaton — a full leg
+        // harness for the ancient knight
+        fillNoise(c, r, s, [104, 108, 116], 9)
+        px(c, 7, 0, 'rgb(150,158,168)', 2, 6)
+        px(c, 0, 6, 'rgba(70,74,82,0.85)', 16, 1)
+        px(c, 3, 7, 'rgb(150,158,168)', 10, 2)
+        px(c, 7, 7, 'rgb(90,94,102)', 2, 2)
+        fillNoise2(c, r, s, [96, 100, 108], 9, 9, 13)
+        px(c, 0, 11, '#4a3826', 16, 1)
+        px(c, 6, 11, '#8a929c', 3, 1)
+        px(c, 0, 13, 'rgba(70,74,82,0.95)', 16, 1)
+        px(c, 0, 14, 'rgb(52,56,64)', 16, 2)
+        px(c, 4, 14, 'rgba(122,90,60,0.5)', 2, 1)
         return
       }
       if (kind === 'skeleton') {
@@ -724,10 +866,19 @@ function getCharTexs(kind: CharKind): CharTexs {
         return
       }
       if (kind === 'bossflame') {
-        fillNoise(c, r, s, [40, 32, 34], 8)
-        px(c, 0, 2, 'rgba(20,14,16,0.9)', 8, 1)
-        px(c, 4, 4, 'rgba(255,122,30,0.8)', 1, 2)
-        px(c, 0, 6, 'rgba(24,18,20,0.95)', 8, 2)
+        // obsidian cuisse with ember cracks, a gold knee band, a molten
+        // greave fissure and a gold-trimmed boot
+        fillNoise(c, r, s, [40, 32, 34], 7)
+        px(c, 7, 0, 'rgb(66,56,62)', 2, 6)
+        px(c, 4, 2, 'rgba(255,122,30,0.85)', 1, 3)
+        px(c, 5, 4, 'rgba(255,122,30,0.5)', 1, 1)
+        px(c, 0, 6, 'rgba(20,14,16,0.95)', 16, 1)
+        px(c, 0, 7, 'rgb(184,134,42)', 16, 1)
+        px(c, 0, 8, 'rgba(120,84,20,0.9)', 16, 1)
+        fillNoise2(c, r, s, [36, 28, 32], 7, 9, 14)
+        px(c, 8, 10, '#ff7a1e', 1, 3)
+        px(c, 0, 14, 'rgb(28,22,24)', 16, 2)
+        px(c, 0, 15, 'rgb(184,134,42)', 16, 1)
         return
       }
       if (kind === 'merchant') {
@@ -1064,7 +1215,9 @@ export function gearMaterial(kind: GearKind, tint: number, tint2?: number): THRE
 const bladeMatCache = new Map<string, THREE.MeshLambertMaterial>()
 
 /** painted blade faces per sword style — fuller, glints, rust, granite */
-export function bladeMaterial(style: 'iron' | 'rust' | 'stone' | 'obsidian'): THREE.MeshLambertMaterial {
+export function bladeMaterial(
+  style: 'iron' | 'rust' | 'stone' | 'obsidian' | 'greatsword' | 'kingblade'
+): THREE.MeshLambertMaterial {
   const hit = bladeMatCache.get(style)
   if (hit) return hit
   const base: Record<string, RGB> = {
@@ -1072,6 +1225,8 @@ export function bladeMaterial(style: 'iron' | 'rust' | 'stone' | 'obsidian'): TH
     rust: [154, 163, 154],
     stone: [154, 159, 164],
     obsidian: [42, 34, 38],
+    greatsword: [148, 154, 148],
+    kingblade: [42, 34, 38],
   }
   const B = base[style]
   const tex = makeTex(16, style.length * 977 + 13, (c, r, s) => {
@@ -1089,13 +1244,17 @@ export function bladeMaterial(style: 'iron' | 'rust' | 'stone' | 'obsidian'): TH
     }
     // edge glints
     for (const y of [2, 9]) for (let x = 0; x < s; x++) if (r() < 0.4) px(c, x, y, cssOf(B, 1.22))
-    if (style === 'rust') {
+    if (style === 'rust' || style === 'greatsword') {
       for (let i = 0; i < 14; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(122,90,60)', 1 + Math.floor(r() * 2), 1)
       for (let i = 0; i < 3; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(70,54,40)', 2, 1) // nicks
+      if (style === 'greatsword') {
+        // old pitting — the scars of a century of war
+        for (let i = 0; i < 6; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(88,94,88)', 2, 2)
+      }
     } else if (style === 'stone') {
       for (let i = 0; i < 18; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 0.6))
       for (let i = 0; i < 10; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 1.3))
-    } else if (style === 'obsidian') {
+    } else if (style === 'obsidian' || style === 'kingblade') {
       for (let i = 0; i < 5; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(255,122,30)')
       for (let i = 0; i < 8; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), cssOf(B, 2.2))
     }
