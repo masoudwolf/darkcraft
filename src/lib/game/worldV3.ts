@@ -117,9 +117,9 @@ export const REGIONS_V3: RegionV3[] = [
   {
     id: 'village',
     name: 'دهکدهٔ فراموشی',
-    sub: 'یک خیابان، چهار خانه، یک چاه — خوانا و ساده',
+    sub: 'یک خیابان، چهار خانهٔ مبله، مزرعه و چاه',
     dot: '#b09055',
-    desc: 'دهکده دیگر هزارتوی کوچه نیست: یک خیابان شمالی-جنوبی که چهار خانهٔ بزرگ با سقف شیروانی دو طرفش ایستاده‌اند، وسطش میدان چاه است و انتهاش طاقلهٔ هیزم. درها رو به خیابان‌اند، فانوس کنار هر در، گاری واژگون کنار میدان مانده — و جنوبِ پرچین، خانهٔ سوخته‌ای مانده که آتشِ نخستین هنوز رهایش نکرده. خالی‌شدگان همان‌جا که خانه‌هایشان را ساخته بودند می‌گردند.',
+    desc: 'دهکده دیگر هزارتوی کوچه نیست: یک خیابان شمالی-جنوبی که چهار خانهٔ بزرگ با سقف شیروانی دو طرفش ایستاده‌اند — دیوارهای گچی و سنگی، پنجره‌های شیشه‌ای، دودکش آجری، و درونِ هر خانه تخت و میز و صندوق و صندوقچه دیده می‌شود. وسط خیابان میدان چاهِ سرپوشیده است و کنارش مزرعهٔ پرچین‌شده با ردیف‌های شخم‌خورده، کپه‌های هیزم و مترسکی که هنوز سرِ پاست. گاری واژگون کنار میدان مانده — و جنوبِ پرچین، خانهٔ سوخته‌ای که دودکش آجری‌اش هنوز ایستاده و کفِ زغالی‌اش قصهٔ آتش را می‌گوید. خالی‌شدگان همان‌جا که خانه‌هایشان را ساخته بودند می‌گردند.',
     design: 'درسِ V۲: پیچ‌وخمِ کوچه‌ها حذف شد. یک خیابانِ پهن یعنی دشمن همیشه جلوی چشم است و جنگ منصفانه.',
     cam: { x: -38, z: 17, y: 11, dist: 30, theta: 0.35, phi: 0.62 },
   },
@@ -654,10 +654,14 @@ export class WorldV3 {
     this.b('log', 10, y0, 24)
     this.fill('plank', 8, 10, y0 + 1, y0 + 1, 24, 24)
 
-    /* banner poles flanking the crossroads arch */
+    /* banner poles flanking the crossroads arch — crimson cloth
+       still hangs from the cross-arms */
     for (const px of [-5, 5]) {
-      this.col('log', px, 19, y0, y0 + 1)
-      this.b('gold', px, y0 + 2, 19)
+      this.col('log', px, 19, y0, y0 + 3)
+      this.b('log', px, y0 + 3, 20)     // the cross-arm
+      this.b('woolred', px, y0 + 1, 20) // the cloth
+      this.b('woolred', px, y0 + 2, 20)
+      this.b('gold', px, y0 + 4, 19)    // the finial
     }
 
     /* rubble spills outside the colonnade — age without clutter */
@@ -690,46 +694,110 @@ export class WorldV3 {
   private buildVillage() {
     const y0 = 8 // village surface (floor h=7)
 
-    /** one honest house: cobble walls, gable roof, door on the street side */
-    const house = (x0: number, x1: number, z0: number, z1: number, doorSide: 'E' | 'W', lit: boolean) => {
+    /** one honest home: walls you can name, glass windows, a gable
+        roof, a brick chimney — and a FURNISHED interior, so a glance
+        through the door says home, not rubble.
+        plaster houses carry a timber-beam course under the eaves. */
+    const house = (
+      x0: number, x1: number, z0: number, z1: number,
+      doorSide: 'E' | 'W',
+      wall: 'cobble' | 'plaster',
+      lit: boolean,
+      bed: [number, number],
+      table: [number, number],
+      chest: [number, number],
+      shelf: [number, number],
+      barrel: [number, number]
+    ) => {
       for (let x = x0; x <= x1; x++)
         for (let z = z0; z <= z1; z++) {
           const edge = x === x0 || x === x1 || z === z0 || z === z1
           if (!edge) continue
-          this.col('cobble', x, z, y0, y0 + 2)
+          this.col(wall, x, z, y0, y0 + 1)
         }
-      // the door — 2 wide, 2 tall, on the street-facing side
+      // top course: timber beams on plaster homes, stone on the rest
+      const beam = wall === 'plaster' ? 'log' : wall
+      for (let x = x0; x <= x1; x++)
+        for (let z = z0; z <= z1; z++) {
+          const edge = x === x0 || x === x1 || z === z0 || z === z1
+          if (!edge) continue
+          const corner = (x === x0 || x === x1) && (z === z0 || z === z1)
+          this.b(corner ? 'darkstone' : beam, x, y0 + 2, z)
+        }
+      // door — 2 wide, 2 tall, on the street side
       const dz = Math.floor((z0 + z1) / 2)
       const dx = doorSide === 'E' ? x1 : x0
-      this.clearCol('cobble', dx, y0, y0 + 1, dz)
-      this.clearCol('cobble', dx, y0, y0 + 1, dz + 1)
-      // a window on the back wall; the lit one glows through the door
+      this.clearCol(wall, dx, y0, y0 + 1, dz)
+      this.clearCol(wall, dx, y0, y0 + 1, dz + 1)
+      // street window beside the door — the life inside shows through
+      this.clearCol(wall, dx, y0 + 1, y0 + 1, dz - 1)
+      this.b('glass', dx, y0 + 1, dz - 1)
+      // a moon-glass window on the back wall
       const bx = doorSide === 'E' ? x0 : x1
-      this.clearCol('cobble', bx, y0 + 1, y0 + 1, dz)
+      this.clearCol(wall, bx, y0 + 1, y0 + 1, dz)
       this.b('glass', bx, y0 + 1, dz)
-      if (lit) this.b('glow', doorSide === 'E' ? x0 + 1 : x1 - 1, y0 + 1, dz)
-      // dark corner posts + the gable roof
-      for (const [cx, cz] of [[x0, z0], [x0, z1], [x1, z0], [x1, z1]] as const) this.b('darkstone', cx, y0 + 2, cz)
+      // plank floor — one step up into the home
+      for (let x = x0 + 1; x <= x1 - 1; x++)
+        for (let z = z0 + 1; z <= z1 - 1; z++) this.b('plank', x, y0, z)
+      // gable roof + a brick chimney with its charred crown
       this.gableRoof('roof', x0, x1, z0, z1, y0 + 3)
-      // chimney poking through the north roof slope
       const chx = doorSide === 'E' ? x0 + 1 : x1 - 1
-      this.col('cobble', chx, z0, y0 + 5, y0 + 6)
-      // the door awning (one block, well above any head)
-      this.b('plank', dx + (doorSide === 'E' ? 1 : -1), y0 + 2, dz)
+      this.col('brick', chx, z0, y0 + 5, y0 + 7)
+      this.b('coal', chx, y0 + 8, z0)
+      /* ---- the interior ---- */
+      this.b('plank', bed[0], y0 + 1, bed[1])        // the pillow end
+      this.b('woolred', bed[0], y0 + 1, bed[1] - 1)  // a crimson blanket
+      this.b('log', bed[0], y0 + 2, bed[1])          // the headboard
+      this.b('plank', table[0], y0 + 1, table[1])    // the table
+      this.b(lit ? 'glow' : 'gold', table[0], y0 + 2, table[1]) // its candle
+      this.b('crate', chest[0], y0 + 1, chest[1])    // a locked chest
+      this.b('shelf', shelf[0], y0 + 1, shelf[1])    // a record shelf
+      this.b('log', barrel[0], y0 + 1, barrel[1])    // a rain barrel
     }
 
-    /* four houses along the single street — doors facing x=−38 */
-    house(-46, -41, 22, 26, 'E', false) // House A (south-west)
-    house(-46, -41, 11, 16, 'E', true) // House D (north-west, the lit one)
-    house(-35, -30, 19, 24, 'W', false) // House B (south-east)
-    house(-35, -30, 10, 15, 'W', false) // House C (north-east)
+    /* four homes along the single street — doors facing x=−38 */
+    house(-46, -41, 22, 26, 'E', 'cobble', false,
+      [-45, 25], [-42, 23], [-44, 25], [-43, 23], [-45, 23]) // A (south-west)
+    house(-46, -41, 11, 16, 'E', 'plaster', true,
+      [-45, 12], [-42, 15], [-44, 15], [-44, 12], [-42, 12]) // D (north-west, still lit)
+    house(-35, -30, 19, 24, 'W', 'plaster', false,
+      [-31, 20], [-34, 23], [-34, 20], [-33, 20], [-31, 23]) // B (south-east)
+    house(-35, -30, 10, 15, 'W', 'cobble', false,
+      [-31, 14], [-34, 11], [-33, 14], [-34, 14], [-31, 11]) // C (north-east)
+    // the one lit window of the village — a warm point in the dark
+    const dLight = new THREE.PointLight(0xffb060, 1.1, 8, 1.8)
+    dLight.position.set(-42.5, y0 + 2.2, 13.5)
+    this.group.add(dLight)
 
-    /* the well at the square's heart */
+    /* the last field — tilled rows, hay, a scarecrow still on duty */
+    for (let x = -46; x <= -42; x++) {
+      this.b('plank', x, y0, 18) // fence rails
+      this.b('plank', x, y0, 21)
+    }
+    for (let z = 18; z <= 21; z++) {
+      this.b('plank', -46, y0, z)
+      if (z !== 20) this.b('plank', -42, y0, z) // the gate gap
+    }
+    for (const [fx, fz] of [[-46, 18], [-42, 18], [-46, 21], [-42, 21]] as const)
+      this.b('log', fx, y0 + 1, fz) // corner posts
+    for (let x = -45; x <= -43; x++) {
+      this.b('dirt', x, y0, 19) // tilled rows
+      this.b('dirt', x, y0, 20)
+    }
+    this.b('hay', -44, y0 + 1, 19)
+    this.b('hay', -43, y0 + 1, 20)
+    this.col('log', -45, 20, y0, y0 + 2) // the scarecrow's pole
+    this.b('plank', -44, y0 + 2, 20)     // one arm
+    this.b('gold', -45, y0 + 3, 20)      // its gourd head
+
+    /* the well — roofed now, two dark mirrors of water */
     for (const [wx, wz] of [[-39, 16], [-37, 16], [-39, 18], [-37, 18]] as const) this.b('cobble', wx, y0, wz)
     this.b('water', -38, y0, 17)
+    this.b('water', -38, y0, 18)
     this.fill('log', -39, -39, y0, y0 + 2, 17, 17)
     this.fill('log', -37, -37, y0, y0 + 2, 17, 17)
-    this.fill('plank', -39, -37, y0 + 3, y0 + 3, 17, 17)
+    this.fill('plank', -39, -37, y0 + 3, y0 + 3, 16, 19)
+    this.b('log', -38, y0 + 2, 17) // the windlass
 
     /* the woodshed at the north end — open front, stacked logs */
     this.fill('log', -46, -46, y0, y0 + 1, 8, 8)
@@ -737,12 +805,13 @@ export class WorldV3 {
     this.fill('plank', -46, -42, y0 + 2, y0 + 2, 8, 9)
     this.fill('log', -45, -43, y0, y0, 9, 9) // the stack
 
-    /* the overturned cart by the square + a barrel + crates */
+    /* the overturned cart by the square + crates against the east homes */
     this.fill('plank', -33, -32, y0, y0, 17, 18)
     this.b('log', -31, y0, 17)
     this.b('log', -31, y0, 18)
-    this.b('plank', -34, y0 + 1, 19)
-    this.b('plank', -30, y0, 20)
+    this.b('plank', -34, y0 + 1, 18)
+    this.b('crate', -30, y0, 11)
+    this.b('crate', -30, y0 + 1, 11)
 
     /* low field walls close the village — with honest gaps, never mazes */
     for (let x = -46; x <= -30; x++) {
@@ -764,13 +833,8 @@ export class WorldV3 {
     this.deadTree('log', -31, y0, 10)
 
     /* hay bales beside the woodshed */
-    this.b('mossy', -43, y0, 10)
-    this.b('mossy', -44, y0, 10)
-
-    /* barrels and crates leaning on the houses */
-    this.b('log', -42, y0, 21)
-    this.b('log', -30, y0, 11)
-    this.b('plank', -30, y0, 12)
+    this.b('hay', -43, y0, 10)
+    this.b('hay', -44, y0, 10)
 
     /* a leaning notice board by the square's south lip
        (kept clear of the hollow's well-side patrol) */
@@ -778,22 +842,30 @@ export class WorldV3 {
     this.b('log', -41, y0, 19)
     this.fill('plank', -41, -41, y0 + 1, y0 + 1, 17, 19)
 
-    /* the burned homestead — the fire came through here and never left */
+    /* the burned homestead — the fire came through and never left:
+       a chimney that outlived the house, charred wall stubs, a
+       slumped roof beam, and the floor it burned down to */
     const ry0 = 8 // homestead plot (floor h=7)
-    for (let x = -45; x <= -40; x++) {
-      this.b('cobble', x, ry0, 29) // the north wall, low and broken
-      if (x % 2 === 0) this.b('darkstone', x, ry0 + 1, 29)
-    }
+    this.col('brick', -45, 31, ry0, ry0 + 3)
+    this.b('coal', -45, ry0 + 4, 31)
+    // north wall stubs, charred at the top
+    this.b('cobble', -44, ry0, 29)
+    this.b('darkstone', -44, ry0 + 1, 29)
+    this.b('cobble', -43, ry0, 29)
+    this.b('cobble', -42, ry0, 29)
+    this.b('darkstone', -42, ry0 + 1, 29)
+    // side stubs carry the one beam that fell whole
     this.col('cobble', -45, 30, ry0, ry0 + 1)
-    this.col('darkstone', -45, 31, ry0, ry0 + 2)
+    this.col('darkstone', -45, 32, ry0, ry0 + 1)
     this.col('cobble', -40, 30, ry0, ry0 + 1)
-    this.b('darkstone', -40, ry0 + 2, 31)
-    // a charred roof beam slumps across the ruin
-    this.fill('darkstone', -44, -42, ry0 + 2, ry0 + 2, 32, 32)
-    // the hearth still holds its coal; the floor is ash and rubble
-    this.b('coal', -43, ry0, 31)
-    this.b('darkstone', -42, ry0, 32)
-    this.b('cobble', -44, ry0, 32)
+    this.col('darkstone', -40, 32, ry0, ry0 + 1)
+    this.fill('darkstone', -45, -40, ry0 + 2, ry0 + 2, 32, 32)
+    // the charred floor + the rubble the fire left
+    this.fill('darkstone', -43, -41, ry0, ry0, 30, 31)
+    this.b('coal', -43, ry0, 32)
+    this.b('cobble', -42, ry0, 32)
+    this.b('mossy', -44, ry0, 31)
+    this.b('cobble', -41, ry0, 29)
     this.deadTree('log', -39, this.getH(-39, 33) + 1, 33, 2)
   }
 
@@ -949,6 +1021,13 @@ export class WorldV3 {
     this.b('glow', -25, y0, -30)
     this.b('glow', -21, y0, -26)
 
+    /* crimson banners flank the church door — the parish still dresses
+       for a congregation that stopped coming */
+    for (const bp of [-38, -34]) {
+      this.b('woolred', bp, y0 + 1, -24)
+      this.b('woolred', bp, y0 + 2, -24)
+    }
+
     /* the crypt — a low stone box against the church's north wall */
     for (let x = -33; x <= -30; x++)
       for (let z = -36; z <= -34; z++) {
@@ -1009,10 +1088,14 @@ export class WorldV3 {
     }
 
     /* ember vents — cracks that still breathe heat */
-    for (const [vx, vz] of [[34, 22], [45, 8], [30, 3]] as const) {
+    for (const [vx, vz] of [[34, 22], [45, 8], [30, 3], [48, 14], [27, 22]] as const) {
       this.b('coal', vx, y0, vz)
       this.b('glow', vx, y0 + 1, vz)
     }
+
+    /* a toppled obsidian monolith — even the stone knelt here */
+    this.fill('darkstone', 39, 40, y0, y0, 20, 20)
+    this.b('darkstone', 41, y0, 21)
 
     /* lava light — low suns for the molten pools */
     for (const [lx, lz] of V3_LAVA_POOLS) {
@@ -1147,6 +1230,17 @@ export class WorldV3 {
       this.clearCol('cobble', tx, y0 + 3, y0 + 4, -6)
     }
 
+    /* crimson banners crown the curtain walls between the merlons */
+    for (const [bx2, bz2] of [[27, -7], [41, -7], [27, -31], [41, -31]] as const)
+      this.b('woolred', bx2, y0 + 5, bz2)
+
+    /* supplies stacked by the barracks — the garrison's last crates */
+    this.b('crate', 42, y0, -17)
+    this.b('crate', 42, y0, -16)
+    this.b('crate', 43, y0, -16)
+    this.b('crate', 42, y0 + 1, -16)
+    this.b('hay', 45, y0, -17)
+
     /* statues flank the throne dais; gold crowns the poles behind */
     for (const sx of [31, 38]) {
       this.b('darkstone', sx, y0, -26)
@@ -1166,7 +1260,8 @@ export class WorldV3 {
        never inside the pond */
     const trees: [number, number][] = [
       [-16, 36], [-26, 38], [-14, 12], [12, 38], [20, 32],
-      [16, 10], [-16, 2], [10, 2], [-24, 38], [26, 38], [-12, 22], [14, 22],
+      [16, 10], [-16, 2], [-24, 38], [26, 38], [-12, 22], [14, 22],
+      [-20, 10], [10, 48],
     ]
     for (const [tx, tz] of trees) {
       this.oakTree(tx, this.getH(tx, tz) + 1, tz)
@@ -1178,10 +1273,74 @@ export class WorldV3 {
     /* a wayside shrine on the east road — a mossy stone + candle */
     this.b('mossy', 20, this.getH(20, 26) + 1, 26)
     this.b('glow', 20, this.getH(20, 26) + 2, 26)
+    /* another on the west road's shoulder */
+    const wsx = this.getH(-24, 24) + 1
+    this.b('mossy', -24, wsx, 24)
+    this.b('gold', -24, wsx + 1, 24)
 
     /* the pond dock — one plank finger over still water */
     this.fill('plank', -16, -16, 6, 6, 33, 35)
     this.lantern(-15, this.getH(-15, 37) + 1, 37, true)
+    /* reeds crowd the pond's quiet rim */
+    for (const [rx, rz] of [[-24, 31], [-16, 37], [-25, 36], [-15, 32]] as const)
+      this.col('leaves', rx, rz, this.getH(rx, rz) + 1, this.getH(rx, rz) + 1)
+
+    /* ---- the Watchtower ruin — mid-meadow waymark between the
+       crossroads and the fortress road; whoever kept it is gone ---- */
+    const wt = this.getH(9, 2) + 1
+    const wtCols: [number, number, number][] = [
+      [3, 0, 3], [2, 2, 1], [0, 3, 2], [-2, 2, 4],
+      [-3, 0, 1], [-2, -2, 0], [0, -3, 2], [2, -2, 1],
+    ]
+    for (const [dx, dz, hh] of wtCols) {
+      if (hh === 0) {
+        this.b('cobble', 9 + dx, wt, 2 + dz) // a fallen drum
+        continue
+      }
+      this.col('stonebrick', 9 + dx, 2 + dz, wt, wt + hh - 1)
+    }
+    this.b('mossy', 9, wt, 2)
+    this.b('glow', 9, wt + 1, 2) // the waystone still answers
+    this.b('cobble', 8, wt, 4)
+    this.b('mossy', 11, wt, 1)
+
+    /* ---- the Old Circle — sitting stones on the southern ridge,
+       older than the parish, older than the fire ---- */
+    const stones: [number, number, number][] = [
+      [6, 48, 2], [5, 51, 1], [2, 52, 3], [-1, 51, 1],
+      [-2, 48, 2], [-1, 46, 1], [2, 45, 2], [5, 46, 1],
+    ]
+    for (const [sx, sz, sh] of stones) {
+      const sh0 = this.getH(sx, sz) + 1
+      this.col('mossy', sx, sz, sh0, sh0 + sh - 1)
+    }
+    this.b('glow', 2, this.getH(2, 48) + 1, 48) // the circle's ember
+
+    /* ---- the woodcutter's camp — he never came back for his
+       last load: a shelter, split logs, a stump, one crate ---- */
+    const wc = this.getH(15, 44) + 1
+    this.col('plank', 15, 43, wc, wc + 1) // the shelter's back
+    this.col('plank', 15, 44, wc, wc + 1)
+    this.col('log', 16, 43, wc, wc)
+    this.col('log', 16, 44, wc, wc)
+    this.fill('plank', 15, 16, wc + 2, wc + 2, 43, 44)
+    const lp = this.getH(12, 41) + 1
+    this.fill('log', 12, 13, lp, lp + 1, 41, 41) // the split load
+    this.b('log', 12, lp, 42)
+    this.col('log', 17, 41, this.getH(17, 41) + 1, this.getH(17, 41) + 1) // the stump
+    this.b('crate', 14, this.getH(14, 44) + 1, 44)
+    this.lantern(13, this.getH(13, 45) + 1, 45)
+
+    /* brush and boulders — the meadow is not a lawn */
+    for (const [bx, bz] of [
+      [-8, 24], [6, 12], [14, 14], [-18, 18], [4, 44], [-10, 42],
+      [17, 28], [-25, 2], [-30, 42], [2, -2],
+    ] as const) {
+      this.b('leaves', bx, this.getH(bx, bz) + 1, bz)
+    }
+    /* kerb stones where the roads bend — old wheels made these lines */
+    for (const [kx, kz] of [[-14, 32], [-22, 32], [-13, 31], [18, 27], [23, 25]] as const)
+      this.b('cobble', kx, this.getH(kx, kz) + 1, kz)
 
     /* the Watchers' Stair — broken gateposts crown the top, a lantern
        and a waystone wait at the bottom */

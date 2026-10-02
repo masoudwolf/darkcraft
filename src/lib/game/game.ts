@@ -14,6 +14,7 @@ import {
   V3_HALF,
   V3_SURF_NAMES,
 } from './worldV3'
+import { blockMaterials } from './textures'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy } from './enemy'
@@ -1433,74 +1434,108 @@ export class Game {
     this.merchant.group.position.set(MERCHANT.x, mY, MERCHANT.z)
     this.merchant.group.rotation.y = mYaw
     scene.add(this.merchant.group)
-    // stall pitched right in front of him — counter toward the bonfire
+    /* ---- the grey merchant's market stall — a proper travelling
+       shop: striped awning, stocked back-shelf, counter wares, a
+       hanging coin-sign, crates, barrels and a crimson banner ---- */
     const fwdX = Math.sin(mYaw)
     const fwdZ = Math.cos(mYaw)
+    const wm = blockMaterials()
     const stall = new THREE.Group()
     const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
-    const post = (x: number, z: number, hgt: number) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.18, hgt, 0.18), lam(0x5c4328))
-      m.position.set(x, hgt / 2, z)
-      m.castShadow = true
-      return m
+    const flat = (c: number) => new THREE.MeshBasicMaterial({ color: c })
+    const part = (
+      w: number, h: number, d: number,
+      x: number, y: number, z: number,
+      m: THREE.Material | THREE.Material[],
+      ry = 0
+    ) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+      mesh.position.set(x, y, z)
+      if (ry) mesh.rotation.y = ry
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      stall.add(mesh)
+      return mesh
     }
-    const awning = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 1.5), lam(0x7a3f34))
-    awning.position.set(0, 2.15, 0)
-    awning.castShadow = true
-    const awningTrim = new THREE.Mesh(new THREE.BoxGeometry(2.14, 0.1, 0.14), lam(0xc9a44a))
-    awningTrim.position.set(0, 2.05, 0.7)
-    const table = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 0.8), lam(0x6e4f30))
-    table.position.set(0, 0.42, 0.2)
-    table.castShadow = true
-    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), lam(0x8a6a3c))
-    crate.position.set(-0.5, 0.9, 0.2)
-    crate.rotation.y = 0.4
-    crate.castShadow = true
-    const jar = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.3, 0.22), lam(0x9fd89f))
-    jar.position.set(0.45, 0.82, 0.2)
-    const lampGlass = new THREE.Mesh(
-      new THREE.BoxGeometry(0.26, 0.34, 0.26),
-      new THREE.MeshBasicMaterial({ color: 0xffcf6a })
-    )
-    lampGlass.position.set(0.55, 2.05, 0.55)
-    const lampTop = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), lam(0x3a2c1a))
-    lampTop.position.set(0.55, 2.26, 0.55)
-    stall.add(
-      post(-0.9, 0.8, 2.1), post(0.9, 0.8, 2.1), post(-0.9, -0.5, 2.3), post(0.55, -0.5, 2.2),
-      awning, awningTrim, table, crate, jar, lampGlass, lampTop
-    )
-    // wares: two barrels + a goods sack beside the counter
-    const barrel = (x: number, z: number, s: number) => {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.5 * s, 0.68 * s, 0.5 * s), lam(0x77522e))
-      b.position.set(x, 0.34 * s, z)
-      b.rotation.y = x * 1.7
-      b.castShadow = true
-      const band = new THREE.Mesh(new THREE.BoxGeometry(0.54 * s, 0.08, 0.54 * s), lam(0x3d3d3d))
-      band.position.set(x, 0.34 * s, z)
-      band.rotation.y = b.rotation.y
-      stall.add(b, band)
+    const woodDark = lam(0x4a3320)
+    const wood = lam(0x6b4a2c)
+    const plankLite = lam(0x9a7448)
+    const cream = lam(0xe6d9bd)
+    const roseM = lam(0xa8444e)
+    // deck + counter
+    part(2.7, 0.14, 2.0, 0, 0.07, 0, woodDark)
+    part(2.35, 0.78, 0.14, 0, 0.53, 0.64, wood)
+    part(2.35, 0.5, 0.1, 0, 0.28, 0.7, woodDark)
+    part(2.55, 0.1, 0.8, 0, 0.96, 0.58, plankLite)
+    part(0.12, 0.95, 1.9, -1.3, 0.6, -0.05, woodDark)
+    part(0.12, 0.95, 1.9, 1.3, 0.6, -0.05, woodDark)
+    // frame posts + beams
+    part(0.16, 2.75, 0.16, -1.25, 1.37, -0.9, woodDark)
+    part(0.16, 2.75, 0.16, 1.25, 1.37, -0.9, woodDark)
+    part(0.16, 2.35, 0.16, -1.25, 1.17, 0.85, woodDark)
+    part(0.16, 2.35, 0.16, 1.25, 1.17, 0.85, woodDark)
+    part(2.7, 0.12, 0.16, 0, 2.68, -0.9, woodDark)
+    part(2.7, 0.12, 0.16, 0, 2.28, 0.85, woodDark)
+    // striped awning — the merchant's colours, fringed at the front
+    for (let i = 0; i < 5; i++) {
+      const sx = -0.96 + i * 0.48
+      const stripe = part(0.48, 0.09, 2.15, sx, 2.52, 0.02, i % 2 ? cream : roseM)
+      stripe.rotation.x = 0.24
+      part(0.48, 0.2, 0.06, sx, 2.18, 1.06, i % 2 ? cream : roseM)
     }
-    barrel(-1.42, 0.05, 1)
-    barrel(-1.38, -0.62, 0.8)
-    const sack = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.42), lam(0xb09858))
-    sack.position.set(1.45, 0.17, -0.35)
-    sack.rotation.y = 0.9
-    sack.castShadow = true
-    stall.add(sack)
-    // a worn rug in front of the counter where customers stand
-    const rug = new THREE.Mesh(
-      new THREE.BoxGeometry(1.6, 0.05, 1.05),
-      lam(0x8a3b30)
-    )
-    rug.position.set(0.1, 0.035, 1.45)
+    // hanging sign — the gold coin on a board
+    part(0.05, 0.3, 0.05, -0.22, 2.12, 1.02, woodDark)
+    part(0.05, 0.3, 0.05, 0.22, 2.12, 1.02, woodDark)
+    part(0.9, 0.55, 0.06, 0, 1.85, 1.02, plankLite)
+    part(0.3, 0.3, 0.08, 0, 1.86, 1.06, flat(0xe8c25a))
+    // the low back shelf — he stands behind it, wares on display
+    part(2.2, 0.85, 0.42, 0, 0.42, -0.72, wood)
+    part(2.2, 0.07, 0.46, 0, 0.88, -0.72, woodDark)
+    const bookCols = [0x8a3230, 0x39607a, 0xc2a050, 0x4e7a52]
+    for (let i = 0; i < 4; i++) part(0.16, 0.3, 0.26, -0.85 + i * 0.19, 1.06, -0.72, lam(bookCols[i]))
+    part(0.22, 0.28, 0.22, 0.62, 1.05, -0.72, flat(0x9fd89f))
+    part(0.22, 0.28, 0.22, 0.88, 1.05, -0.72, flat(0xd8b44a))
+    // counter wares: a coin stack, potions, bread, a displayed dagger
+    for (let i = 0; i < 3; i++) part(0.17, 0.05, 0.17, 0.8, 1.03 + i * 0.055, 0.5, flat(0xe8c25a))
+    part(0.18, 0.26, 0.18, -0.6, 1.12, 0.45, flat(0xd85a5a))
+    part(0.18, 0.26, 0.18, -0.35, 1.12, 0.5, flat(0x6ad87a))
+    part(0.26, 0.13, 0.16, 0.15, 1.08, 0.45, plankLite, 0.35)
+    part(0.26, 0.13, 0.16, 0.4, 1.08, 0.52, plankLite, 0.1)
+    const blade = part(0.07, 0.62, 0.14, -0.05, 1.28, 0.55, flat(0xb9c2cf))
+    blade.rotation.y = 0.9
+    blade.rotation.z = 0.06
+    part(0.16, 0.05, 0.2, -0.05, 1.1, 0.55, flat(0xe8c25a), 0.9)
+    // lantern on the front-right post
+    const lampGlass = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.34, 0.26), flat(0xffcf6a))
+    lampGlass.position.set(1.08, 2.05, 0.72)
+    const lampTop = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.36), woodDark)
+    lampTop.position.set(1.08, 2.27, 0.72)
+    stall.add(lampGlass, lampTop)
+    // side props: crates, barrels, hay, a sack, a banner pole
+    const crateM = wm.crate as THREE.Material
+    const hayM = wm.hay as THREE.Material
+    const woolM = wm.woolred as THREE.Material
+    part(0.54, 0.54, 0.54, -1.8, 0.27, 0.35, crateM, 0.35)
+    part(0.5, 0.5, 0.5, -1.75, 0.79, 0.3, crateM, -0.25)
+    part(0.56, 0.72, 0.56, 1.8, 0.36, 0.25, lam(0x77522e))
+    part(0.6, 0.08, 0.6, 1.8, 0.4, 0.25, lam(0x3d3d3d))
+    part(0.6, 0.08, 0.6, 1.8, 0.2, 0.25, lam(0x3d3d3d))
+    part(0.46, 0.6, 0.46, 1.72, 0.23, -0.5, lam(0x77522e), 0.5)
+    part(0.72, 0.46, 0.72, -1.85, 0.23, -0.55, hayM)
+    part(0.44, 0.36, 0.44, 1.05, 0.18, 1.15, lam(0xb09858), 0.9)
+    part(0.09, 2.9, 0.09, 1.45, 1.45, 0.98, woodDark)
+    part(0.06, 0.85, 0.52, 1.43, 2.25, 0.66, woolM)
+    // the worn customer rug
+    const rug = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 1.15), lam(0x8a3b30))
+    rug.position.set(0, 0.035, 1.45)
     rug.receiveShadow = true
     stall.add(rug)
-    stall.position.set(MERCHANT.x + fwdX * 1.25, mY, MERCHANT.z + fwdZ * 1.25)
+    stall.position.set(MERCHANT.x + fwdX * 1.0, mY, MERCHANT.z + fwdZ * 1.0)
     stall.rotation.y = mYaw
     scene.add(stall)
     // lantern rides on the stall frame so it always tracks the counter
     this.merchantLamp = new THREE.PointLight(0xffb050, 1.6, 7, 1.7)
-    this.merchantLamp.position.set(0.55, 2.1, 0.55)
+    this.merchantLamp.position.set(1.08, 2.1, 0.72)
     stall.add(this.merchantLamp)
 
     // player

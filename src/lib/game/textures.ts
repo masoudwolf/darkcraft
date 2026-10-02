@@ -230,6 +230,85 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
   })
   const water = new THREE.MeshLambertMaterial({ map: waterTex, transparent: true, opacity: 0.86 })
 
+  /* ---- V5 detail pass: materials that NAME what things are ---- */
+  // plaster — sun-bleached walls of the village's better homes
+  const plasterTex = makeTex(16, 43, (c, r, s) => {
+    fillNoise(c, r, s, [216, 204, 180], 12)
+    for (let y = 3; y < s; y += 5)
+      for (let i = 0; i < s; i++) if (r() < 0.45) px(c, i, y, 'rgb(196,182,156)')
+    for (let i = 0; i < 3; i++) {
+      let x = Math.floor(r() * s)
+      let y = Math.floor(r() * (s - 6))
+      for (let j = 0; j < 5; j++) {
+        px(c, ((x % s) + s) % s, ((y % s) + s) % s, 'rgb(170,156,132)')
+        x += r() < 0.5 ? 1 : -1
+        y++
+      }
+    }
+  })
+  // brick — kiln-fired clay: chimneys, ovens, the hearths that failed
+  const brickTex = makeTex(16, 44, (c, r, s) => {
+    fillNoise(c, r, s, [128, 62, 48], 18)
+    for (let y = 0; y < s; y += 4)
+      for (let i = 0; i < s; i++) px(c, i, y, 'rgb(158,148,132)')
+    for (let row = 0; row < 4; row++) {
+      const off = row % 2 === 0 ? 0 : 4
+      for (let x = off; x < s; x += 8)
+        for (let j = 0; j < 4; j++) px(c, x, (row * 4 + j) % s, 'rgb(158,148,132)')
+    }
+    for (let i = 0; i < 20; i++)
+      px(c, Math.floor(r() * s), Math.floor(r() * s), r() < 0.5 ? 'rgb(146,72,56)' : 'rgb(110,52,40)', 2, 1)
+  })
+  // crate — nailed shipping planks with a cross brace
+  const crateTex = makeTex(16, 45, (c, r, s) => {
+    fillNoise(c, r, s, [150, 112, 64], 14)
+    for (let i = 0; i < s; i++) {
+      px(c, i, 0, 'rgb(98,70,38)')
+      px(c, i, s - 1, 'rgb(98,70,38)')
+      px(c, 0, i, 'rgb(98,70,38)')
+      px(c, s - 1, i, 'rgb(98,70,38)')
+    }
+    for (let i = 2; i < s - 2; i++) {
+      px(c, i, i, 'rgb(114,82,44)', 2, 1)
+      px(c, s - 1 - i, i, 'rgb(114,82,44)', 2, 1)
+    }
+    for (const [nx, ny] of [[2, 2], [13, 2], [2, 13], [13, 13]] as const) px(c, nx, ny, 'rgb(58,56,52)')
+  })
+  // hay — the village's last harvest, still golden
+  const hayTex = makeTex(16, 46, (c, r, s) => {
+    fillNoise(c, r, s, [198, 160, 66], 16)
+    for (let y = 2; y < s; y += 5)
+      for (let i = 0; i < s; i++) if (r() < 0.7) px(c, i, y, 'rgb(170,132,50)')
+    for (let i = 0; i < 10; i++)
+      px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(224,188,92)', 2, 1)
+  })
+  // crimson cloth — banners, blankets, the colours someone still kept
+  const woolRedTex = makeTex(16, 47, (c, r, s) => {
+    fillNoise(c, r, s, [152, 54, 48], 12)
+    for (let i = 0; i < 16; i++)
+      px(c, Math.floor(r() * s), Math.floor(r() * s), r() < 0.5 ? 'rgb(176,66,58)' : 'rgb(126,42,38)', 2, 1)
+  })
+  // ledger shelf — the merchant's books, the parish's last records
+  const shelfTex = makeTex(16, 48, (c, r, s) => {
+    fillNoise(c, r, s, [98, 70, 38], 10)
+    const bookCols = ['rgb(150,52,46)', 'rgb(66,94,122)', 'rgb(198,160,66)', 'rgb(86,112,72)', 'rgb(122,86,142)']
+    for (const band of [1, 9]) {
+      for (let i = 0; i < s; i++) {
+        px(c, i, band, 'rgb(56,40,22)')
+        px(c, i, band + 6, 'rgb(56,40,22)')
+      }
+      let x = 1
+      while (x < s - 1) {
+        const w = 1 + Math.floor(r() * 2)
+        const col = bookCols[Math.floor(r() * bookCols.length)]
+        for (let bx = x; bx < Math.min(s - 1, x + w); bx++)
+          for (let by = band + 1; by <= band + 5; by++) px(c, bx, by, col)
+        if (r() < 0.4) px(c, x, band + 5, 'rgb(232,222,200)') // a page edge
+        x += w + 1
+      }
+    }
+  })
+
   const grassSide = lam(grassSideTex)
   blockMats = {
     grass: [grassSide, grassSide, lam(grassTopTex), lam(dirtTex), grassSide, grassSide],
@@ -252,6 +331,12 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     rose,
     gold: lam(goldTex),
     water,
+    plaster: lam(plasterTex),
+    brick: lam(brickTex),
+    crate: lam(crateTex),
+    hay: lam(hayTex),
+    woolred: lam(woolRedTex),
+    shelf: lam(shelfTex),
   }
   return blockMats
 }
