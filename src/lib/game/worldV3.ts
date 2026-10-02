@@ -904,9 +904,11 @@ export class WorldV3 {
       if (z < 12 || z > 13) this.b('mossy', -29, y0, z) // one east gap
     }
 
-    /* lanterns at the square + a dead tree */
-    this.lantern(-41, y0, 14, true)
-    this.lantern(-35, y0, 20)
+    /* lanterns at the square + a dead tree. The west one stands beside
+       House D's door corner — it used to sit at (−41,14), INSIDE the
+       door's north half, sealing the doorway to a 1-block slit */
+    this.lantern(-40, y0, 15, true)
+    this.lantern(-36, y0, 20)
     this.deadTree('log', -31, y0, 10)
 
     /* hay bales beside the woodshed */

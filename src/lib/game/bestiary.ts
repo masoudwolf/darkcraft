@@ -6,6 +6,7 @@ import {
   animWitherWalk, animAttack, animHit, animDead, animRoll, animBlock, animBlockWalk, animDrink, animCast,
   animRoar, animSlam, animSweep, animCharge, animStomp, animStagger, animBossDead,
   animBowDraw, animBowShoot, animPoke, animMerchantIdle, animMerchantGreet, animSmithIdle,
+  dressChampion,
   lerp, resetPose, setFlash, setFlashWhite,
   type Humanoid,
 } from './models'
@@ -220,6 +221,71 @@ export const BESTIARY: BestiaryEntry[] = [
           animDead(h, p)
         }),
       },
+    ],
+  },
+
+  /* ---------------- CHAMPION: GRAVE WARDEN ---------------- */
+  {
+    id: 'warden',
+    name: 'نگهبانِ گورها',
+    sub: 'قهرمان — اسکلتی کلاه‌بردار با کمان، نگهبان قبرستان',
+    dot: '#e8ddba',
+    scale: 1.32,
+    build: () => {
+      const h = createHumanoid('skeleton', 1.32)
+      dressChampion(h, 'bone')
+      return h
+    },
+    refs: (h) => {
+      const bow = createBow('bone')
+      bow.position.set(0, -0.68, 0.05)
+      bow.rotation.y = Math.PI / 2
+      h.armL.add(bow)
+      return { bow }
+    },
+    onFrame: (h, refs, animId, t, _dt) => {
+      const bow = refs.bow as THREE.Group
+      if (animId === 'draw') {
+        setNocked(bow, true)
+        setBowDraw(bow, bowDrawAmount((t % 1.4) / 1.4))
+      } else if (animId === 'shoot') {
+        const p = (t % 0.9) / 0.9
+        setBowDraw(bow, Math.max(0, 1 - p * 7))
+        setNocked(bow, p <= 0.06)
+      } else {
+        setNocked(bow, false)
+        setBowDraw(bow, 0)
+      }
+    },
+    anims: [
+      { id: 'idle', label: 'آماده با کمان', fn: (h, t) => animBowIdle(h, t) },
+      { id: 'walk', label: 'راه رفتن', fn: (h, t) => animSkeletonWalk(h, t) },
+      { id: 'draw', label: 'نوشدن کمان', dur: 1.4, fn: (h, t) => animBowDraw(h, (t % 1.4) / 1.4) },
+      { id: 'shoot', label: 'رها کردن تیر', dur: 0.9, fn: (h, t) => animBowShoot(h, (t % 0.9) / 0.9) },
+      { id: 'poke', label: 'ضربه‌ی نزدیک', dur: 0.6, fn: shot(0.6, (h, p) => animPoke(h, p)) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+      { id: 'dead', label: 'متلاشی شدن', dur: 1.0, fn: shot(1.0, (h, p) => animDead(h, p)) },
+    ],
+  },
+
+  /* ---------------- CHAMPION: WATCHERS' CAPTAIN ---------------- */
+  {
+    id: 'captain',
+    name: 'سردارِ نگهبانان',
+    sub: 'قهرمان — غول ویسری با زره زغالی، سرِ پلهٔ میان‌بُر',
+    dot: '#b0aebc',
+    scale: 1.38,
+    build: () => {
+      const h = createHumanoid('wither', 1.38, { sword: true, swordStyle: 'stone' })
+      dressChampion(h, 'wither')
+      return h
+    },
+    anims: [
+      { id: 'idle', label: 'کمین', fn: (h, t) => animZombieIdle(h, t) },
+      { id: 'walk', label: 'راه رفتن شکارچی', fn: (h, t) => animWitherWalk(h, t) },
+      { id: 'atk', label: 'تشه‌ی سنگین', dur: 0.55, fn: shot(0.55, (h, p) => animAttack(h, p, 'light0')) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+      { id: 'dead', label: 'مرگ', dur: 1.0, fn: shot(1.0, (h, p) => animDead(h, p)) },
     ],
   },
 

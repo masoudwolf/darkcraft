@@ -1681,7 +1681,7 @@ export class Game {
 
     // creepers — failed vessels of ember, coiled in the world's veins
     const creeperPts: [number, number][] = [
-      [-45, 18],  // behind the west houses, where the field wall bends
+      [-44.5, 17.5], // behind the west houses, off the field wall's bend
       [-30, 25],  // by the south fence, east of House B
       [-40, 9],   // the lane below the woodshed
     ]
@@ -1755,9 +1755,10 @@ export class Game {
     this.enemies.push(captain)
 
     // the Grave Warden keeps the candlelit graveyard — a bone champion
-    // standing his eternal watch between the memorial and the mausoleum
-    // door; his oath is older than the graves he tends
-    const gwPos = new THREE.Vector3(-24.4, 0, -31.4)
+    // standing his eternal watch at his mausoleum's door (the doorway
+    // is the east face's −25,−31 cell; −24.4,−31.4 used to put his
+    // body inside the darkstone jamb north of it)
+    const gwPos = new THREE.Vector3(-23.6, 0, -30.5)
     gwPos.y = this.world.surfaceAt(gwPos.x, gwPos.z)
     const warden = new SkeletonEnemy(scene, gwPos, 9, {
       hp: 300, dmg: 22, speed: 2.6, aggro: 9, atkRange: 2.2, windup: 0.8, recover: 0.6,
@@ -2246,7 +2247,16 @@ export class Game {
       x: number, z: number, locked: boolean, key: ItemId | undefined, loot: LootRoll[], rotY = 0
     ) => {
       const { group, lid } = createChest(locked)
-      const y = top(x, z)
+      // rest on the TRUE top — surfaceAt is terrain-only, so a chest
+      // dropped into a built cell (the crypt slab, the sacristy shelf)
+      // used to bury itself inside the very blocks it stood beside
+      const cx = Math.floor(x), cz = Math.floor(z)
+      let y = top(x, z)
+      for (let guard = 0; guard < 8; guard++) {
+        const cy = Math.round(y)
+        if (!this.world.solidStruct(cx, cy, cz) && !this.world.solidStruct(cx, cy + 1, cz)) break
+        y += 1
+      }
       group.position.set(x, y, z)
       group.rotation.y = rotY
       scene.add(group)
@@ -2254,8 +2264,10 @@ export class Game {
     }
     // the burned homestead — tucked behind the forge wall, a starter secret
     addChest(-40.5, 33.5, false, undefined, [{ id: 'ring_ember_knight', n: 1 }], Math.PI * 0.15)
-    // the crypt — ON the tomb slab, under lock: the grey dead keep the grey tithe
-    addChest(-31.5, -35.5, true, 'key_crypt', [{ id: 'amulet_souls', n: 1 }, { id: 'ember_iron', n: 1 }], Math.PI)
+    // the crypt — INSIDE the low stone box, on the tomb slab, under
+    // lock: the grey dead keep the grey tithe (z −34.5 lands in the
+    // interior cell; −35.5 used to bury the chest in the north wall)
+    addChest(-31.5, -34.5, true, 'key_crypt', [{ id: 'amulet_souls', n: 1 }, { id: 'ember_iron', n: 1 }], Math.PI)
     // the watchtower ruin — the beacon-keeper's pay, under lock
     addChest(10.5, 3.5, true, 'key_tower', [{ id: 'ring_ashwalker', n: 1 }, { id: 'arrow_fire', n: 6 }], Math.PI * 0.7)
     // the church sacristy — behind the shimmering west wall
@@ -2280,8 +2292,9 @@ export class Game {
       }
       this.pickups.push({ id, mesh, light, x, z })
     }
-    // the crypt key — the graveyard keeps it beside its mourner
-    addPickup('key_crypt', -24.5, -27.5, 0xffe2a0)
+    // the crypt key — the graveyard keeps it beside the mourner's candle
+    // (−24.5,−27.5 sat inside a headstone; −23.5,−26.5 is her feet)
+    addPickup('key_crypt', -23.5, -26.5, 0xffe2a0)
     // the tower key — the hermit's cold fire keeps it warm
     addPickup('key_tower', 30.6, 21.4, 0xffe2a0)
     // the clinging ring — the Old Circle's ember points to it
@@ -4294,7 +4307,12 @@ export class Game {
     // to the Grave Warden in the graveyard (reachable via the Watchers'
     // Stair) hurled the player 17 blocks south onto the gate line.
     // Everything beyond the lane is already physical stonebrick wall.
-    if (!this.bossActive && !this.bossFell && this.fogPassT <= 0 && !this.player.busy) {
+    // NOTE: these seals deliberately ignore player.busy — the old
+    // `!busy` exemption let a chained roll glide straight through
+    // every fog gate and the pit rockfall (roll counts as busy),
+    // skipping the boss intros entirely. The deliberate fog-pass is
+    // exempted via the fogPass timers instead, not via busy.
+    if (!this.bossActive && !this.bossFell && this.fogPassT <= 0) {
       if (
         p.z < GATE1.z + 0.55 && p.z > GATE1.z - 2.4 &&
         p.x > GATE1.lane0 - 0.3 && p.x < GATE1.lane1 + 0.3
@@ -4303,7 +4321,7 @@ export class Game {
       }
     }
     // fog gate 2 seals the gatehouse mouth — same thin-band treatment
-    if (!this.boss2Active && !this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
+    if (!this.boss2Active && !this.boss2Fell && this.fogPass2T <= 0) {
       if (
         p.z < GATE2.z + 0.55 && p.z > GATE2.z - 2.4 &&
         Math.abs(p.x - GATE2.x) < 3.4
@@ -4321,9 +4339,12 @@ export class Game {
       p.x = Math.max(BOSS2_CENTER.x - 7.2, Math.min(BOSS2_CENTER.x + 7.2, p.x))
       p.z = Math.max(BOSS2_CENTER.z - 7.2, Math.min(BOSS2_CENTER.z + 7.2, p.z))
     }
-    // the rockfall seals the pit stair until the Flame King falls
-    if (!this.boss2Fell && this.fogPass2T <= 0 && !this.player.busy) {
-      if (p.z < PIT_RUBBLE.z1 + 0.55 && p.x > PIT_RUBBLE.x0 - 0.6 && p.x < PIT_RUBBLE.x1 + 0.6) {
+    // the rockfall seals the pit stair until the Flame King falls.
+    // the band is widened west of the rubble box so the whole stair
+    // mouth is covered — the stair's lower half (x 41..44) sits past
+    // the rubble itself, and a roll that landed there used to be free
+    if (!this.boss2Fell && this.fogPass2T <= 0) {
+      if (p.z < PIT_RUBBLE.z1 + 0.55 && p.x > PIT_RUBBLE.x0 - 4.6 && p.x < PIT_RUBBLE.x1 + 0.6) {
         p.z = PIT_RUBBLE.z1 + 0.55
       }
     }
