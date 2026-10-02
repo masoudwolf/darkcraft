@@ -964,7 +964,7 @@ export class BossEnemy extends Enemy {
       const l = Math.hypot(dx, dz) || 1
       this.dashDir.set(dx / l, 0, dz / l)
       this.chargeHit = false
-      game.sfx.dash(this.pos)
+      game.sfx.dash()
     }
   }
 
@@ -1170,7 +1170,7 @@ export class CreeperEnemy extends Enemy {
   }
 
   protected onWindupStart(game?: Game, _dist?: number, _angDiff?: number) {
-    game?.sfx.hiss(this.pos)
+    game?.sfx.hiss()
   }
 
   protected windupShouldCancel(dist: number): boolean {
@@ -1276,10 +1276,8 @@ export class SkeletonEnemy extends Enemy {
     return dist <= 12.5
   }
 
-  protected onWindupStart(game: Game | undefined, dist: number, _angDiff: number) {
+  protected onWindupStart(_game: Game | undefined, dist: number, _angDiff: number) {
     this.mode = dist < 2.6 ? 'poke' : 'shoot'
-    // the rattle of old bones gathering for a strike
-    game?.sfx.bones(this.pos)
   }
 
   protected windupDur() {
@@ -1607,7 +1605,7 @@ export class BlazeEnemy extends Enemy {
     const from = this.pos.clone().add(new THREE.Vector3(0, 1.35, 0))
     const to = player.pos.clone().add(new THREE.Vector3(0, 0.95, 0))
     game.spawnFireball(from, to, Math.round(this.opts.dmg * (0.9 + Math.random() * 0.25)))
-    game.sfx.fireShoot(this.pos)
+    game.sfx.fireShoot()
   }
 
   protected recoverAnim(p: number) {
@@ -1786,7 +1784,7 @@ export class BossFlameEnemy extends Enemy {
       const l = Math.hypot(dx, dz) || 1
       this.dashDir.set(dx / l, 0, dz / l)
       this.chargeHit = false
-      game.sfx.dash(this.pos)
+      game.sfx.dash()
     }
   }
 
@@ -1911,7 +1909,7 @@ export class BossFlameEnemy extends Enemy {
         const target = from.clone().addScaledVector(rd, Math.max(6, dl))
         game.spawnFireball(from.clone(), target, Math.round(this.opts.dmg * 0.5))
       }
-      game.sfx.fireShoot(this.pos)
+      game.sfx.fireShoot()
     } else if (this.pick === 'slam') {
       // AOE impact + a burning lava pool left behind
       if (dist < 4.3) {

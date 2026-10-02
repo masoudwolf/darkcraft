@@ -4,7 +4,7 @@ import {
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
-import { V3_SURF_NAMES, type WorldV3 } from './worldV3'
+import type { WorldV3 } from './worldV3'
 import type { Game, PlayerStrikeDef } from './game'
 import type { DmgType, RollTier } from './items'
 
@@ -620,28 +620,6 @@ export class Player {
       }
     }
 
-    // ---- footsteps — surface-aware, sprint-responsive ----
-    const mdx = this.pos.x - this.lastX
-    const mdz = this.pos.z - this.lastZ
-    const moved = Math.hypot(mdx, mdz)
-    this.lastX = this.pos.x
-    this.lastZ = this.pos.z
-    if (this.state === 'run' && moved > 0.0001) {
-      this.stepAcc += moved
-      const gap = this.sprinting ? 2.25 : 1.6
-      if (this.stepAcc >= gap) {
-        this.stepAcc = 0
-        const surf = V3_SURF_NAMES[world.surfAt(Math.round(this.pos.x), Math.round(this.pos.z))]
-        const mat =
-          surf === 'cobble' || surf === 'stone' || surf === 'stonebrick' || surf === 'nether'
-            ? 'stone'
-            : 'soft'
-        game.sfx.footstep(mat, this.sprinting)
-      }
-    } else if (this.state !== 'run') {
-      this.stepAcc = 0
-    }
-
     this.resolveGround(world, dt, false)
 
     // ---- apply to model ----
@@ -649,10 +627,6 @@ export class Player {
     this.h.group.rotation.y = this.yaw
   }
 
-  /* footstep accumulator + last-frame position (for stride distance) */
-  private stepAcc = 0
-  private lastX = 0
-  private lastZ = 0
   private targetYaw = Math.PI
 
   private lightDef(combo: number): AttackDef {

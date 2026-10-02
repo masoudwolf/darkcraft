@@ -1221,15 +1221,6 @@ export default function GameClient() {
     g.onState = (s) => setHud(s)
     // debug/QA hook — lets external test harnesses inspect live game state
     ;(window as unknown as { __minesouls?: Game }).__minesouls = g
-    // browsers block audio until a user gesture — arm the AudioContext (and
-    // the menu soundtrack) on the very first click/touch/key anywhere
-    const unlock = () => {
-      g.unlockAudio()
-      window.removeEventListener('pointerdown', unlock)
-      window.removeEventListener('keydown', unlock)
-    }
-    window.addEventListener('pointerdown', unlock)
-    window.addEventListener('keydown', unlock)
     setSettings({ ...g.settings })
     const raf = requestAnimationFrame(() => {
       setIsTouch(
