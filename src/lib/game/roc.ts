@@ -23,7 +23,8 @@ function px(ctx: CanvasRenderingContext2D, x: number, y: number, c: string, w = 
    - wings: 3 chained segments per side (shoulder → wrist → tip) so
      flaps flex like a real wing; trailing feather rows + long pale
      primaries; ember seams burn along the leading edge (fantasy)
-   - tail: fanned steering feathers, spread in flight, tucked at rest
+   - tail: nine true rectrices — pale quill, dark vane, bone-pale
+     tip — overlapping into one continuous rounded fan
    - legs: feathered thighs, bare golden shins, three taloned toes
      + a rear claw — the grab rig the cinematic carries riders with
    ================================================== */
@@ -173,31 +174,29 @@ export function createRoc(scale = 2.1): Humanoid {
   headG.position.set(0, 0.72, 0.18)
   neck.add(headG)
   mk(headG, 0.56, 0.5, 0.66, back, 0, 0.12, 0.06) // skull
-  // angry brow — the gothic scowl
+  // angry brow — the gothic scowl, shading the lateral eyes
   for (const sx of [-1, 1] as const) {
-    const brow = mk(headG, 0.24, 0.1, 0.2, dark, sx * 0.15, 0.32, 0.3)
+    const brow = mk(headG, 0.26, 0.1, 0.22, dark, sx * 0.16, 0.33, 0.22)
     brow.rotation.x = 0.35
   }
-  /* eyes of the Night Roc — like every raptor they sit LATERAL on the
-     skull, angled forward so they burn toward the prey. Dark bony
-     socket plates stand PROUD of the head face (the old eyes were
-     buried inside the skull and vanished); the amber iris + white
-     core sit on the socket plates, visible from front AND side. */
+  /* eyes of the Night Roc — a raptor has exactly ONE eye per side,
+     seated on the skull flank BEHIND the beak root, under the brow.
+     Amber iris + round black pupil on a dark bony socket plate that
+     stands proud of the skull. (The old build had two extra glowing
+     dots on the beak bridge — they read as an eye glued to the nose;
+     they are gone, and the white core is gone with them.) */
   const eyeMat = glow(0xffb03a)
-  const eyeCore = glow(0xfff2c8)
+  const pupilMat = solid(0x17120b)
   for (const sx of [-1, 1] as const) {
     // bony socket plate — proud of the skull flank, angled to the beak
-    const socket = mk(headG, 0.06, 0.2, 0.26, dark, sx * 0.3, 0.22, 0.2)
-    socket.rotation.y = -sx * 0.5
+    const socket = mk(headG, 0.06, 0.24, 0.3, dark, sx * 0.3, 0.2, 0.12)
+    socket.rotation.y = -sx * 0.42
     // amber iris on the plate
-    const iris = mk(headG, 0.05, 0.13, 0.16, eyeMat, sx * 0.335, 0.22, 0.225)
-    iris.rotation.y = -sx * 0.5
-    // white-hot core
-    const core = mk(headG, 0.055, 0.06, 0.07, eyeCore, sx * 0.352, 0.225, 0.235)
-    core.rotation.y = -sx * 0.5
-    // a front hint between the brow and the beak so the stare reads head-on
-    mk(headG, 0.11, 0.09, 0.04, eyeMat, sx * 0.14, 0.2, 0.4)
-    mk(headG, 0.05, 0.05, 0.05, eyeCore, sx * 0.14, 0.2, 0.415)
+    const iris = mk(headG, 0.05, 0.17, 0.18, eyeMat, sx * 0.34, 0.2, 0.15)
+    iris.rotation.y = -sx * 0.42
+    // round black pupil — the raptor stare
+    const pupil = mk(headG, 0.055, 0.08, 0.08, pupilMat, sx * 0.375, 0.2, 0.165)
+    pupil.rotation.y = -sx * 0.42
   }
   // hooked golden beak — upper mandible + working lower jaw
   mk(headG, 0.3, 0.2, 0.42, beak, 0, 0.14, 0.52)
@@ -276,25 +275,42 @@ export function createRoc(scale = 2.1): Humanoid {
     mk(tip, 1.0, 0.04, 0.05, glow(F.ember), sx * 0.5, 0.06, -0.2)
   }
 
-  /* ---------- tail fan — the steering oar, held WIDE ----------
-     A real raptor fans its tail open in flight; seven feathers radiate
-     from the rump like a peacock's fan (the old 5-feather row read as
-     one closed slab from every angle). Center feather longest, outers
-     step down, every vane separated by clear air. */
+  /* ---------- tail — true rectrices, built like a real bird's ----------
+     Every feather GROWS from one root at the rump: a narrow pale
+     quill that opens into a wide dark vane capped by a bone-pale
+     band that wraps the tip. Nine of them overlap into ONE continuous
+     rounded fan (no air gaps — the old separated slats read as a
+     broken comb): central pair longest, outers step down, and each
+     outer feather tucks UNDER the inner one the way real rectrices
+     layer. A covert row covers the quill roots from above. */
   const tail = new THREE.Group()
   tail.position.set(0, 1.95, -1.8)
   spinInner.add(tail)
-  for (let f = -3; f <= 3; f++) {
-    const a = f * 0.3 // ±51° total spread
-    const len = f === 0 ? 1.85 : Math.abs(f) === 1 ? 1.68 : Math.abs(f) === 2 ? 1.48 : 1.24
-    const mid = len * 0.46
-    const fe = mk(tail, 0.29, 0.055, len, flight, Math.sin(a) * mid, -0.04, -Math.cos(a) * mid)
-    fe.rotation.y = a
-    const tipBand = mk(tail, 0.25, 0.05, 0.16, under, Math.sin(a) * (len - 0.14), -0.045, -Math.cos(a) * (len - 0.14))
-    tipBand.rotation.y = a
+  // the uropygium — the feathered tail-bone mound the fan grows from
+  mk(tail, 0.42, 0.3, 0.44, under, 0, 0, 0.12)
+  for (let f = -4; f <= 4; f++) {
+    const a = f * 0.152 // ±36.5° — a true raptor fan
+    const len = 1.85 - Math.abs(f) * 0.125 // rounded outline 1.85 → 1.35
+    const quillLen = len * 0.4
+    const vaneLen = len * 0.66
+    const y = -Math.abs(f) * 0.016 // outers layer under the central pair
+    // quill — the narrow pale shaft every real feather has
+    let r = 0.12 + quillLen / 2
+    mk(tail, 0.13, 0.05, quillLen, under, Math.sin(a) * r, y, -Math.cos(a) * r).rotation.y = a
+    // vane — the wide web of the feather (0.08 overlap onto the quill)
+    r = 0.12 + quillLen - 0.08 + vaneLen / 2
+    mk(tail, 0.4, 0.055, vaneLen, flight, Math.sin(a) * r, y, -Math.cos(a) * r).rotation.y = a
+    // bone-pale tip band — slightly proud of the vane so it wraps it
+    r += vaneLen / 2 - 0.09
+    mk(tail, 0.42, 0.068, 0.24, under, Math.sin(a) * r, y, -Math.cos(a) * r).rotation.y = a
   }
-  // tail coverts — the feathered root the fan grows from
-  mk(tail, 0.5, 0.3, 0.5, under, 0, 0.02, 0.18)
+  // covert row — short feathers covering the quill roots from above
+  for (let f = -2; f <= 2; f++) {
+    const a = f * 0.19
+    const cl = 0.64 - Math.abs(f) * 0.07
+    const r = 0.18 + cl / 2
+    mk(tail, 0.3, 0.06, cl, under, Math.sin(a) * r, 0.05, -Math.cos(a) * r).rotation.y = a
+  }
 
   /* ---------- legs: feathered thigh, golden shin, talons ----------
      Pivot sits under the HIPS (z −0.75), not the chest — a bird's legs

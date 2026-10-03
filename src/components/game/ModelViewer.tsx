@@ -172,6 +172,10 @@ export default function ModelViewer({ onClose }: Props) {
 
     world.current = { renderer, scene, camera, turn, grid: gridHelper, pedestal, disposables: [] }
 
+    // QA hooks — external test harnesses can orbit/frame the deck precisely:
+    // __mviewer.cam = {theta, phi, dist, distTarget, focusY}, __mviewer.world = world ref
+    ;(window as unknown as { __mviewer?: object }).__mviewer = { cam: camState.current, world }
+
     /* ---------- orbit controls (mouse + touch + pinch) ---------- */
     const el = renderer.domElement
     const drag = { active: false, x: 0, y: 0 }
