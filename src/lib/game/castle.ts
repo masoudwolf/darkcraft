@@ -153,6 +153,10 @@ const CRYPT_FLOOR_Y = 6
 const CRYPT_CEIL_Y = 12
 /** the crypt stair shaft (east aisle floor opening) */
 export const CRYPT_SHAFT = { x0: 9, x1: 10, z0: -7, z1: -6 }
+/** Manorloth's bonfire — the stuck sword on the landing platform.
+    Lives here (not in game.ts) so enemy.ts can honor it as the
+    castle's safe zone without a circular import. */
+export const CASTLE_FIRE = { x: 2.5, z: 56, y: 14 }
 
 interface Vec3Lite { x: number; y: number; z: number }
 
@@ -1443,11 +1447,14 @@ export class CastleZone implements GameWorld {
         if (z < 54) this.sb('bonestone', px, y + 2, z, 2, 1, 2, 0, 0.7, 0)
         this.sb('iron', px, y + 2, z, 1, 1, 1, 0, -0.7, 0)
       }
-    // the talon grooves — the Roc has landed here before, and will again
-    this.sbA('darkstone', 0.9, b0 + 0.94, 55.4, 2, 1, 3)
-    this.sbA('darkstone', -0.9, b0 + 0.94, 55.4, 2, 1, 3)
-    this.sbA('darkstone', 1.6, b0 + 0.94, 57.0, 1, 1, 2)
-    this.sbA('darkstone', -1.6, b0 + 0.94, 57.0, 1, 1, 2)
+    // the talon grooves — flush darkstone inlays EXACTLY under the
+    // perched Roc's feet (perch at (-2.5, ·, 56.2) facing west:
+    // contact patch x -1.1..-0.1, foot rows z 55.5 / 56.9), plus
+    // landing scratches trailing toward the deck's heart
+    this.sbA('darkstone', -0.62, b0 + 0.75, 55.53, 3.6, 1.5, 1.5)
+    this.sbA('darkstone', -0.62, b0 + 0.75, 56.87, 3.6, 1.5, 1.5)
+    this.sbA('darkstone', 0.35, b0 + 0.81, 56.1, 1.5, 0.6, 2.4)
+    this.sbA('darkstone', -1.45, b0 + 0.81, 56.2, 1.2, 0.6, 1.2)
 
     /* -- apse mullions: ⅓ finial caps on the outer rim -- */
     for (let dx = -8; dx <= 8; dx += 3) {

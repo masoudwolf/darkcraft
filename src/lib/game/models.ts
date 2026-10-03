@@ -2136,6 +2136,109 @@ export function createArmorDrop(slot: 'head' | 'chest' | 'hands' | 'legs' | 'cap
   return g
 }
 
+/* ================= world miniatures for material & charm drops =================
+   Before these existed, every material and ring fell to the armor fallback
+   and looked like a folded rag. Now each has a real tiny prop. */
+
+export function createMaterialDrop(id: string): THREE.Group {
+  const g = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const glowM = (c: number) => new THREE.MeshBasicMaterial({ color: c })
+  const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+    mesh.position.set(x, y, z)
+    mesh.rotation.set(rx, ry, rz)
+    mesh.castShadow = true
+    g.add(mesh)
+    return mesh
+  }
+  const iron = lam(0x7a7f88)
+  const ironDark = lam(0x565a64)
+  const stone = lam(0x8a8f9a)
+  const stoneDark = lam(0x5e636e)
+  const bone = lam(0xc4bca8)
+
+  if (id === 'iron_chunk') {
+    // a raw vein: three rough nuggets with a pale glint
+    mk(0.22, 0.18, 0.2, iron, 0, 0.09, 0, 0, 0.5, 0.12)
+    mk(0.14, 0.12, 0.14, ironDark, 0.12, 0.06, 0.08, 0, 0.2, -0.3)
+    mk(0.1, 0.08, 0.1, iron, -0.1, 0.05, -0.06, 0.3, 0, 0.4)
+    mk(0.06, 0.03, 0.06, lam(0xb9bec8), 0.03, 0.19, 0.04, 0, 0.9, 0)
+  } else if (id === 'ember_iron') {
+    // dark forged iron whose cracks still carry the forge-heat
+    mk(0.24, 0.16, 0.2, ironDark, 0, 0.08, 0, 0, 0.3, 0.1)
+    mk(0.03, 0.1, 0.03, glowM(0xff7a1e), 0.05, 0.1, 0.1)
+    mk(0.03, 0.08, 0.03, glowM(0xffb03a), -0.07, 0.09, -0.04)
+    mk(0.12, 0.03, 0.03, glowM(0xff7a1e), 0.02, 0.03, 0.09)
+  } else if (id === 'gargoyle_stone') {
+    // a broken wing shard: stone plate, bone struts, one live crack
+    mk(0.3, 0.05, 0.2, stone, 0, 0.1, 0, -0.3, 0.4, 0.2)
+    mk(0.24, 0.04, 0.05, stoneDark, 0.02, 0.16, -0.02, -0.3, 0.4, 0.2)
+    mk(0.05, 0.04, 0.12, stoneDark, -0.1, 0.08, 0.08, 0, 0.2, -0.7)
+    mk(0.03, 0.12, 0.03, glowM(0xd94f12), 0.08, 0.06, 0.05, 0, 0, 0.35)
+  } else if (id === 'requiem_wax') {
+    // a liturgical candle stub: pale wax, dripped collar, a cold flame
+    mk(0.12, 0.2, 0.12, lam(0xd9d2c0), 0, 0.1, 0)
+    mk(0.16, 0.04, 0.16, lam(0xc9c2ac), 0, 0.2, 0)
+    mk(0.03, 0.07, 0.03, glowM(0xffd23d), 0, 0.26, 0)
+    mk(0.09, 0.03, 0.09, lam(0xc9c2ac), 0.05, 0.06, 0.02, 0, 0, 0.2)
+  } else if (id === 'ash_fang') {
+    // a curved burner fang: tapering segments around a dark root
+    mk(0.07, 0.12, 0.07, bone, 0, 0.06, 0, 0, 0, -0.15)
+    mk(0.055, 0.11, 0.055, bone, 0.02, 0.16, 0.02, 0, 0, -0.3)
+    mk(0.04, 0.09, 0.04, bone, 0.045, 0.24, 0.045, 0, 0, -0.45)
+    mk(0.09, 0.06, 0.09, lam(0x2a2624), 0, 0.02, 0)
+    mk(0.02, 0.05, 0.02, glowM(0xff7a1e), 0.03, 0.13, 0.03)
+  } else {
+    // unknown material — a plain rough nugget
+    mk(0.2, 0.15, 0.18, iron, 0, 0.08, 0, 0, 0.4, 0.1)
+  }
+  return g
+}
+
+export function createCharmDrop(id: string): THREE.Group {
+  const g = new THREE.Group()
+  const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
+  const glowM = (c: number) => new THREE.MeshBasicMaterial({ color: c })
+  const mk = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+    mesh.position.set(x, y, z)
+    mesh.rotation.set(rx, ry, rz)
+    mesh.castShadow = true
+    g.add(mesh)
+    return mesh
+  }
+  const gold = lam(0xd9a83a)
+  const silver = lam(0xb9bec8)
+  const bronze = lam(0xb08d57)
+
+  if (id.startsWith('ring_')) {
+    // a ring stood on its edge: band + setting stone
+    mk(0.03, 0.22, 0.05, gold, -0.09, 0.11, 0, 0, 0, 0.12)
+    mk(0.03, 0.22, 0.05, gold, 0.09, 0.11, 0, 0, 0, -0.12)
+    mk(0.21, 0.03, 0.05, gold, 0, 0.22, 0)
+    mk(0.21, 0.03, 0.05, gold, 0, 0.02, 0)
+    const gemC = id === 'ring_ember_knight' ? 0xff7a1e : id === 'ring_first_maker' ? 0xffb03a : id === 'ring_ashwalker' ? 0x9a8b70 : 0x8fb0d9
+    mk(0.09, 0.06, 0.06, id === 'ring_cling' ? silver : gold, 0, 0.26, 0)
+    mk(0.05, 0.04, 0.05, glowM(gemC), 0, 0.29, 0)
+  } else if (id === 'mourn_bell') {
+    // the requiem bell: bronze dome, lip, hanging clapper
+    mk(0.1, 0.06, 0.1, bronze, 0, 0.3, 0) // the crown loop
+    mk(0.16, 0.1, 0.16, bronze, 0, 0.22, 0)
+    mk(0.2, 0.1, 0.2, bronze, 0, 0.12, 0)
+    mk(0.22, 0.03, 0.22, lam(0x8a6b3a), 0, 0.05, 0) // the lip
+    mk(0.04, 0.05, 0.04, lam(0x4a4a52), 0, 0.02, 0) // the clapper
+    mk(0.05, 0.02, 0.05, glowM(0xffd23d), 0, 0.24, 0) // a faint blessing glint
+  } else {
+    // amulets: a chain V with a pendant plate
+    mk(0.04, 0.14, 0.02, silver, -0.07, 0.24, 0, 0, 0, 0.5)
+    mk(0.04, 0.14, 0.02, silver, 0.07, 0.24, 0, 0, 0, -0.5)
+    mk(0.2, 0.16, 0.03, gold, 0, 0.1, 0)
+    mk(0.1, 0.07, 0.035, glowM(0x8fb0d9), 0, 0.1, 0.005)
+  }
+  return g
+}
+
 /* ================= THE VALE'S CHESTS — Minecraft-true, DS-honest ================= */
 
 /** a blocky chest: wood body, dark frame, iron bands, a gold latch.

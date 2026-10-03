@@ -11,6 +11,12 @@ import {
   type Humanoid,
 } from './models'
 import { createRoc, animRocPerch, animRocFlap, animRocGlide, animRocGrab, animRocCarry, animRocScreech } from './roc'
+import {
+  createGargoyle, animGargoyleDormant, animGargoylePerch, animGargoyleRun, animGargoyleUnfurl,
+  animGargoyleLunge, animGargoyleDead,
+  createCantor, animCantorFloat, animCantorGlide, animCantorChant, animCantorCast, animCantorDead,
+  createAshHound, animHoundIdle, animHoundRun, animHoundLunge, animHoundDead,
+} from './castleMobs'
 
 /* ============================================================
    BESTIARY — the registry that powers the 3D viewer.
@@ -311,6 +317,56 @@ export const BESTIARY: BestiaryEntry[] = [
       { id: 'carry', label: 'حمل مسافر', fn: (h, t) => animRocCarry(h, t) },
       { id: 'screech', label: 'فریاد آسمان', dur: 1.7, fn: shot(1.7, (h, p) => animRocScreech(h, p)) },
       { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+    ],
+  },
+
+  /* ---------------- THE SERVANTS OF MANORLOTH ---------------- */
+  {
+    id: 'gargoyle',
+    name: 'گارگویل مانولث',
+    sub: 'نگهبانِ سنگیِ دیوارها — پنجه‌هایش هنوز وظیفه را بلد است',
+    dot: '#8a8f9a',
+    scale: 1.25,
+    build: () => createGargoyle(1.25),
+    anims: [
+      { id: 'dormant', label: 'مجسمه (خاموش)', fn: (h, t) => animGargoyleDormant(h) },
+      { id: 'perch', label: 'بیدار بر طاقچه', fn: (h, t) => animGargoylePerch(h, t) },
+      { id: 'unfurl', label: 'باز شدن بال‌ها', dur: 1.35, fn: shot(1.35, (h, p) => animGargoyleUnfurl(h, p)) },
+      { id: 'run', label: 'خزیدن', fn: (h, t) => animGargoyleRun(h, t) },
+      { id: 'lunge', label: 'شهپُر و پنجه', dur: 1.1, fn: shot(1.1, (h, p) => animGargoyleLunge(h, p)) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+      { id: 'dead', label: 'فروریختن', dur: 1.15, fn: shot(1.15, (h, p) => animGargoyleDead(h, p)) },
+    ],
+  },
+  {
+    id: 'cantor',
+    name: 'مرثیه‌خوان مانولث',
+    sub: 'شناورِ شب‌داران — تی‌تابِ خکان و شعله‌های هاله',
+    dot: '#d43737',
+    scale: 1.0,
+    build: () => createCantor(1.0),
+    anims: [
+      { id: 'float', label: 'سُر خوردنِ ایستاده', fn: (h, t) => animCantorFloat(h, t) },
+      { id: 'glide', label: 'سُر خوردن به جلو', fn: (h, t) => animCantorGlide(h, t) },
+      { id: 'chant', label: 'سرودِ خواندن', dur: 0.95, fn: shot(0.95, (h, p) => animCantorChant(h, p)) },
+      { id: 'cast', label: 'رهاسازیِ نُت', dur: 0.6, fn: shot(0.6, (h, p) => animCantorCast(h, p)) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+      { id: 'dead', label: 'وا شدن', dur: 1.3, fn: shot(1.3, (h, p) => animCantorDead(h, p)) },
+    ],
+  },
+  {
+    id: 'hound',
+    name: 'سگ خاکستر',
+    sub: 'شکارچیِ بستهٔ حیاط — ترک‌هایش هنوز گرم‌اند',
+    dot: '#ff7a1e',
+    scale: 0.95,
+    build: () => createAshHound(0.95),
+    anims: [
+      { id: 'idle', label: 'تعقیبِ کمین', fn: (h, t) => animHoundIdle(h, t) },
+      { id: 'run', label: 'تاختن', fn: (h, t) => animHoundRun(h, t) },
+      { id: 'lunge', label: 'جهش و گاز', dur: 0.9, fn: shot(0.9, (h, p) => animHoundLunge(h, p)) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
+      { id: 'dead', label: 'سرد شدن', dur: 1.0, fn: shot(1.0, (h, p) => animHoundDead(h, p)) },
     ],
   },
 

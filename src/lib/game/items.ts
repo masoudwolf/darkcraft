@@ -260,6 +260,23 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     tier: 'rare',
   }),
 
+  /* ---- manorloth's fallen servants — the castle pays its wages in relics ---- */
+  gargoyle_stone: I({
+    id: 'gargoyle_stone', name: 'سنگِ گارگویل', cat: 'material', slot: 'rh', weight: 2.4,
+    icon: '🗿', desc: 'تکه‌ای از بالِ نگهبانِ سنگی که هنوز گرم است. سنگِ مانولث با آتشِ خدایان تراشیده شد و در ترک‌هایش، چیزی از آن آتش مانده. کوره‌بان می‌گوید سنگی که بیدار مرده، سنگِ خوبی برای دسته‌ی تیغ است.',
+    tier: 'common',
+  }),
+  requiem_wax: I({
+    id: 'requiem_wax', name: 'مومِ مرثیه', cat: 'material', slot: 'rh', weight: 0.9,
+    icon: '🕯️', desc: 'مومِ شمع‌های هاله‌ی مرثیه‌خوان؛ هزار سالِ سرود را در خود نگه داشته و هنوز بوی تابوت می‌دهد. شعله‌اش سرد است، اما صدای آوازی که در آن پیچیده، هنوز تمام نشده.',
+    tier: 'common',
+  }),
+  ash_fang: I({
+    id: 'ash_fang', name: 'دندان خاکستر', cat: 'material', slot: 'rh', weight: 1.1,
+    icon: '🦴', desc: 'دندانی از آرواره‌ی سگِ خاکستر — استخوانی که در کوره‌ی نخستین پخته شد و سرد نشد. بسته‌ها با همین دندان‌ها کارِ خود را تمام می‌کنند؛ حالا یکیشان در جیب توست.',
+    tier: 'common',
+  }),
+
   /* ---- champion relics — guarded by the mini-lords of the Vale ---- */
   captain_blade: I({
     id: 'captain_blade', name: 'تیغِ سردار', cat: 'sword', slot: 'rh', weight: 5.2,
@@ -324,6 +341,11 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: 'amulet_iron_skin', name: 'طلسمِ پوستِ آهنین', cat: 'charm', slot: 'charm', weight: 0.6,
     icon: '📿', desc: 'صفحه‌ای کوچک از آهنِ سردابِ دژ، با حکاکیِ زرهی که صاحب ندارد. کوره‌بان می‌گوید فلزِ بی‌صاحب، صاحبِ تازه را آزمایش می‌کند: اگر تیغِ دشمن را نگه دارد، تورا هم نگه می‌دارد.',
     tier: 'rare', passive: { soak: 0.14 },
+  }),
+  mourn_bell: I({
+    id: 'mourn_bell', name: 'زنگِ سوگ', cat: 'charm', slot: 'charm', weight: 0.5,
+    icon: '🔔', desc: 'زنگِ برنزی از کمربندِ مرثیه‌خوانِ مانولث — همان که سرودِ مردگان را می‌نواخت. آن را که بر گردن آویزد، مرگ‌های نزدیک را زودتر می‌شنود: هر روحی که از دستِ تو می‌گذرد، انگار پولِ جیبِ زنگ می‌شود.',
+    tier: 'rare', passive: { soulsMul: 1.22 },
   }),
 
   /* ---- keys — small iron promises ---- */
@@ -463,6 +485,21 @@ const TABLES: Record<string, Table> = {
   ],
   creeper: [{ id: 'creeper_hide', p: 0.22 }, { id: 'iron_chunk', p: 0.16 }],
   blaze: [{ id: 'blaze_cape', p: 0.17 }, { id: 'ember_iron', p: 0.24 }],
+  /* ---- the servants of manorloth ---- */
+  gargoyle: [
+    { id: 'gargoyle_stone', p: 0.42 },
+    { id: 'iron_chunk', p: 0.15 },
+    { id: 'ember_iron', p: 0.07 },
+  ],
+  cantor: [
+    { id: 'requiem_wax', p: 0.44 },
+    { id: 'ember_iron', p: 0.08 },
+    { id: 'mourn_bell', p: 0.035 },
+  ],
+  hound: [
+    { id: 'ash_fang', p: 0.48, n: [1, 2] },
+    { id: 'iron_chunk', p: 0.11 },
+  ],
 }
 
 /** roll a mob's loot — independent chances, stacked ammo counts */

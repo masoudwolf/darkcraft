@@ -27,12 +27,19 @@ interface PathKey {
   z: number
 }
 
-/** where the rider stands on each deck (feet position) */
-const VALE_STAND = new THREE.Vector3(52, 10, -39)
-const CASTLE_STAND = new THREE.Vector3(0, 14, 56)
-/** where the roc perches while idle (facing the deck's heart) */
-const VALE_PERCH = { x: 54, y: 10, z: -38.5, yaw: -Math.PI / 2 }
-const CASTLE_PERCH = { x: -3.4, y: 14, z: 56.6, yaw: Math.PI / 2 }
+/** where the rider stands on each deck (feet position) — both sit on
+    the talon-reach line of the hovering roc (its claws hang ~1.95
+    behind the group origin), so the grab meets the rider exactly */
+const VALE_STAND = new THREE.Vector3(52, 10, -41.2)
+const CASTLE_STAND = new THREE.Vector3(0, 14, 53.9)
+/* where the roc perches while idle — placed so the TALONS land exactly
+   on the deck's claw-groove cells (vale grooves: x 51..52, z -38/-40;
+   castle grooves: x -1.2..0, z 55.5/56.9). Both face west: head over
+   the abyss, tail ending at the deck's far edge — and the castle one
+   stays clear of Manorloth's bonfire at (2.5, 56). perch() then sinks
+   the group until the lowest claw TOUCHES the deck (no float). */
+const VALE_PERCH = { x: 50, y: 10, z: -39, yaw: -Math.PI / 2 }
+const CASTLE_PERCH = { x: -2.5, y: 14, z: 56.2, yaw: -Math.PI / 2 }
 
 const ROC_DUR: Record<RocTrack, number> = { toCastle: 35.2, toVale: 23.6 }
 
@@ -71,8 +78,8 @@ const TO_CASTLE: PathKey[] = [
 
 /* ---- the flight back to the Vale ---- */
 const TO_VALE: PathKey[] = [
-  { t: 0.0, x: -3.5, y: 17.0, z: 57.0 }, // flaring up from the perch
-  { t: 1.2, x: -1, y: 19.5, z: 56.0 },
+  { t: 0.0, x: -2.5, y: 16.4, z: 56.2 }, // flaring up from the perch
+  { t: 1.2, x: -1, y: 19.2, z: 56.0 },
   { t: 2.2, x: 0, y: 19.5, z: 55.4 }, // the hover above the deck
   { t: 3.0, x: 0, y: 16.2, z: 55.8 }, // the dip — talons reach
   { t: 3.8, x: 0, y: 16.3, z: 55.6 }, // clutch sealed
@@ -169,6 +176,7 @@ export class RocFlight {
   private gL = new THREE.Vector3()
   private gR = new THREE.Vector3()
   private grabMid = new THREE.Vector3()
+  private perchV = new THREE.Vector3()
 
   constructor(private game: Game) {
     this.h = createRoc(2.1)
@@ -181,11 +189,10 @@ export class RocFlight {
     return this.mode === 'flight'
   }
 
-  /** the perched roc's world position — the travel prompt orbits this */
+  /** the perched roc's settled world position — the travel prompt orbits this */
   get perchPos(): THREE.Vector3 | null {
     if (this.mode !== 'perch' || !this.parked) return null
-    const p = this.parked === 'vale' ? VALE_PERCH : CASTLE_PERCH
-    return this.tmpC.set(p.x, p.y, p.z)
+    return this.perchV.copy(this.h.group.position)
   }
 
   /** which side the roc is parked on (null = not in the world yet) */
@@ -193,7 +200,9 @@ export class RocFlight {
     return this.mode === 'perch' ? this.parked : null
   }
 
-  /** park the roc on a platform's perch stone */
+  /** park the roc on a platform's perch stone — then sink it until the
+      lowest talon TOUCHES the deck: no floating, no sinking, the claws
+      rest on the very stone the grooves were burned into */
   perch(where: 'vale' | 'castle') {
     this.mode = 'perch'
     this.parked = where
@@ -203,6 +212,10 @@ export class RocFlight {
     this.h.group.position.set(p.x, p.y, p.z)
     this.h.group.rotation.set(0, p.yaw, 0)
     animRocPerch(this.h, 0)
+    this.h.group.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(this.h.legL)
+    box.union(new THREE.Box3().setFromObject(this.h.legR))
+    this.h.group.position.y += p.y - box.min.y
   }
 
   hide() {
@@ -421,7 +434,7 @@ export class RocFlight {
     if (this.track === 'toCastle') {
       if (t < 2.0) {
         outPos.set(45.5, 11.5, -39.5)
-        outLook.set(52, 11, -39)
+        outLook.set(52, 10.8, -40.8)
       } else if (t < 4.4) {
         outPos.set(47.5, 13.5, -45)
         outLook.copy(roc.position).add(this.tmpC.set(0, -0.5, 0))
@@ -439,8 +452,8 @@ export class RocFlight {
       }
     } else {
       if (t < 2.4) {
-        outPos.set(7.5, 17.5, 63.5)
-        outLook.set(0, 16, 55.5)
+        outPos.set(6, 17.5, 62.5)
+        outLook.set(-2.5, 15.5, 56.2)
       } else if (t < 4.2) {
         outPos.set(5, 18.5, 61.5)
         outLook.copy(roc.position)

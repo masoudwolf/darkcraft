@@ -313,14 +313,14 @@ export function createRoc(scale = 2.1): Humanoid {
   }
 
   /* ---------- legs: feathered thigh, golden shin, talons ----------
-     Pivot sits under the HIPS (z −0.75), not the chest — a bird's legs
-     hang from its hips; the old forward mount made the Roc look like a
-     man wading. Thighs still angle slightly ahead to keep the feet
-     under the center of mass in perched poses. */
+     Pivot sits deep under the HIPS (z −0.85), not the chest — a
+     bird's legs hang from its hips; the old forward mount made the
+     Roc look like a man wading. The thigh's slight ahead-lean keeps
+     the feet under the center of mass in perched poses. */
   const legL = new THREE.Group()
   const legR = new THREE.Group()
-  legL.position.set(0.3, 1.5, -0.75)
-  legR.position.set(-0.3, 1.5, -0.75)
+  legL.position.set(0.3, 1.5, -0.85)
+  legR.position.set(-0.3, 1.5, -0.85)
   spinInner.add(legL, legR)
   const legs: [THREE.Group, number][] = [
     [legL, 1],
@@ -409,10 +409,10 @@ function resetRoc(h: Humanoid) {
     r.wingMid[side].rotation.set(0, 0, 0)
     r.wingTip[side].rotation.set(0, 0, 0)
   }
-  h.legL.rotation.set(0.28, 0, 0) // the femur's ahead-lean is the rest state
-  h.legR.rotation.set(0.28, 0, 0)
-  r.legL.rotation.set(0, 0, 0)
-  r.legR.rotation.set(0, 0, 0)
+  h.legL.rotation.set(0.26, 0, 0) // the femur's ahead-lean is the rest state
+  h.legR.rotation.set(0.26, 0, 0)
+  r.legL.rotation.set(-0.06, 0, 0) // near-flat foot — toes barely curl
+  r.legR.rotation.set(-0.06, 0, 0)
   return r
 }
 
@@ -445,11 +445,13 @@ export function animRocPerch(h: Humanoid, t: number) {
   r.neck.rotation.x = 0.08 + Math.sin(t * 0.83) * 0.06
   r.headG.rotation.y = Math.sin(t * 0.31 + 1.2) * 0.3
   r.tail.rotation.x = 0.18 + Math.sin(t * 0.9) * 0.05
-  // the perch crouch: femur ahead, shin back, talons gripping the crag
-  h.legL.rotation.x = 0.34
-  h.legR.rotation.x = 0.34
-  r.legL.rotation.x = -0.42
-  r.legR.rotation.x = -0.42
+  // the perch crouch: femur ahead, shin back — the two cancel so the
+  // WHOLE SOLE rests flat on the stone (the old −0.42 shin pitched the
+  // toes 24° up, and the bird floated a full unit above its platform)
+  h.legL.rotation.x = 0.26
+  h.legR.rotation.x = 0.26
+  r.legL.rotation.x = -0.32
+  r.legR.rotation.x = -0.32
 }
 
 /** the great wingbeat — three segments flex in phase, body rises */

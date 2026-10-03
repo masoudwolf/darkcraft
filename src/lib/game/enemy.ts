@@ -18,6 +18,7 @@ import {
   V3_LAVA_POOLS,
 } from './worldV3'
 import type { GameWorld } from './worldContract'
+import { CASTLE_FIRE } from './castle'
 import type { Game } from './game'
 import type { Player } from './player'
 
@@ -229,9 +230,14 @@ export class Enemy {
     let angDiff = angleToPlayer - this.yaw
     while (angDiff > Math.PI) angDiff -= Math.PI * 2
     while (angDiff < -Math.PI) angDiff += Math.PI * 2
-    // bonfire safe zone – hollows will not pursue the unkindled who rest
+    // bonfire safe zone – hollows will not pursue the unkindled who rest.
+    // Zone-aware: each world honors ITS OWN fire (the vale court's
+    // coordinates overlap the castle yard — a single fixed point made
+    // every keeper of Manorloth stand down forever)
     const playerSafe =
-      Math.hypot(player.pos.x - V3_BONFIRE.x, player.pos.z - V3_BONFIRE.z) < 5.5
+      this.game?.zone === 'castle'
+        ? Math.hypot(player.pos.x - CASTLE_FIRE.x, player.pos.z - CASTLE_FIRE.z) < 5.5
+        : Math.hypot(player.pos.x - V3_BONFIRE.x, player.pos.z - V3_BONFIRE.z) < 5.5
     // a closed fog gate blinds and separates — nobody sees or swings across
     const sealed = this.gateSeals(game, player.pos.x, player.pos.z)
 

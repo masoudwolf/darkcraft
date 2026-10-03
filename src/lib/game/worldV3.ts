@@ -1645,10 +1645,11 @@ export class WorldV3 implements GameWorld {
   private buildRocPlatform() {
     const d0 = 9 // deck block bottom → walk on 10 (ash around is h 6..7)
     // the deck — a 7×7 slab of dark stone; two pairs of coal cells
-    // inlaid where the talons have gripped since the gods still flew
+    // inlaid exactly where the talons rest when the Roc perches
+    // (feet contact patch: x 51.4..52.4, rows z -38 / -40)
     for (let x = 49; x <= 55; x++)
       for (let z = -42; z <= -36; z++) {
-        const groove = (x === 51 || x === 53) && (z === -40 || z === -38)
+        const groove = (x === 51 || x === 52) && (z === -40 || z === -38)
         this.b(groove ? 'coal' : 'darkstone', x, d0, z)
       }
     // piers — the load walks straight down into the ash

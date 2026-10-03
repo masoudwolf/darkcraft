@@ -19,12 +19,13 @@ import {
 } from './worldV3'
 import { blockMaterials } from './textures'
 import type { GameWorld } from './worldContract'
-import { CastleZone } from './castle'
+import { CastleZone, CASTLE_FIRE } from './castle'
 import { RocFlight, type RocTrack } from './rocFlight'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
-import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy, CoalLordEnemy, setNgMult } from './enemy'
-import { createSword, createShield, createMerchant, createSmith, animMerchantIdle, animMerchantGreet, animSmithIdle, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createArrowBundle, createChest, createKeyProp, createRingProp, type SwordStyle } from './models'
+import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy, CoalLordEnemy, setNgMult, ngMult } from './enemy'
+import { GargoyleEnemy, CantorEnemy, HoundEnemy } from './castleEnemies'
+import { createSword, createShield, createMerchant, createSmith, animMerchantIdle, animMerchantGreet, animSmithIdle, type Humanoid, createBow, setBowDraw, setNocked, applyPlayerArmor, setPlayerSword, setPlayerShield, setPlayerBow, createArmorDrop, createMaterialDrop, createCharmDrop, createArrowBundle, createChest, createKeyProp, createRingProp, type SwordStyle } from './models'
 import { Sfx } from './sfx'
 import type { PlayerStrikeDef } from './player'
 import {
@@ -295,7 +296,7 @@ const REGIONS = [
 const SMITH = { x: -42, z: 30.6 }
 
 /** Manorloth's bonfire — on the roc's landing platform (castle deck y=14) */
-const CASTLE_BONFIRE = { x: 2.5, z: 56, y: 14 }
+const CASTLE_BONFIRE = CASTLE_FIRE
 /** the Vale's ancient roc landing stage — on the pit's east rim */
 const ROC_STAGE = { x: 52, z: -39, y: 10 }
 
@@ -1224,6 +1225,12 @@ class LootDrop {
       const b = createBow(def.id === 'bone_bow' ? 'bone' : 'wood')
       b.rotation.z = 0.5
       inner.add(b)
+    } else if (def.cat === 'material') {
+      // real tiny props — nuggets, candles, fangs, wing shards
+      inner.add(createMaterialDrop(def.id))
+    } else if (def.cat === 'charm') {
+      // rings, amulets and the requiem bell, shown as themselves
+      inner.add(createCharmDrop(def.id))
     } else {
       const slot = def.slot as 'head' | 'chest' | 'hands' | 'legs' | 'cape'
       inner.add(createArmorDrop(slot, def.tint ?? 0x9a8b70, def.tint2, def.id))
@@ -1307,6 +1314,9 @@ export class Game {
   rocFlight!: RocFlight
   /** the sky road opens once the ember has answered */
   castleOpen = false
+  /** the waking servants of Manorloth — spawned the first time the sky opens */
+  private castleEnemies: Enemy[] = []
+  private castleSpawned = false
   private valeHemi!: THREE.HemisphereLight
   private valeFireSword!: THREE.Object3D
   private merchantStall!: THREE.Group
@@ -1872,6 +1882,7 @@ export class Game {
 
   get allEnemies(): Enemy[] {
     const list = [...this.enemies]
+    if (this.zone === 'castle') list.push(...this.castleEnemies)
     if (!this.bossFell) list.push(this.boss)
     if (!this.boss2Fell) list.push(this.boss2)
     if (!this.boss3Fell) list.push(this.boss3)
@@ -1954,10 +1965,13 @@ export class Game {
         scene.add(this.castleZone.group)
         this.world = this.castleZone
       }
+      // the castle wakes its keepers the first time the sky opens
+      if (!this.castleSpawned) this.spawnCastleEnemies()
       this.castleZone.ceil.visible = true // real roofs in the real castle
       this.sun.visible = false // the Vale's warm sun sleeps — Manorloth brings its own moon
       this.valeHemi.visible = false
       this.setValeEntitiesVisible(false)
+      for (const e of this.castleEnemies) e.h.group.visible = true
       this.castleFireSword.visible = true
       this.castleBonfireLight.visible = true
       this.castleBonfireFlame.visible = true
@@ -1970,11 +1984,49 @@ export class Game {
       this.sun.visible = true
       this.valeHemi.visible = true
       this.setValeEntitiesVisible(true)
+      for (const e of this.castleEnemies) e.h.group.visible = false
       this.castleFireSword.visible = false
       this.castleBonfireLight.visible = false
       this.castleBonfireFlame.visible = false
     }
     this.zone = zone
+  }
+
+  /** the servants of Manorloth — hounds in the yard, gargoyles on their
+      posts, cantors drifting the nave and the crypt. Spawned once, reset
+      and re-tempered whenever the castle fills with new-cycle ash. */
+  private spawnCastleEnemies() {
+    const scene = this.engine.scene
+    if (this.castleSpawned) {
+      for (const e of this.castleEnemies) e.reset()
+      return
+    }
+    this.castleSpawned = true
+    const at = (x: number, z: number) => {
+      const p = new THREE.Vector3(x, 0, z)
+      p.y = this.castleZone!.surfaceAt(x, z)
+      return p
+    }
+    const add = (e: Enemy) => {
+      e.world = this.castleZone!
+      e.game = this
+      this.castleEnemies.push(e)
+      e.h.group.visible = false // visibility is zone-driven from here on
+    }
+    // ash hounds — the pack that owns the ritual court's processional path
+    for (const [x, z] of [[-4, 26], [5, 28], [-5, 34], [4, 35]] as const) {
+      add(new HoundEnemy(scene, at(x, z)))
+    }
+    // stone gargoyles — statues at their posts: gate flanks + the library
+    for (const [x, z] of [[-3, 38.5], [3.5, 38], [-17, 4]] as const) {
+      add(new GargoyleEnemy(scene, at(x, z)))
+    }
+    // requiem cantors — the nave's crossing + a west aisle + the crypt
+    for (const [x, z] of [[0, -2], [-7, 6], [-8, -19]] as const) {
+      add(new CantorEnemy(scene, at(x, z)))
+    }
+    // NG+ tempering for bodies that already exist in a carried-over cycle
+    if (ngMult() > 1) for (const e of this.castleEnemies) e.harden(ngMult())
   }
 
   /** the Vale's cast sleeps while the ash-walker walks Manorloth */
@@ -2141,6 +2193,7 @@ export class Game {
     this.phase = 'rest'
     this.player.fullRestore()
     for (const e of this.enemies) e.reset()
+    for (const e of this.castleEnemies) e.reset()
     if (!this.bossFell) this.boss.reset()
     if (!this.boss2Fell) this.boss2.reset()
     if (!this.boss3Fell) this.boss3.reset()
@@ -4491,6 +4544,7 @@ export class Game {
     this.player.reset(p, Math.PI * 0.85)
     this.player.fullRestore()
     for (const e of this.enemies) e.reset()
+    for (const e of this.castleEnemies) e.reset()
     if (!this.bossFell || !this.boss2Fell) {
       this.world.setFogGatesVisible(!this.bossFell, !this.boss2Fell)
     }
@@ -5009,6 +5063,9 @@ export class Game {
       this.boss.update(dt, this.player, this)
       this.boss2.update(dt, this.player, this)
       this.boss3.update(dt, this.player, this)
+    } else {
+      // Manorloth's keepers — statues wake, cantors sing, the pack hunts
+      for (const e of this.castleEnemies) e.update(dt, this.player, this)
     }
 
     this.world.update(dt)
