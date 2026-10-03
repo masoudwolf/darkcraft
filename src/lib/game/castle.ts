@@ -233,6 +233,16 @@ export class CastleZone implements GameWorld {
     if (feetY < h - 0.5) {
       for (let y = Math.floor(feetY + 1.06); y <= Math.floor(feetY + 1.55); y++)
         if (this.solid[this.cellIdx(bx, bz, y)] === 1) return true
+      /* ── the under-floor law ──
+         Below the crust, masonry overhead is a CEILING, never ground.
+         A column that owns no floor beneath the feet is the dark under
+         a built floor — striding there means floating up through the
+         nave floor. Refuse the step; real crypt floors (the chamber
+         slab, every stair tread) always carry masonry. */
+      let floored = false
+      for (let y = Math.min(63, Math.floor(feetY)); y >= 0; y--)
+        if (this.solid[this.cellIdx(bx, bz, y)] === 1) { floored = true; break }
+      if (!floored) return true
       return false
     }
     if (h + 1 > feetY + 1.06) return true
@@ -867,11 +877,13 @@ export class CastleZone implements GameWorld {
     // the two great chandeliers
     this.chandelier(0, y + 18, 8)
     this.chandelier(0, y + 18, -1)
-    // side altars in the aisles
+    // side altars in the aisles — parked mid-nave, FAR from the crypt
+    // stair head (they used to squat on the stair approach lane at
+    // z=-5..-4 and plug half of the only corridor down)
     for (const sx of [-1, 1] as const) {
-      this.fill('bonestone', sx * 9, sx * 9, y, y + 1, -5, -4)
-      this.b('glow', sx * 9, y + 2, -4)
-      this.b('glow', sx * 9, y + 2, -5)
+      this.fill('bonestone', sx * 9, sx * 9, y, y + 1, 1, 2)
+      this.b('glow', sx * 9, y + 2, 1)
+      this.b('glow', sx * 9, y + 2, 2)
     }
     // braziers at the nave entrance
     this.torch(-4, y, 13)
@@ -1078,8 +1090,12 @@ export class CastleZone implements GameWorld {
     this.b('bone', 5, fy + 1, -25)
     this.b('cobble', -7, fy + 1, -17)
     /* ---- the stair shaft from the east aisle ---- */
-    // tunnel walls (x=8 / x=11) close the stair sides
-    for (let z = -3; z <= -8; z++) {
+    // tunnel walls (x=8 / x=11) close the stair sides — for the whole
+    // run, not just z=-3..-8: past the transept wall the steps sink
+    // beneath the east-arm floor, and an open flank let walkers drift
+    // off the stairs into the under-floor dark and float up through
+    // the nave floor (the classic "fell under the building" bug)
+    for (let z = -3; z <= -11; z++) {
       this.col('gobrick', 8, z, fy, cy)
       this.col('gobrick', 11, z, fy, cy)
     }
@@ -1087,6 +1103,11 @@ export class CastleZone implements GameWorld {
     this.fill('gobrick', 8, 11, fy, cy, -4, -5)
     // open the floor of the east aisle above the stair head
     this.carve(9, 10, y - 1, y - 1, -7, -6)
+    // the descent passes UNDER the transept north wall (z=-8): that wall
+    // clamps down to y=13 — exactly chest height of a body standing on
+    // the second step — so open a low 2×2 portal through it or nobody
+    // ever fits through the gap
+    this.carve(9, 10, y - 1, y, -8, -8)
     // the steps: six blocks down from the aisle floor to the crypt
     for (let i = 0; i <= 5; i++) this.fill('gobrick', 9, 10, y - 2 - i, y - 2 - i, -6 - i, -6 - i)
     // connect into the chamber at the stair foot
@@ -1318,8 +1339,11 @@ export class CastleZone implements GameWorld {
         if (!this.builtAt(x, z)) continue
         const h = this.heights[this.idx(x, z)]
         if (h <= 0) continue // the cloud chasm — the bridge owns the gap
-        // the crypt stairwell is a DELIBERATE hole in the aisle floor
+        // the crypt stairwell is a DELIBERATE hole in the aisle floor —
+        // and its low portal through the transept wall (z=-8, x=9..10)
+        // is deliberate emptiness too: never let this sweep plug them
         if (x >= CRYPT_SHAFT.x0 && x <= CRYPT_SHAFT.x1 && z >= CRYPT_SHAFT.z0 && z <= CRYPT_SHAFT.z1) continue
+        if (x >= 9 && x <= 10 && z === -8) continue
         const y = Math.min(h, PLATEAU)
         if (this.solid[this.cellIdx(x, z, y)] === 1 || this.solid[this.cellIdx(x, z, y - 1)] === 1) continue
         this.b('gobrick', x, y, z)
@@ -1385,10 +1409,10 @@ export class CastleZone implements GameWorld {
         this.sb('darkstone', px, y, pz + 2, 2, 3, 1, 0, 0, 0.6)
       }
 
-    /* -- nave side altars: ⅓ gold candlesticks -- */
+    /* -- nave side altars: ⅓ gold candlesticks (moved with their altars) -- */
     for (const sx of [-1, 1] as const) {
-      this.sb('gold', sx * 9, y + 2, -5, 1, 2, 1, 0, 0.5, -0.4)
-      this.sb('gold', sx * 9, y + 2, -4, 1, 2, 1, 0, 0.5, 0.4)
+      this.sb('gold', sx * 9, y + 2, 1, 1, 2, 1, 0, 0.5, -0.4)
+      this.sb('gold', sx * 9, y + 2, 2, 1, 2, 1, 0, 0.5, 0.4)
     }
 
     /* -- chandeliers: ⅓ iron candle cups under every flame -- */

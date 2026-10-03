@@ -1890,11 +1890,14 @@ export class Game {
   }
 
   get allEnemies(): Enemy[] {
-    const list = [...this.enemies]
-    if (this.zone === 'castle') list.push(...this.castleEnemies)
-    if (!this.bossFell) list.push(this.boss)
-    if (!this.boss2Fell) list.push(this.boss2)
-    if (!this.boss3Fell) list.push(this.boss3)
+    // only the cast of the world you stand in can be hit or locked —
+    // the sleeping world's bodies are hidden and must stay unhittable
+    const list = this.zone === 'vale' ? [...this.enemies] : [...this.castleEnemies]
+    if (this.zone === 'vale') {
+      if (!this.bossFell) list.push(this.boss)
+      if (!this.boss2Fell) list.push(this.boss2)
+      if (!this.boss3Fell) list.push(this.boss3)
+    }
     return list
   }
 
@@ -1979,11 +1982,6 @@ export class Game {
       this.castleZone.ceil.visible = true // real roofs in the real castle
       this.sun.visible = false // the Vale's warm sun sleeps — Manorloth brings its own moon
       this.valeHemi.visible = false
-      this.setValeEntitiesVisible(false)
-      for (const e of this.castleEnemies) e.h.group.visible = true
-      this.castleFireSword.visible = true
-      this.castleBonfireLight.visible = true
-      this.castleBonfireFlame.visible = true
     } else {
       if (this.castleZone && this.world === this.castleZone) {
         scene.remove(this.castleZone.group)
@@ -1992,13 +1990,23 @@ export class Game {
       }
       this.sun.visible = true
       this.valeHemi.visible = true
-      this.setValeEntitiesVisible(true)
-      for (const e of this.castleEnemies) e.h.group.visible = false
-      this.castleFireSword.visible = false
-      this.castleBonfireLight.visible = false
-      this.castleBonfireFlame.visible = false
     }
     this.zone = zone
+    this.syncZoneVisibility()
+  }
+
+  /** the stage crew: exactly one world's cast may stand on stage.
+      Enemy.reset() un-hides every body it touches, so any death/rest
+      inside Manorloth used to resurrect the Vale's whole cast (and its
+      three lords) inside the castle — this re-chooses the cast after
+      every reset and every crossing. */
+  private syncZoneVisibility() {
+    const vale = this.zone === 'vale'
+    this.setValeEntitiesVisible(vale)
+    for (const e of this.castleEnemies) e.h.group.visible = !vale
+    this.castleFireSword.visible = !vale
+    this.castleBonfireLight.visible = !vale
+    this.castleBonfireFlame.visible = !vale
   }
 
   /** the servants of Manorloth — hounds in the yard, gargoyles on their
@@ -2218,6 +2226,8 @@ export class Game {
     this.boss3Barrier = false
     this.world.setFogGatesVisible(!this.bossFell, !this.boss2Fell)
     this.world.setPitOpen(this.boss2Fell) // the rockfall obeys the Flame King's fate
+    // reset() un-hid every body — the resting world keeps only its own cast
+    this.syncZoneVisibility()
     this.save()
     this.sfx.bonfire()
     // free the cursor! pointer lock retargets every click to the canvas,
@@ -4590,7 +4600,14 @@ export class Game {
       this.zone === 'castle'
         ? new THREE.Vector3(CASTLE_BONFIRE.x - 1.8, 0, CASTLE_BONFIRE.z + 1.2)
         : new THREE.Vector3(BONFIRE.x + 2.5, 0, BONFIRE.z + 2)
-    p.y = this.world.surfaceAt(p.x, p.z)
+    // the castle floats on the cloud sea — its "terrain" is a zero-chasm
+    // and the real ground is masonry far above it; surfaceAt would drop
+    // the dead 13 blocks UNDER the landing platform, sealed into the
+    // abyss forever. Scan from the sky instead and land on the deck.
+    p.y =
+      this.zone === 'castle'
+        ? this.world.supportAt(p.x, p.z, 40)
+        : this.world.surfaceAt(p.x, p.z)
     this.player.reset(p, Math.PI * 0.85)
     this.player.fullRestore()
     for (const e of this.enemies) e.reset()
@@ -4619,6 +4636,8 @@ export class Game {
     this.phase = 'playing'
     this.banner = null
     this.hurtFlash = 0
+    // reset() un-hid every body — re-choose the cast of the world we died in
+    this.syncZoneVisibility()
     this.emit(true)
   }
 
