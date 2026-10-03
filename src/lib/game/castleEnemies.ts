@@ -212,12 +212,15 @@ export class CantorEnemy extends Enemy {
   protected recoverAnim(p: number) {
     animCantorCast(this.h, 0.4 + p * 0.6)
   }
-  /** the float — the hem hangs above the floor, the body never lands */
+  /** the float — the hem hangs above the floor, the body never lands.
+      underground-aware: in the crypt the plateau's surfaceAt points at
+      the cathedral floor ABOVE the ceiling, so the hover height comes
+      from supportAt around the cantor's own altitude instead. */
   protected syncModel() {
     this.h.group.position.copy(this.pos)
     this.h.group.rotation.y = this.yaw
     if (this.world) {
-      const ground = this.world.surfaceAt(this.pos.x, this.pos.z)
+      const ground = this.world.supportAt(this.pos.x, this.pos.z, this.pos.y)
       this.pos.y = ground
       this.h.group.position.y = ground + 1.02 + Math.sin(this.animT * 2.1) * 0.09
     }

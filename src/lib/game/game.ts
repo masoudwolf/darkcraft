@@ -19,7 +19,7 @@ import {
 } from './worldV3'
 import { blockMaterials } from './textures'
 import type { GameWorld } from './worldContract'
-import { CastleZone, CASTLE_FIRE } from './castle'
+import { CastleZone, CASTLE_FIRE, CRYPT_FLOOR_Y } from './castle'
 import { RocFlight, type RocTrack } from './rocFlight'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
@@ -1401,6 +1401,8 @@ export class Game {
   private deathFx: BossDeathFX[] = []
   private lavaPools: { mesh: THREE.Mesh; x: number; z: number; t: number }[] = []
   private lavaTick = 0
+  /** the cloud sea around Manorloth — falls past y≈4 are the abyss */
+  private abyssTick = 0
   private bloodstain: { mesh: THREE.Group; amount: number } | null = null
   private boomLights: { light: THREE.PointLight; t: number }[] = []
   private estusShard: { mesh: THREE.Group; light: THREE.PointLight } | null = null
@@ -2023,7 +2025,9 @@ export class Game {
     }
     // requiem cantors — the nave's crossing + a west aisle + the crypt
     for (const [x, z] of [[0, -2], [-7, 6], [-8, -19]] as const) {
-      add(new CantorEnemy(scene, at(x, z)))
+      const e = new CantorEnemy(scene, at(x, z))
+      if (z <= -12) e.pos.y = CRYPT_FLOOR_Y + 1 // the crypt floor — surfaceAt points at the nave ABOVE it
+      add(e)
     }
     // NG+ tempering for bodies that already exist in a carried-over cycle
     if (ngMult() > 1) for (const e of this.castleEnemies) e.harden(ngMult())
@@ -5022,6 +5026,40 @@ export class Game {
           this.onPlayerHit(dmg)
           this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xff7a1e, 8, 1.8, 0.4, 0.12)
         }
+      }
+    }
+
+    /* ---- the cloud sea swallows the fallen (Manorloth only) ----
+       The void seal keeps walking feet off the abyss ring, but a
+       knockback launch or a physics edge case can still carry the
+       body past the rim. Below y≈4 there is only the cloud sea:
+       no floor, no way back. The mist takes the walker back to the
+       Manorloth bonfire the hard way — heavy ticks of cold damage
+       until the old death carries them to the fire. */
+    this.abyssTick -= dt
+    if (
+      this.zone === 'castle' &&
+      this.player.pos.y < 4 &&
+      this.player.alive &&
+      this.abyssTick <= 0 &&
+      !this.rocFlight.flying
+    ) {
+      this.abyssTick = 0.45
+      // a fifth of the walker's life per tick — the sea finishes a fall
+      // in three breaths at any level, armor never softens the deep
+      const dmg = Math.max(30, Math.round(this.player.maxHp * 0.22))
+      if (
+        this.player.takeDamage(
+          dmg,
+          this.player.pos.x + (Math.random() - 0.5),
+          this.player.pos.z + (Math.random() - 0.5),
+          this,
+          false,
+          'phys'
+        )
+      ) {
+        this.onPlayerHit(dmg)
+        this.spawnBurst(this.player.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xbfd0e8, 10, 2.2, 0.5, 0.14)
       }
     }
 

@@ -149,7 +149,7 @@ export const REGIONS_CASTLE: CastleRegion[] = [
 /* island plateau level — walking surface is PLATEAU+1 */
 const PLATEAU = 13
 /** the crypt: floor block bottom / ceiling block bottom */
-const CRYPT_FLOOR_Y = 6
+export const CRYPT_FLOOR_Y = 6
 const CRYPT_CEIL_Y = 12
 /** the crypt stair shaft (east aisle floor opening) */
 export const CRYPT_SHAFT = { x0: 9, x1: 10, z0: -7, z1: -6 }
@@ -216,7 +216,26 @@ export class CastleZone implements GameWorld {
   solidStruct(x: number, y: number, z: number) { return this.solid[this.cellIdx(Math.round(x), Math.round(z), Math.round(y))] === 1 }
   wallAt(x: number, z: number, feetY: number) {
     const bx = Math.round(x), bz = Math.round(z)
-    if (this.getH(bx, bz) + 1 > feetY + 1.06) return true
+    /* ── THE VOID SEAL ──
+       Manorloth floats on the cloud sea: any column whose only "floor"
+       sits below y≈4 is the abyss ring around the island (and the bare
+       lanes beside the bridge where no deck was ever laid). Walking
+       down there means landing on invisible ground under the castle
+       with no way back — so the seal turns every such column into a
+       wall. Real stone never triggers it: the lowest true floor in
+       play is the island skirt at y≥4 and the crypt at y=7. */
+    if (this.supportAt(bx, bz, feetY) < 4.5) return true
+    const h = this.getH(bx, bz)
+    /* ── underground rooms (the crypt of kings) ──
+       Below the crust the plateau rule is meaningless — the "terrain
+       height" is the cathedral floor ABOVE your ceiling. Down there a
+       wall is simply built masonry: judge by the solid grid alone. */
+    if (feetY < h - 0.5) {
+      for (let y = Math.floor(feetY + 1.06); y <= Math.floor(feetY + 1.55); y++)
+        if (this.solid[this.cellIdx(bx, bz, y)] === 1) return true
+      return false
+    }
+    if (h + 1 > feetY + 1.06) return true
     for (let y = Math.floor(feetY + 1.06); y <= Math.floor(feetY + 1.55); y++)
       if (this.solid[this.cellIdx(bx, bz, y)] === 1) return true
     return false
@@ -225,7 +244,15 @@ export class CastleZone implements GameWorld {
     const bx = Math.round(x), bz = Math.round(z)
     const h = this.getH(bx, bz)
     let best = h + 1
-    for (let y = Math.min(63, Math.floor(fromY + 0.06)); y > h; y--)
+    const top = Math.min(63, Math.floor(fromY + 0.06))
+    /* the scan stops at the terrain height — but a walker INSIDE the
+       crypt stands BELOW the plateau (h=13) in a carved room whose
+       floor is built block-work at y=6. For them the scan must reach
+       through the crust: the topmost built block under the feet is
+       the true floor. With no block found the old terrain fallback
+       stands (open ground outside the buildings). */
+    const bottom = top < h ? 0 : h
+    for (let y = top; y > bottom; y--)
       if (this.solid[this.cellIdx(bx, bz, y)] === 1) { best = y + 1; break }
     return best
   }

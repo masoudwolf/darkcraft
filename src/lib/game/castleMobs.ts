@@ -87,6 +87,7 @@ export interface GargoyleRig {
   jaw: THREE.Group
   eyes: THREE.Mesh[] // ember slit eyes — dark while dormant
   cracks: THREE.Mesh[] // the smoldering seams
+  throat: THREE.Mesh // the forge-glow deep in the mouth
   wingL: [THREE.Group, THREE.Group, THREE.Group] // arm / mid / tip
   wingR: [THREE.Group, THREE.Group, THREE.Group]
   arms: [THREE.Group, THREE.Group] // knuckle-walking forelimbs
@@ -126,10 +127,13 @@ export function createGargoyle(scale = 1.25): Humanoid {
 
   const granite = mat(graniteTex(171, [128, 134, 146]))
   const graniteDark = mat(graniteTex(172, [88, 94, 106]))
+  const granitePale = mat(graniteTex(173, [168, 172, 180])) // rain-washed edges
+  const moss = mat(graniteTex(174, [86, 102, 78])) // centuries of green neglect
   const worn = solid(0xb9bec8)
   const dark = solid(0x2c2f38)
   const ember = glow(0xff7a1e)
   const emberDeep = glow(0xd94f12)
+  const emberHeart = glow(0xffb03a)
 
   const mk = (parent: THREE.Object3D, w: number, h: number, d: number, m: THREE.Material | THREE.Material[], x: number, y: number, z: number) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
@@ -146,15 +150,27 @@ export function createGargoyle(scale = 1.25): Humanoid {
     mk(spinInner, 0.26, 0.42, 0.54, granite, sx * 0.21, 0.74, -0.28) // haunches, high like a ready spring
     // haunch plate seams
     mk(spinInner, 0.28, 0.05, 0.1, worn, sx * 0.21, 0.9, -0.36)
+    // moss where the rain never dries — shoulders and haunch crowns
+    mk(spinInner, 0.2, 0.04, 0.24, moss, sx * 0.18, 1.0, 0.04)
+    mk(spinInner, 0.19, 0.04, 0.3, moss, sx * 0.22, 0.93, -0.44)
   }
-  // spine ridge — four chiselled fins
-  for (let i = 0; i < 4; i++) mk(spinInner, 0.06, 0.12 - i * 0.015, 0.09, graniteDark, 0, 1.04 - i * 0.02, -0.06 - i * 0.17)
+  // the breast keel — a carven breastplate with the rain-gutter channel
+  mk(spinInner, 0.34, 0.34, 0.1, granitePale, 0, 0.76, 0.52)
+  mk(spinInner, 0.1, 0.3, 0.06, graniteDark, 0, 0.74, 0.575) // the channel
+  mk(spinInner, 0.04, 0.24, 0.03, emberDeep, 0, 0.72, 0.59) // fire waiting in the spout
+  // belly plates — three weathered bands under the keel
+  for (let i = 0; i < 3; i++) mk(spinInner, 0.4 - i * 0.05, 0.05, 0.06, graniteDark, 0, 0.56 - i * 0.055, 0.42 + i * 0.005)
+  // spine ridge — five chiselled fins, tallest at the shoulders
+  for (let i = 0; i < 5; i++)
+    mk(spinInner, 0.06, 0.13 - Math.abs(i - 1) * 0.02, 0.09, graniteDark, 0, 1.05 - Math.abs(i - 1) * 0.015, 0.0 - i * 0.17)
   // chest rain-grooves — the waterspout heritage
   for (const gz of [0.3, 0.42]) mk(spinInner, 0.34, 0.03, 0.03, graniteDark, 0, 0.68, gz)
   // the smoldering seams — old gods' fire packed in the cracks
   const cracks: THREE.Mesh[] = [
     mk(spinInner, 0.03, 0.3, 0.02, emberDeep, 0.16, 0.76, 0.54),
     mk(spinInner, 0.03, 0.22, 0.02, emberDeep, -0.19, 0.72, -0.52),
+    mk(spinInner, 0.2, 0.03, 0.02, ember, 0.12, 0.62, 0.3),
+    mk(spinInner, 0.03, 0.16, 0.02, emberDeep, -0.24, 0.86, 0.1),
   ]
   cracks.push(mk(spinInner, 0.24, 0.03, 0.02, ember, 0, 0.56, -0.34))
 
@@ -169,8 +185,16 @@ export function createGargoyle(scale = 1.25): Humanoid {
   mk(headG, 0.42, 0.32, 0.4, granite, 0, 0.12, 0.04) // skull
   mk(headG, 0.26, 0.18, 0.3, graniteDark, 0, 0.04, 0.34) // muzzle
   mk(headG, 0.1, 0.06, 0.12, graniteDark, 0, 0.2, 0.42).rotation.x = 0.35 // the nose hook
+  // the skull crest — a carved fan between the horn roots
+  mk(headG, 0.08, 0.16, 0.26, granitePale, 0, 0.34, -0.04)
+  mk(headG, 0.05, 0.1, 0.16, granitePale, 0, 0.44, -0.1).rotation.x = -0.3
   // brow shelf — carves the stare into shadow
-  for (const sx of [-1, 1] as const) mk(headG, 0.16, 0.07, 0.16, worn, sx * 0.11, 0.26, 0.18)
+  for (const sx of [-1, 1] as const) {
+    mk(headG, 0.16, 0.07, 0.16, worn, sx * 0.11, 0.26, 0.18)
+    // cheek guards under the eyes + nostrils drilled in the snout
+    mk(headG, 0.05, 0.12, 0.14, granitePale, sx * 0.21, 0.08, 0.18)
+    mk(headG, 0.035, 0.035, 0.03, dark, sx * 0.07, 0.07, 0.48)
+  }
   /* ONE ember slit per side — dark sockets until it wakes */
   const eyes: THREE.Mesh[] = []
   for (const sx of [-1, 1] as const) {
@@ -197,6 +221,11 @@ export function createGargoyle(scale = 1.25): Humanoid {
   headG.add(jaw)
   mk(jaw, 0.22, 0.07, 0.36, graniteDark, 0, -0.03, 0.16)
   for (const fx of [-0.07, 0.07]) mk(jaw, 0.035, 0.08, 0.035, worn, fx, 0.03, 0.3)
+  mk(jaw, 0.06, 0.05, 0.06, worn, 0, -0.02, -0.02).rotation.x = 0.4 // the chin spike
+  // upper fangs flanking the muzzle + the forge-glow deep in the mouth
+  for (const fx of [-0.09, 0.09]) mk(headG, 0.03, 0.09, 0.03, worn, fx, -0.02, 0.4)
+  const throat = mk(headG, 0.12, 0.07, 0.14, emberHeart, 0, 0.02, 0.2)
+  throat.visible = true
 
   /* ---------- forelimbs: the knuckle-walkers ---------- */
   const armL = new THREE.Group()
@@ -209,6 +238,7 @@ export function createGargoyle(scale = 1.25): Humanoid {
     const sx = i === 0 ? 1 : -1
     arm.rotation.x = 0.42
     mk(arm, 0.15, 0.32, 0.17, granite, 0, -0.16, 0.02) // upper arm
+    mk(arm, 0.05, 0.1, 0.12, worn, sx * 0.09, -0.26, 0.02) // the elbow spike
     const fore = new THREE.Group()
     fore.position.set(0, -0.32, 0.02)
     fore.rotation.x = -0.62
@@ -216,6 +246,7 @@ export function createGargoyle(scale = 1.25): Humanoid {
     mk(fore, 0.12, 0.3, 0.13, graniteDark, 0, -0.14, 0) // forearm
     const fist = mk(fore, 0.15, 0.1, 0.16, graniteDark, 0, -0.31, 0.03)
     fist.rotation.x = 0.5
+    mk(fore, 0.16, 0.03, 0.1, granitePale, 0, -0.26, 0.05) // the knuckle ridge
     for (const cz of [0.05, -0.03, -0.11]) {
       const claw = mk(fore, 0.04, 0.04, 0.13, dark, sx * 0.015, -0.34, cz + 0.08)
       claw.rotation.x = -0.5
@@ -232,6 +263,7 @@ export function createGargoyle(scale = 1.25): Humanoid {
   for (const leg of legs) {
     leg.rotation.x = -0.5 // thigh folded forward under the haunch
     mk(leg, 0.18, 0.3, 0.2, granite, 0, -0.16, 0)
+    mk(leg, 0.06, 0.08, 0.12, granitePale, 0, -0.27, 0.08) // the knee cap
     const shin = new THREE.Group()
     shin.position.set(0, -0.28, 0)
     shin.rotation.x = 1.05 // shin sweeps back-down, digitigrade
@@ -239,6 +271,7 @@ export function createGargoyle(scale = 1.25): Humanoid {
     mk(shin, 0.11, 0.26, 0.11, graniteDark, 0, -0.12, 0)
     const foot = mk(shin, 0.15, 0.09, 0.2, graniteDark, 0, -0.28, 0.03)
     foot.rotation.x = -0.55 // sole flat on the stone
+    mk(shin, 0.04, 0.05, 0.07, worn, 0, -0.2, -0.07) // the ankle spur
     for (const tz of [0.06, -0.02, -0.1]) mk(shin, 0.035, 0.035, 0.09, dark, 0, -0.3, tz + 0.13)
   }
 
@@ -258,6 +291,8 @@ export function createGargoyle(scale = 1.25): Humanoid {
     const [arm, mid, tip] = seg
     wRoot.add(arm)
     arm.position.set(sx * 0.06, 0, 0)
+    // the shoulder pauldron — a carved shield over the wing root
+    mk(wRoot, 0.2, 0.16, 0.26, granitePale, sx * 0.02, 0.08, 0.04)
     // wing arm bone + leading plate
     mk(arm, 0.46, 0.09, 0.2, graniteDark, sx * 0.24, 0, -0.02)
     mk(arm, 0.42, 0.03, 0.06, worn, sx * 0.24, 0.05, -0.09)
@@ -266,26 +301,40 @@ export function createGargoyle(scale = 1.25): Humanoid {
     arm.add(midG)
     mk(midG, 0.5, 0.07, 0.16, graniteDark, sx * 0.26, 0, 0)
     mk(midG, 0.44, 0.02, 0.05, worn, sx * 0.26, 0.04, -0.07)
-    // membrane — thin stone cloth under the bone
+    // membrane — thin stone cloth under the bone, ribbed like a fan
     mk(midG, 0.4, 0.015, 0.3, granite, sx * 0.24, -0.03, 0.12)
+    for (const rz of [0.02, 0.12, 0.22]) mk(midG, 0.36, 0.02, 0.025, graniteDark, sx * 0.24, -0.02, rz)
     const tipG = tip
     tipG.position.set(sx * 0.5, 0, 0)
     midG.add(tipG)
     mk(tipG, 0.34, 0.06, 0.12, graniteDark, sx * 0.17, 0, 0)
     mk(tipG, 0.26, 0.015, 0.22, granite, sx * 0.14, -0.02, 0.08)
-    // the single great claw at the wrist — folded hooks like a hook
+    mk(tipG, 0.2, 0.02, 0.02, graniteDark, sx * 0.13, -0.015, 0.19) // the scallop notch
+    // the thumb claw at the wrist + the single great claw
+    mk(tipG, 0.045, 0.045, 0.1, dark, sx * 0.05, 0.03, -0.05).rotation.x = -0.4
     const claw = mk(tipG, 0.05, 0.05, 0.14, dark, sx * 0.32, -0.01, -0.04)
     claw.rotation.x = -0.7
   }
 
-  /* ---------- tail: the barbed drip ---------- */
+  /* ---------- tail: two bones, twin barbs, a spade ---------- */
   const tail = new THREE.Group()
   tail.position.set(0, 0.82, -0.52)
+  tail.rotation.x = 0.12
   spinInner.add(tail)
   mk(tail, 0.11, 0.11, 0.4, graniteDark, 0, 0, -0.18)
-  mk(tail, 0.08, 0.08, 0.26, graniteDark, 0, 0, -0.48)
-  const barb = mk(tail, 0.13, 0.035, 0.14, worn, 0, 0, -0.64)
-  barb.rotation.x = 0.25
+  mk(tail, 0.03, 0.05, 0.3, granitePale, 0, -0.07, -0.2) // the underside ridge
+  const tailMid = new THREE.Group()
+  tailMid.position.set(0, 0, -0.36)
+  tail.add(tailMid)
+  mk(tailMid, 0.08, 0.08, 0.26, graniteDark, 0, 0, -0.12)
+  for (const sxb of [-1, 1] as const) {
+    const barb = mk(tailMid, 0.1, 0.03, 0.1, worn, sxb * 0.07, 0.01, -0.2)
+    barb.rotation.y = sxb * 0.5
+    barb.rotation.x = 0.2
+  }
+  const spade = mk(tailMid, 0.15, 0.035, 0.16, worn, 0, 0, -0.32)
+  spade.rotation.x = 0.25
+  mk(tailMid, 0.04, 0.03, 0.05, emberDeep, 0, 0.01, -0.4) // a coal at the very tip
 
   group.scale.setScalar(scale)
 
@@ -295,6 +344,7 @@ export function createGargoyle(scale = 1.25): Humanoid {
     jaw,
     eyes,
     cracks,
+    throat,
     wingL,
     wingR,
     arms,
@@ -351,6 +401,7 @@ export function animGargoyleDormant(h: Humanoid) {
   r.jaw.rotation.x = 0.05 // mouth sealed
   for (const e of r.eyes) e.visible = false
   for (const c of r.cracks) c.visible = false
+  r.throat.visible = false // even the mouth-fire sleeps
 }
 
 /** awake on its perch — breathing stone, hunting stare, wing shiver */
@@ -359,6 +410,8 @@ export function animGargoylePerch(h: Humanoid, t: number) {
   const b = Math.sin(t * 1.9)
   for (const e of r.eyes) e.visible = true
   for (const c of r.cracks) c.visible = true
+  r.throat.visible = true
+  r.throat.scale.setScalar(1 + Math.sin(t * 2.6) * 0.18) // the forge breathes
   h.root.position.y = b * 0.012
   r.headG.rotation.y = Math.sin(t * 0.55) * 0.5
   r.headG.rotation.x = 0.08 + Math.sin(t * 0.9) * 0.05
@@ -376,6 +429,7 @@ export function animGargoyleUnfurl(h: Humanoid, p: number) {
   const r = resetGargoyle(h)
   for (const e of r.eyes) e.visible = p > 0.18
   for (const c of r.cracks) c.visible = p > 0.3
+  r.throat.visible = p > 0.3
   if (p < 0.3) {
     // the stone inhales
     const q = p / 0.3
@@ -440,6 +494,8 @@ export function animGargoyleLunge(h: Humanoid, p: number) {
   const r = resetGargoyle(h)
   for (const e of r.eyes) e.visible = true
   for (const c of r.cracks) c.visible = true
+  r.throat.visible = true
+  r.throat.scale.setScalar(1 + Math.max(0, Math.sin(p * Math.PI * 2)) * 0.5) // the roar's breath
   if (p < 0.34) {
     // coil — weight back, wings rising
     const q = ease(p / 0.34)
@@ -501,6 +557,7 @@ export function animGargoyleDead(h: Humanoid, p: number) {
   const embersOn = p < 0.55
   for (const e of r.eyes) e.visible = embersOn
   for (const c of r.cracks) c.visible = p < 0.75
+  r.throat.visible = p < 0.5
   if (p >= 0.75) return
 }
 
@@ -516,11 +573,13 @@ export function animGargoyleDead(h: Humanoid, p: number) {
 export interface CantorRig {
   headG: THREE.Group
   hem: THREE.Group[] // the three tattered robe strips
+  mantle: THREE.Group // the shoulder cape that leans with the song
   censerSwing: THREE.Group // the pendulum pivot at the hands
   censerCore: THREE.Mesh // the ember in the cage
-  halo: THREE.Group // three orbiting candles
+  halo: THREE.Group // five orbiting candles
   flames: THREE.Mesh[] // all glow flames (for the gutter-out)
   hands: THREE.Group
+  beads: THREE.Group // the prayer strand hanging from the wrists
 }
 
 export function createCantor(scale = 1.0): Humanoid {
@@ -577,10 +636,35 @@ export function createCantor(scale = 1.0): Humanoid {
   for (const sx of [-1, 1] as const) {
     mk(spinInner, 0.09, 0.52, 0.04, pale, sx * 0.11, 1.0, 0.2)
     mk(spinInner, 0.1, 0.08, 0.05, gold, sx * 0.11, 0.72, 0.2)
+    // the back stole — a wide drape falling from each shoulder blade
+    mk(spinInner, 0.11, 0.44, 0.04, vestmentDark, sx * 0.13, 1.0, -0.21)
+    mk(spinInner, 0.12, 0.07, 0.05, gold, sx * 0.13, 0.76, -0.215)
   }
+  // the inner robe — the pale V that shows at the chest
+  mk(spinInner, 0.16, 0.34, 0.04, under, 0, 1.14, 0.195)
+  mk(spinInner, 0.05, 0.05, 0.05, gold, 0, 1.28, 0.21) // the clasp
   // the collar ring + shoulder rolls
   mk(spinInner, 0.44, 0.1, 0.32, vestmentDark, 0, 1.33, 0)
   for (const sx of [-1, 1] as const) mk(spinInner, 0.16, 0.14, 0.24, vestment, sx * 0.3, 1.26, 0)
+  // the mantle — a shoulder cape of hanging cloth strips that sway with the verse
+  const mantle = new THREE.Group()
+  mantle.position.set(0, 1.3, 0)
+  spinInner.add(mantle)
+  for (const [mx, mz, len] of [
+    [-0.2, 0.05, 0.34], [-0.1, -0.14, 0.3], [0.0, 0.16, 0.38], [0.1, -0.14, 0.3], [0.2, 0.05, 0.34],
+  ] as const) {
+    const strip = new THREE.Group()
+    strip.position.set(mx, 0, mz)
+    mantle.add(strip)
+    mk(strip, 0.1, len, 0.05, vestmentDark, 0, -len / 2, 0)
+    mk(strip, 0.11, 0.04, 0.06, gold, 0, -len + 0.02, 0) // the gilded tip
+  }
+  // the cincture — a rope belt with two hanging cords
+  mk(spinInner, 0.5, 0.06, 0.42, pale, 0, 0.86, 0)
+  for (const sx of [-1, 1] as const) {
+    mk(spinInner, 0.045, 0.24, 0.045, pale, sx * 0.14, 0.72, 0.18)
+    mk(spinInner, 0.05, 0.04, 0.05, gold, sx * 0.14, 0.59, 0.18) // the cord's metal end
+  }
 
   /* ---------- the hem: three tattered strips, each with its own sway ---------- */
   const hem: THREE.Group[] = []
@@ -600,6 +684,13 @@ export function createCantor(scale = 1.0): Humanoid {
   mk(headG, 0.42, 0.4, 0.42, vestmentDark, 0, 0.14, 0)
   const point = mk(headG, 0.2, 0.26, 0.1, vestmentDark, 0, 0.42, -0.08)
   point.rotation.x = -0.45 // the hood's peak leans back like a flame
+  // the gold circlet — the last mark of the office, stitched on the brow
+  mk(headG, 0.44, 0.05, 0.44, gold, 0, 0.3, 0)
+  // hood side flaps — cloth that never learned to stop falling
+  for (const sx of [-1, 1] as const) {
+    const flap = mk(headG, 0.06, 0.2, 0.16, vestmentDark, sx * 0.22, 0.04, -0.04)
+    flap.rotation.z = sx * 0.14
+  }
   mk(headG, 0.3, 0.26, 0.05, voidM, 0, 0.12, 0.21) // the face — no face at all
   const flames: THREE.Mesh[] = []
   for (const sx of [-1, 1] as const) {
@@ -609,14 +700,23 @@ export function createCantor(scale = 1.0): Humanoid {
     flames.push(f)
   }
 
-  /* ---------- the folded hands ---------- */
+  /* ---------- the folded hands + the prayer strand ---------- */
   const hands = new THREE.Group()
   hands.position.set(0, 1.0, 0.22)
   spinInner.add(hands)
   mk(hands, 0.09, 0.2, 0.06, pale, -0.05, 0, 0).rotation.z = 0.35
   mk(hands, 0.09, 0.2, 0.06, pale, 0.05, -0.02, 0).rotation.z = -0.35
+  // the beads — a loop of dark prayer beads between the wrists
+  const beads = new THREE.Group()
+  beads.position.set(0, -0.1, 0.02)
+  hands.add(beads)
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2
+    mk(beads, 0.035, 0.035, 0.035, voidM, Math.cos(a) * 0.085, Math.sin(a) * 0.1 - 0.04, 0.03)
+  }
+  mk(beads, 0.045, 0.045, 0.045, gold, 0, -0.15, 0.03) // the gold guru bead
 
-  /* ---------- the censer: chain, cage, ember ---------- */
+  /* ---------- the censer: three chains, a domed cage, an ember ---------- */
   const censerSwing = new THREE.Group()
   censerSwing.position.set(0.1, 0.94, 0.26) // hangs from the right hand
   spinInner.add(censerSwing)
@@ -628,19 +728,24 @@ export function createCantor(scale = 1.0): Humanoid {
   for (const [cx2, cz2] of [[-0.08, -0.08], [0.08, -0.08], [-0.08, 0.08], [0.08, 0.08]] as const)
     mk(cage, 0.025, 0.16, 0.025, ironM, cx2, 0, cz2)
   mk(cage, 0.2, 0.05, 0.2, ironM, 0, -0.09, 0) // the bowl
+  mk(cage, 0.13, 0.045, 0.13, ironM, 0, 0.1, 0) // the dome lid
+  mk(cage, 0.04, 0.06, 0.04, ironM, 0, 0.15, 0) // the lid's cross finial
+  for (const sxc of [-1, 1] as const) mk(cage, 0.02, 0.12, 0.02, ironM, sxc * 0.11, 0.02, 0) // side chains
   const core = mk(cage, 0.11, 0.08, 0.11, emberCore, 0, -0.02, 0)
   flames.push(core)
 
-  /* ---------- the halo: three candles that lean in to listen ---------- */
+  /* ---------- the halo: five candles that lean in to listen ---------- */
   const halo = new THREE.Group()
   halo.position.set(0, 1.62, -0.1)
   spinInner.add(halo)
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2
+    const high = i % 2 === 1 // two ride higher, held by invisible hands
     const candle = new THREE.Group()
-    candle.position.set(Math.cos(a) * 0.4, Math.sin(a * 2) * 0.05, Math.sin(a) * 0.22)
+    candle.position.set(Math.cos(a) * 0.4, Math.sin(a * 2) * 0.05 + (high ? 0.14 : 0), Math.sin(a) * 0.22)
     halo.add(candle)
-    mk(candle, 0.06, 0.13, 0.06, pale, 0, 0, 0)
+    mk(candle, 0.06, high ? 0.1 : 0.13, 0.06, pale, 0, 0, 0)
+    mk(candle, 0.07, 0.02, 0.07, gold, 0, high ? 0.055 : 0.07, 0) // the wax drip ring
     const fl = mk(candle, 0.04, 0.08, 0.04, flame, 0, 0.1, 0)
     flames.push(fl)
   }
@@ -655,7 +760,7 @@ export function createCantor(scale = 1.0): Humanoid {
 
   group.scale.setScalar(scale)
 
-  const rig: CantorRig = { headG, hem, censerSwing, censerCore: core, halo, flames, hands }
+  const rig: CantorRig = { headG, hem, mantle, censerSwing, censerCore: core, halo, flames, hands, beads }
   group.userData.cantor = rig
 
   return {
@@ -687,6 +792,8 @@ function resetCantor(h: Humanoid) {
   r.hands.position.set(0, 1.0, 0.22)
   r.censerSwing.rotation.set(0, 0, 0)
   for (const strip of r.hem) strip.rotation.set(0, 0, 0)
+  for (const strip of r.mantle.children) strip.rotation.set(0, 0, 0)
+  r.beads.rotation.set(0, 0, 0)
   return r
 }
 
@@ -703,6 +810,16 @@ export function animCantorFloat(h: Humanoid, t: number) {
     r.hem[i].rotation.x = Math.sin(ph) * 0.16
     r.hem[i].rotation.z = Math.sin(ph * 0.7 + 1) * 0.1
   }
+  // the mantle sway — the cape drifts against the body's roll
+  for (let i = 0; i < r.mantle.children.length; i++) {
+    const strip = r.mantle.children[i]
+    const ph = t * 1.2 + i * 1.4
+    strip.rotation.x = Math.sin(ph) * 0.12
+    strip.rotation.z = Math.sin(ph * 0.6) * 0.09
+  }
+  // the beads tick around their loop, one prayer at a time
+  r.beads.rotation.z = Math.sin(t * 0.9) * 0.16
+  r.beads.rotation.x = Math.sin(t * 1.3) * 0.1
   // the censer swings its slow east-and-west arc
   r.censerSwing.rotation.x = Math.sin(t * 1.25) * 0.5
   r.censerSwing.rotation.z = Math.cos(t * 1.25) * 0.22
@@ -725,6 +842,13 @@ export function animCantorGlide(h: Humanoid, t: number) {
     r.hem[i].rotation.x = -0.5 + Math.sin(ph) * 0.2 // the strips stream behind
     r.hem[i].rotation.z = Math.sin(ph * 0.8) * 0.08
   }
+  // the mantle streams up behind the lean
+  for (let i = 0; i < r.mantle.children.length; i++) {
+    const strip = r.mantle.children[i]
+    strip.rotation.x = -0.55 + Math.sin(t * 3.4 + i * 1.3) * 0.14
+  }
+  // the beads trail the motion like a pendulum
+  r.beads.rotation.x = -0.5 + Math.sin(t * 3.6) * 0.18
   r.censerSwing.rotation.x = 0.9 // the censer held close
   r.censerSwing.rotation.z = Math.sin(t * 3.4) * 0.12
   r.halo.rotation.y = t * 1.1
@@ -742,6 +866,13 @@ export function animCantorChant(h: Humanoid, p: number) {
   r.censerSwing.rotation.z = Math.sin(p * 21) * 0.3 * rise // the mad whirling
   r.censerCore.scale.setScalar(1 + rise * (0.5 + Math.sin(p * 40) * 0.2)) // the ember feeds
   h.root.rotation.z = Math.sin(p * 14) * 0.02 * rise
+  // the mantle flares out with the rising voice
+  for (let i = 0; i < r.mantle.children.length; i++) {
+    const strip = r.mantle.children[i]
+    strip.rotation.x = -0.7 * rise + Math.sin(p * 15 + i * 2) * 0.08 * rise
+  }
+  // the beads swing like a censer of their own
+  r.beads.rotation.x = -1.2 * rise + Math.sin(p * 18) * 0.2 * rise
   for (let i = 0; i < r.hem.length; i++) {
     r.hem[i].rotation.x = Math.sin(p * 16 + i * 2) * 0.1 - 0.1
   }
@@ -780,6 +911,13 @@ export function animCantorDead(h: Humanoid, p: number) {
     r.hem[i].rotation.x = 0.3 * q
     r.hem[i].rotation.z = (i - 1) * 0.35 * q // the strips fall apart
   }
+  // the mantle collapses inward, strip by strip
+  for (let i = 0; i < r.mantle.children.length; i++) {
+    const strip = r.mantle.children[i]
+    strip.rotation.x = 0.5 * q
+    strip.rotation.z = (i - 2) * 0.3 * q
+  }
+  r.beads.rotation.x = 1.1 * q // the strand spills from the slack hands
   r.censerSwing.rotation.x = lerpN(0, 1.5, q) // the censer drops to its side
   // the candles gutter out one by one — the office ends note by note
   for (let i = 0; i < r.flames.length; i++) r.flames[i].visible = p < 0.25 + i * 0.09
@@ -800,6 +938,7 @@ export interface HoundRig {
   ears: [THREE.Mesh, THREE.Mesh]
   tail: [THREE.Group, THREE.Group, THREE.Group]
   cracks: THREE.Mesh[] // the ember seams between the ribs
+  heart: THREE.Mesh // the coal that would not cool, glowing in the chest
   legsF: [THREE.Group, THREE.Group]
   legsB: [THREE.Group, THREE.Group]
   shinFL: THREE.Group[]
@@ -841,6 +980,7 @@ export function createAshHound(scale = 0.95): Humanoid {
   const dark = solid(0x17130f)
   const ember = glow(0xff7a1e)
   const emberEye = glow(0xffb03a)
+  const emberHeart = glow(0xffb03a) // the coal's core, brighter than the seams
 
   const mk = (parent: THREE.Object3D, w: number, h: number, d: number, m: THREE.Material | THREE.Material[], x: number, y: number, z: number) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
@@ -854,12 +994,26 @@ export function createAshHound(scale = 0.95): Humanoid {
   const torso = mk(spinInner, 0.4, 0.38, 0.52, fur, 0, 0.64, 0.24)
   mk(spinInner, 0.34, 0.3, 0.42, fur, 0, 0.54, -0.06) // the tucked waist
   mk(spinInner, 0.38, 0.4, 0.44, furDark, 0, 0.68, -0.38) // the haunch
-  // the ribcage the ash burned open — pale slats over the ember seams
-  for (let i = 0; i < 4; i++)
-    mk(spinInner, 0.43, 0.035, 0.045, bone, 0, 0.42 + (i % 2) * 0.035, 0.4 - i * 0.14)
+  // scapula blades — the shoulders of a sprinter, charred plates over the fur
+  for (const sx of [-1, 1] as const) {
+    const scap = mk(spinInner, 0.05, 0.22, 0.24, bone, sx * 0.21, 0.72, 0.24)
+    scap.rotation.x = 0.15
+    mk(spinInner, 0.19, 0.04, 0.22, furDark, sx * 0.19, 0.86, 0.26) // the wither-frost stripe
+  }
+  // the pelvis — pale blades riding the haunch
+  for (const sx of [-1, 1] as const) {
+    const pelv = mk(spinInner, 0.05, 0.2, 0.2, bone, sx * 0.19, 0.78, -0.44)
+    pelv.rotation.x = -0.2
+  }
+  // the ribcage the ash burned open — six pale slats over the ember seams
+  for (let i = 0; i < 6; i++)
+    mk(spinInner, 0.43, 0.035, 0.045, bone, 0, 0.4 + (i % 2) * 0.035, 0.42 - i * 0.105)
   const cracks: THREE.Mesh[] = []
-  for (const cz of [0.3, 0.16, 0.02]) cracks.push(mk(spinInner, 0.03, 0.2, 0.03, ember, 0.05, 0.52, cz))
+  for (const cz of [0.32, 0.2, 0.06]) cracks.push(mk(spinInner, 0.03, 0.2, 0.03, ember, 0.05, 0.52, cz))
   cracks.push(mk(spinInner, 0.03, 0.16, 0.03, ember, -0.06, 0.5, 0.09))
+  cracks.push(mk(spinInner, 0.03, 0.13, 0.03, emberEye, -0.07, 0.56, 0.26))
+  // the heart — the first forge's coal, still refusing the dark
+  const heart = mk(spinInner, 0.09, 0.09, 0.09, emberHeart, 0, 0.56, 0.18)
   // the spine ridge — five charred spikes
   for (let i = 0; i < 5; i++) mk(spinInner, 0.05, 0.1 - Math.abs(i - 2) * 0.015, 0.07, furDark, 0, 0.85, 0.34 - i * 0.19)
 
@@ -874,6 +1028,17 @@ export function createAshHound(scale = 0.95): Humanoid {
   neck.add(headG)
   mk(headG, 0.28, 0.26, 0.3, bone, 0, 0.06, 0.02)
   mk(headG, 0.18, 0.14, 0.28, bone, 0, 0.0, 0.26) // the muzzle
+  // the skull's architecture — sagittal crest, brow bar, cheek flares
+  mk(headG, 0.06, 0.09, 0.24, bone, 0, 0.21, -0.02) // the sagittal crest
+  mk(headG, 0.26, 0.05, 0.08, bone, 0, 0.15, 0.12) // the brow bar
+  for (const sx of [-1, 1] as const) {
+    const zyg = mk(headG, 0.05, 0.05, 0.14, bone, sx * 0.16, 0.06, 0.08) // the cheek flare
+    zyg.rotation.y = -sx * 0.15
+    mk(headG, 0.03, 0.03, 0.03, dark, sx * 0.06, 0.03, 0.39) // the nostrils
+    mk(headG, 0.035, 0.1, 0.035, bone, sx * 0.07, -0.04, 0.36) // the upper canines
+  }
+  const mouthGlow = mk(headG, 0.1, 0.05, 0.2, ember, 0, -0.01, 0.16) // heat between the jaws
+  mouthGlow.visible = true
   const jaw = new THREE.Group()
   jaw.position.set(0, -0.05, 0.06)
   headG.add(jaw)
@@ -902,8 +1067,10 @@ export function createAshHound(scale = 0.95): Humanoid {
     shin.position.set(0, -0.22, 0)
     hip.add(shin)
     mk(shin, 0.08, 0.2, 0.08, fur, 0, -0.1, 0)
+    mk(shin, 0.035, 0.05, 0.06, bone, 0, -0.14, -0.06) // the knee spur
     const paw = mk(shin, 0.1, 0.06, 0.15, furDark, 0, -0.23, 0.02)
     paw.rotation.x = 0.1
+    mk(shin, 0.03, 0.05, 0.035, dark, sx * 0.055, -0.17, -0.02) // the dewclaw
     for (const cz of [0.05, -0.01]) mk(shin, 0.03, 0.03, 0.06, dark, 0, -0.26, cz + 0.05)
     return { hip, shin }
   }
@@ -920,7 +1087,7 @@ export function createAshHound(scale = 0.95): Humanoid {
   const legsF: [THREE.Group, THREE.Group] = [fL.hip, fR.hip]
   const legsB: [THREE.Group, THREE.Group] = [bL.hip, bR.hip]
 
-  /* ---------- the cinder tail ---------- */
+  /* ---------- the cinder tail — four segments and a dying coal ---------- */
   const tailRoot = new THREE.Group()
   tailRoot.position.set(0, 0.76, -0.56)
   spinInner.add(tailRoot)
@@ -938,12 +1105,18 @@ export function createAshHound(scale = 0.95): Humanoid {
   t3.rotation.x = 0.35
   t2.add(t3)
   mk(t3, 0.05, 0.05, 0.14, dark, 0, 0, -0.07)
-  mk(t3, 0.035, 0.035, 0.05, ember, 0, 0, -0.15) // the last cinder
+  const t4 = new THREE.Group()
+  t4.position.set(0, 0, -0.14)
+  t4.rotation.x = 0.3
+  t3.add(t4)
+  mk(t4, 0.04, 0.04, 0.1, dark, 0, 0, -0.05)
+  mk(t4, 0.055, 0.055, 0.06, ember, 0, 0, -0.11) // the last cinder, bigger than before
+  mk(t4, 0.028, 0.028, 0.028, emberEye, 0, 0.045, -0.1) // a spark leapfrogging the tip
   const tail: [THREE.Group, THREE.Group, THREE.Group] = [t1, t2, t3]
 
   group.scale.setScalar(scale)
 
-  const rig: HoundRig = { headG, jaw, ears, tail, cracks, legsF, legsB, shinFL: [fL.shin, fR.shin], shinBL: [bL.shin, bR.shin] }
+  const rig: HoundRig = { headG, jaw, ears, tail, cracks, heart, legsF, legsB, shinFL: [fL.shin, fR.shin], shinBL: [bL.shin, bR.shin] }
   group.userData.hound = rig
 
   return {
@@ -979,6 +1152,8 @@ function resetHound(h: Humanoid) {
   for (const hip of r.legsB) hip.rotation.set(0.55, 0, 0)
   for (const shin of r.shinFL) shin.rotation.set(0, 0, 0)
   for (const shin of r.shinBL) shin.rotation.set(-0.85, 0, 0)
+  r.heart.scale.setScalar(1)
+  r.heart.visible = true
   return r
 }
 
@@ -995,6 +1170,7 @@ export function animHoundIdle(h: Humanoid, t: number) {
   r.tail[1].rotation.y = Math.sin(t * 0.8 - 0.6) * 0.3
   r.legsF[0].rotation.x = Math.sin(t * 2.1) * 0.03
   r.legsF[1].rotation.x = -Math.sin(t * 2.1) * 0.03
+  r.heart.scale.setScalar(1 + Math.sin(t * 3.7) * 0.12) // the coal breathes
   for (const c of r.cracks) {
     c.visible = true
     c.scale.y = 1 + Math.sin(t * 3.4 + c.id) * 0.12 // the seams breathe
@@ -1020,6 +1196,7 @@ export function animHoundRun(h: Humanoid, t: number) {
   r.tail[0].rotation.y = Math.sin(f * 0.5) * 0.15
   r.tail[1].rotation.y = Math.sin(f * 0.5 - 0.5) * 0.2
   r.tail[2].rotation.y = Math.sin(f * 0.5 - 1) * 0.25
+  r.heart.scale.setScalar(1.15 + Math.sin(f * 0.9) * 0.15) // the gallop pumps it
   for (const c of r.cracks) c.scale.y = 1.2 + Math.sin(f * 0.7 + c.id) * 0.25
 }
 
@@ -1061,6 +1238,7 @@ export function animHoundLunge(h: Humanoid, p: number) {
     r.jaw.rotation.x = lerpN(0.85, 0.1, q)
   }
   for (const c of r.cracks) c.scale.y = 1.35 // burning bright at the strike
+  r.heart.scale.setScalar(1.4 + Math.max(0, Math.sin(p * Math.PI)) * 0.4) // the coal blazes
 }
 
 /** the fall — rolls to its side, the pack runs on without a sound */
@@ -1078,4 +1256,7 @@ export function animHoundDead(h: Humanoid, p: number) {
   r.tail[0].rotation.x = lerpN(0.5, 1.2, q)
   // the seams cool from tail to chest — the last cinder goes dark
   for (let i = 0; i < r.cracks.length; i++) r.cracks[i].visible = p < 0.45 + i * 0.12
+  // the heart holds out the longest — then even the coal forgets
+  r.heart.visible = p < 0.8
+  r.heart.scale.setScalar(Math.max(0.4, 1.2 - q * 0.8))
 }
