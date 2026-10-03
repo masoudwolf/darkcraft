@@ -165,6 +165,7 @@ export class CastleZone {
   private solid = new Uint8Array(64 * HALF * 2 * HALF * 2)
   private L: Record<string, Vec3Lite[]> = {}
   private LC: Record<string, Vec3Lite[]> = {}
+  private S: Record<string, { x: number; y: number; z: number; w: number; h: number; d: number }[]> = {}
   private t = 0
   private clouds: THREE.Mesh[] = []
 
@@ -184,8 +185,12 @@ export class CastleZone {
     this.buildLibrary()
     this.buildBellTower()
     this.buildButtresses()
+    this.buildYardDressing()
+    this.sealVoids()
+    this.buildSubDetails()
     this.buildSky()
     this.flush()
+    this.buildSubs()
     this.group.add(this.ceil)
   }
 
@@ -258,6 +263,54 @@ export class CastleZone {
     for (let x = x0; x <= x1; x++)
       for (let y = y0; y <= y1; y++)
         for (let z = z0; z <= z1; z++) this.solid[this.cellIdx(x, z, y)] = 0
+  }
+
+  /* ---- SUB-VOXELS — the ⅓/⅔ detail layer ----
+     Full blocks are too coarse for gothic trim, so the castle carries
+     a second, finer grid: blocks ⅓ or ⅔ of a voxel, used ONLY where a
+     structural/artistic reason exists (arch moldings, tracery, statue
+     anatomy, claw grooves, book spines). Decor only — never solid, so
+     physics and walkability stay exactly as designed. */
+  /** sub-block anchored to a CELL: center = cell center + offset/3,
+      size = (w,h,d)/3 — 1 = ⅓ voxel, 2 = ⅔, 3 = full */
+  private sb(mat: string, x: number, y: number, z: number, w: number, h: number, d: number, ox = 0, oy = 0, oz = 0) {
+    ;(this.S[mat] ??= []).push({
+      x: x + 0.5 + ox / 3,
+      y: y + 0.5 + oy / 3,
+      z: z + 0.5 + oz / 3,
+      w: w / 3,
+      h: h / 3,
+      d: d / 3,
+    })
+  }
+  /** sub-block at an ABSOLUTE world center (for radial tracery etc.) */
+  private sbA(mat: string, cx: number, cy: number, cz: number, w: number, h: number, d: number) {
+    ;(this.S[mat] ??= []).push({ x: cx, y: cy, z: cz, w: w / 3, h: h / 3, d: d / 3 })
+  }
+  private buildSubs() {
+    for (const [key, list] of Object.entries(this.S)) {
+      const mat = this.mats[key]
+      if (!mat || !list.length) continue
+      const geo = new THREE.BoxGeometry(1, 1, 1)
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length)
+      const m = new THREE.Matrix4()
+      const q = new THREE.Quaternion()
+      const p = new THREE.Vector3()
+      const sc = new THREE.Vector3()
+      for (let i = 0; i < list.length; i++) {
+        const v = list[i]
+        p.set(v.x, v.y, v.z)
+        sc.set(v.w, v.h, v.d)
+        m.compose(p, q, sc)
+        mesh.setMatrixAt(i, m)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.frustumCulled = false
+      mesh.castShadow = false
+      mesh.receiveShadow = true
+      this.group.add(mesh)
+    }
+    this.S = {}
   }
   /** pointed arch band: two mirrored arcs stepping up to a peak */
   private archTop(mat: string, x0: number, x1: number, yBase: number, z: number, ceil = false) {
@@ -334,6 +387,24 @@ export class CastleZone {
   }
 
   /* ============ the island ============ */
+  /** footprints the terrain renderer skips — the buildings own these
+      floors; sealVoids() guarantees they never stay open */
+  private builtAt(x: number, z: number) {
+    return (
+      // cathedral + transept + choir + apse footprint
+      (Math.abs(x) <= 21 && z <= 21 && z >= -32) ||
+      // the outer court + gatehouse block
+      (Math.abs(x) <= 27 && z >= 15 && z <= 34) ||
+      (Math.abs(x) <= 12 && z >= 34 && z <= 41) ||
+      // bridge + landing
+      (Math.abs(x) <= 6 && z >= 40 && z <= 59) ||
+      // bell tower + library annex
+      (x >= -32 && x <= -11 && z >= -4 && z <= 32) ||
+      // the crypt stair opening in the east aisle
+      (x >= CRYPT_SHAFT.x0 && x <= CRYPT_SHAFT.x1 && z >= CRYPT_SHAFT.z0 && z <= CRYPT_SHAFT.z1)
+    )
+  }
+
   private genIsland() {
     const r = mulberry32(7001)
     const o1 = r() * 10, o2 = r() * 10
@@ -363,18 +434,7 @@ export class CastleZone {
       }
       return false
     }
-    const built = (x: number, z: number) =>
-      // cathedral + transept + choir + apse footprint
-      (Math.abs(x) <= 21 && z <= 21 && z >= -32) ||
-      // the outer court + gatehouse block
-      (Math.abs(x) <= 27 && z >= 15 && z <= 34) ||
-      (Math.abs(x) <= 12 && z >= 34 && z <= 41) ||
-      // bridge + landing
-      (Math.abs(x) <= 6 && z >= 40 && z <= 59) ||
-      // bell tower + library annex
-      (x >= -32 && x <= -11 && z >= -4 && z <= 32) ||
-      // the crypt stair opening in the east aisle
-      (x >= CRYPT_SHAFT.x0 && x <= CRYPT_SHAFT.x1 && z >= CRYPT_SHAFT.z0 && z <= CRYPT_SHAFT.z1)
+    const built = (x: number, z: number) => this.builtAt(x, z)
     for (let z = -HALF; z < HALF; z++)
       for (let x = -HALF; x < HALF; x++) {
         const h = this.heights[this.idx(x, z)]
@@ -1073,6 +1133,321 @@ export class CastleZone {
         this.gargoyle(px, y + 12, z + 1, sx)
       }
     }
+  }
+
+  /* ============ yard dressing — no bare ground inside the works ============
+     The terrain skips every building footprint, so anything the
+     builders don't floor by hand would be a hole. These are the
+     deliberate fills: each yard has a purpose, a pavement and its
+     own furniture — sealVoids() then mops up whatever is left. */
+  private buildYardDressing() {
+    const y = PLATEAU + 1
+    const b0 = y - 1
+    const pave = (x: number, z: number, mat: string) => {
+      if (this.solidStruct(x, b0, z)) return
+      this.b(mat, x, b0, z)
+    }
+    const cobbleAt = (x: number, z: number) => ((x * 5 + z * 13) % 11 === 0 ? 'mossy' : 'cobble')
+
+    /* -- WEST: the monks' ossuary court (bell tower ↔ library) -- */
+    for (let z = -3; z <= 20; z++)
+      for (let x = -31; x <= -23; x++) {
+        if (x >= -27 && x <= -25) pave(x, z, (x + z) % 2 === 0 ? 'bonestone' : 'gobrick') // the processional strip
+        else pave(x, z, cobbleAt(x, z))
+      }
+    // six grave slabs of the night order — two rows facing the path
+    for (const gz of [0, 6, 12])
+      for (const gx of [-30, -24]) {
+        this.fill('stone', gx, gx + 1, y, y, gz, gz + 1)
+        this.sbA('bonestone', gx + 1, y + 0.62, gz + 1, 8, 2, 8) // ⅔ lid slab
+        this.sbA('gold', gx + 1, y + 0.97, gz + 1, 2, 1, 8) // ⅓ gilded spine
+        if ((gx + gz) % 3 === 0) this.sb('glow', gx, y, gz + 2, 1, 1, 1, 0, 0.4, -0.6) // ⅓ votive candle
+      }
+    // two dead cypress sentinels
+    this.col('log', -31, 3, y, y + 3)
+    this.b('log', -30, y + 3, 3)
+    this.col('log', -31, 17, y, y + 2)
+    // candle shrine against the library's south gable
+    this.b('cobble', -23, y, -2)
+    this.b('glow', -23, y + 1, -2)
+    this.sb('bonestone', -22, y, -2, 2, 3, 2, -0.5, 0, 0) // ⅔ shrine niche
+    // low watch-wall along the island rim
+    for (let z = -2; z <= 20; z += 2) this.b('gobrick', -31, y + 1, z)
+    // rubble drifts where the masons gave up
+    this.sb('cobble', -29, y, 15, 2, 1, 2, 0, 0.45, 0)
+    this.sb('cobble', -28, y, 15, 1, 1, 1, 0.6, 0.75, 0.4)
+    this.sb('bonestone', -25, y, 9, 2, 1, 1, 0, 0.45, 0)
+
+    /* -- NORTH: the parvis of the apse -- */
+    for (let z = -31; z <= -36; z++)
+      for (let x = -12; x <= 12; x++) {
+        const d = Math.hypot(x, z + 33)
+        pave(x, z, d < 6.4 ? ((x + z) % 2 === 0 ? 'marble' : 'marbledark') : d < 8.2 ? 'bonestone' : cobbleAt(x, z))
+      }
+    // four candle stands framing the apse window
+    for (const [cx, cz] of [[-7, -32], [7, -32], [-7, -35], [7, -35]] as const) {
+      this.b('cobble', cx, y, cz)
+      this.b('glow', cx, y + 1, cz)
+      this.sb('iron', cx, y + 1, cz, 1, 2, 1, 0, -0.8, 0) // ⅓ stand under the flame
+    }
+    // a nameless penitent kneels facing the glass
+    this.fill('darkstone', -1, 0, y, y, -35, -34)
+    this.b('darkstone', -1, y + 1, -36)
+    this.sbA('darkstone', -0.5, y + 1.55, -36.6, 2, 2, 2) // ⅔ bowed head
+    // bone offerings left by pilgrims
+    this.sb('bone', -3, y, -33, 2, 1, 2, 0, 0.45, 0)
+    this.sb('bone', 4, y, -31, 1, 1, 2, 0.4, 0.45, 0)
+    this.sb('bone', 2, y, -36, 2, 1, 1, 0, 0.45, 0.3)
+
+    /* -- EAST: the wall patrol walk (curtain ↔ buttress line) -- */
+    for (let z = -28; z <= 14; z++)
+      for (let x = 22; x <= 28; x++) {
+        if (x >= 24 && x <= 26) pave(x, z, cobbleAt(x, z))
+        else pave(x, z, (x * 3 + z) % 7 === 0 ? 'mossy' : 'gobrick')
+      }
+    for (const tz of [-24, -10, 4]) {
+      this.b('log', 27, y, tz)
+      this.b('glow', 27, y + 1, tz)
+    }
+    this.sb('cobble', 23, y, -18, 2, 1, 2, 0, 0.45, 0) // rubble
+    this.sb('stone', 26, y, -2, 2, 1, 1, 0, 0.45, 0)
+    this.sb('cobble', 24, y, 10, 1, 1, 2, 0.4, 0.45, 0)
+
+    /* -- COURT SHOULDERS (between turrets and towers) -- */
+    for (let z = 15; z <= 20; z++)
+      for (let x = -19; x <= 19; x++) {
+        if (Math.abs(x) <= 13) continue // towers/facade own the center
+        pave(x, z, x > 0 ? cobbleAt(x, z) : ((x + z) % 2 === 0 ? 'gobrick' : 'cobble'))
+      }
+    // gardener's nook east: firewood, crates, moss
+    this.fill('plank', 21, 22, y, y, 17, 18)
+    this.sbA('plank', 21.5, y + 0.55, 18.5, 6, 2, 2) // ⅔ log pile
+    this.b('crate', 25, y, 20)
+    this.b('crate', 25, y, 21)
+    this.b('crate', 25, y + 1, 20)
+    // mirror nook west: boneworks
+    this.fill('stone', -22, -21, y, y, 17, 18)
+    this.sb('bone', -21, y, 20, 2, 1, 2, 0, 0.45, 0)
+    this.sb('bone', -23, y, 20, 1, 1, 1, 0, 0.45, 0.4)
+
+    /* -- SOUTHWEST strip beside the bell tower -- */
+    for (let z = 21; z <= 32; z++)
+      for (let x = -25; x <= -23; x++) pave(x, z, cobbleAt(x, z))
+    this.b('cobble', -24, y, 24)
+    this.b('glow', -24, y + 1, 24)
+    this.sb('bone', -25, y, 28, 2, 1, 2, 0, 0.45, 0)
+
+    /* -- FACADE PARVIS (the approach to the west portal) -- */
+    for (let z = 16; z <= 20; z++)
+      for (let x = -6; x <= 6; x++) {
+        if (x >= -4 && x <= 4 && z <= 19) continue // the porch steps own it
+        pave(x, z, (x + z) % 2 === 0 ? 'marble' : 'marbledark')
+      }
+    for (const px of [-6, 6]) {
+      this.b('cobble', px, y, 20)
+      this.b('glow', px, y + 1, 20)
+    }
+
+    /* -- TRANSEPT SHOULDERS (the seam between nave and transept) -- */
+    for (const sx of [1, -1] as const)
+      for (let x = 12; x <= 19; x++) pave(sx * x, -7, 'gobrick')
+  }
+
+  /* ============ the void sealer ============
+     Final sweep: every skipped-terrain cell that no builder floored
+     gets a plain gobrick block at plateau level. After this pass the
+     island CANNOT show a hole — any future builder that forgets a
+     floor still lands on stone. */
+  private sealVoids() {
+    for (let z = -HALF; z < HALF; z++)
+      for (let x = -HALF; x < HALF; x++) {
+        if (!this.builtAt(x, z)) continue
+        const h = this.heights[this.idx(x, z)]
+        if (h <= 0) continue // the cloud chasm — the bridge owns the gap
+        // the crypt stairwell is a DELIBERATE hole in the aisle floor
+        if (x >= CRYPT_SHAFT.x0 && x <= CRYPT_SHAFT.x1 && z >= CRYPT_SHAFT.z0 && z <= CRYPT_SHAFT.z1) continue
+        const y = Math.min(h, PLATEAU)
+        if (this.solid[this.cellIdx(x, z, y)] === 1 || this.solid[this.cellIdx(x, z, y - 1)] === 1) continue
+        this.b('gobrick', x, y, z)
+      }
+  }
+
+  /* ============ sub-voxel details — the ⅓/⅔ trim pass ============
+     Every piece here exists for a structural or artistic reason:
+     moldings relieve an arch, tracery holds glass, statues get
+     anatomy, the Roc's deck keeps claw grooves. (1=⅓, 2=⅔, 3=full) */
+  private buildSubDetails() {
+    const y = PLATEAU + 1
+    const b0 = y - 1
+
+    /* -- knight statues (court): plinth steps, pauldrons, visor, sword -- */
+    for (const sz of [24, 29])
+      for (const sx of [-7, 6]) {
+        const cx = sx + 1
+        // two ⅔ plinth steps at the base corners
+        this.sb('gobrick', sx - 1, b0, sz - 1, 3, 2, 3)
+        this.sb('gobrick', sx + 2, b0, sz - 1, 3, 2, 3)
+        this.sb('gobrick', sx - 1, b0, sz + 2, 3, 2, 3)
+        this.sb('gobrick', sx + 2, b0, sz + 2, 3, 2, 3)
+        // ⅔ pauldrons meet at the collarbone
+        this.sb('darkstone', sx, y + 2, sz, 2, 2, 2, 1, 1, 0)
+        this.sb('darkstone', sx + 1, y + 2, sz, 2, 2, 2, -1, 1, 0)
+        // ⅓ visor slit + ⅔ helm crest
+        this.sb('darkstone', sx + 1, y + 4, sz, 2, 1, 1, 0, 0, 1)
+        this.sb('bonestone', sx, y + 4, sz, 2, 1, 2, 0, 1, 0)
+        // a votive blade planted before each knight
+        this.sb('iron', cx, y, sz - 1, 1, 5, 1, 0, 0.4, 0)
+        this.sb('gold', cx, y + 1, sz - 1, 2, 1, 2, 0, -0.8, 0)
+      }
+
+    /* -- gatehouse: portcullis spikes, arch moldings, lion bosses -- */
+    for (const px of [-2, 0, 2]) this.sb('iron', px, y + 3, 36, 1, 2, 1, 0, 0.6, 0)
+    // a second, thinner arch band stepping ahead of the main one
+    for (let xx = -3; xx <= 3; xx++) {
+      this.sb('bonestone', xx, y + 5, 32, 3, 1, 2, 0, 0, -0.6)
+    }
+    for (const sx of [-1, 1] as const) {
+      this.sbA('bonestone', sx * 3.9, y + 1.6, 35.4, 2, 2, 2) // springing boss
+      this.sbA('darkstone', sx * 3.9, y + 1.6, 35.75, 1, 1, 1) // snout
+    }
+
+    /* -- rose window: gold tracery ring + oculus + cross spokes -- */
+    const cy = y + 13
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2
+      this.sbA('gold', 0.5 + Math.cos(a) * 2.25, cy + 0.5 + Math.sin(a) * 2.25, 15.68, 1, 1, 1)
+    }
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8
+      this.sbA('gold', 0.5 + Math.cos(a) * 0.6, cy + 0.5 + Math.sin(a) * 0.6, 15.68, 1, 1, 1)
+    }
+    for (const [dx, dy] of [[1.35, 0], [-1.35, 0], [0, 1.35], [0, -1.35]] as const)
+      this.sbA('gold', 0.5 + dx, cy + 0.5 + dy, 15.68, 1, 1, 1)
+
+    /* -- nave pews: ⅓ end caps -- */
+    for (const px of [-3, 3])
+      for (const pz of [-4, -1, 2, 5, 8, 11]) {
+        this.sb('darkstone', px, y, pz, 2, 3, 1, 0, 0, -0.6)
+        this.sb('darkstone', px, y, pz + 2, 2, 3, 1, 0, 0, 0.6)
+      }
+
+    /* -- nave side altars: ⅓ gold candlesticks -- */
+    for (const sx of [-1, 1] as const) {
+      this.sb('gold', sx * 9, y + 2, -5, 1, 2, 1, 0, 0.5, -0.4)
+      this.sb('gold', sx * 9, y + 2, -4, 1, 2, 1, 0, 0.5, 0.4)
+    }
+
+    /* -- chandeliers: ⅓ iron candle cups under every flame -- */
+    for (const [chx, chy, chz, r] of [
+      [0, y + 18, 8, 2],
+      [0, y + 18, -1, 2],
+      [0, y + 26, -11, 3],
+    ] as const) {
+      const ly = chy - 4
+      for (let dx = -r; dx <= r; dx++)
+        for (let dz = -r; dz <= r; dz++) {
+          if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue
+          if (Math.abs(dx) === r && Math.abs(dz) === r && r > 1) continue
+          if ((dx + dz) % 2 !== 0) continue
+          this.sb('iron', chx + dx, ly - 1, chz + dz, 2, 1, 2, 0, -0.7, 0)
+        }
+    }
+
+    /* -- buttress piers: ⅔ setoff bands where the profile steps -- */
+    const zsBySide: [number[], number[]] = [[12, 6, 0, -6, -19], [12, 6, -6, -19]]
+    for (const sx of [1, -1] as const)
+      for (const z of sx === 1 ? zsBySide[0] : zsBySide[1]) {
+        const pcx = sx * 15 + sx * 0.5
+        this.sbA('bonestone', pcx, y + 4.4, z + 1, 8, 2, 8)
+        this.sbA('bonestone', pcx, y + 8.4, z + 1, 8, 2, 8)
+      }
+
+    /* -- gargoyles: ⅓ horns, snouts and raised wing vanes -- */
+    for (const [gx, gy, gz, fx] of [
+      [12, y + 11, 33, 1],
+      [-12, y + 11, 33, -1],
+      [7, y + 20, 13, 1],
+      [-7, y + 20, 13, -1],
+      [15, y + 12, 13, 1],
+      [-15, y + 12, 13, -1],
+      [15, y + 12, 7, 1],
+      [-15, y + 12, 7, -1],
+      [15, y + 12, 1, 1],
+      [-15, y + 12, 1, -1],
+      [15, y + 12, -5, 1],
+      [-15, y + 12, -5, -1],
+      [15, y + 12, -18, 1],
+      [-15, y + 12, -18, -1],
+    ] as const) {
+      this.sb('darkstone', gx, gy, gz, 1, 1, 1, fx * 0.7, 1, 0.5) // horn
+      this.sb('darkstone', gx, gy, gz, 1, 1, 2, fx * 1, -0.2, 0.5) // snout
+      this.sb('darkstone', gx, gy, gz, 1, 2, 1, -fx * 0.5, 0.9, 0) // wing vane
+      this.sb('darkstone', gx, gy, gz, 1, 2, 1, -fx * 0.5, 0.9, 1) // wing vane
+    }
+
+    /* -- throne of the gods: armrests, canopy fringe, orb -- */
+    const ty = y + 2
+    this.sb('gold', -2, ty + 1, -27, 2, 2, 8, 0, 0.5, -1)
+    this.sb('gold', 2, ty + 1, -27, 2, 2, 8, 0, 0.5, -1)
+    for (let fx = -3; fx <= 3; fx++) this.sb('woolred', fx, ty + 5, -25, 2, 1, 1, 0, -0.9, -0.7)
+    this.sbA('glow', 0.5, ty + 7.8, -26.5, 1, 1, 1) // the orb above the canopy
+    // kneeling statues: ⅔ hoods over the bowed heads
+    for (const sx of [-1, 1] as const) this.sb('darkstone', sx * 4, y + 4, -24, 3, 2, 2, 0, 0.4, 0.3)
+
+    /* -- crypt: ⅔ lid slabs + gold spines on every sarcophagus -- */
+    for (const [sx, sz] of [
+      [-9, -22],
+      [-9, -18],
+      [9, -22],
+      [9, -18],
+      [-3, -24],
+      [3, -24],
+    ] as const) {
+      this.sbA('bonestone', sx, CRYPT_FLOOR_Y + 3.62, sz + 1, 8, 2, 8)
+      this.sbA('gold', sx, CRYPT_FLOOR_Y + 3.97, sz + 1, 2, 1, 8)
+    }
+    // scattered ⅓ bones around the open tomb
+    this.sb('bone', 3, CRYPT_FLOOR_Y + 1, -17, 1, 1, 2, 0, 0.45, 0)
+    this.sb('bone', -1, CRYPT_FLOOR_Y + 1, -19, 2, 1, 1, 0, 0.45, 0.3)
+    this.sb('bone', 6, CRYPT_FLOOR_Y + 1, -24, 1, 1, 1, 0.3, 0.45, 0)
+
+    /* -- library: ⅔ books on the tables + a ⅓ reading candle -- */
+    this.sb('woolred', -17, y + 1, 2, 2, 2, 1, 0.2, 0, 0)
+    this.sb('bonestone', -16, y + 1, 2, 2, 2, 1, -0.3, 0, 0.4)
+    this.sb('plank', -16, y + 1, -1, 2, 2, 1, 0, 0, 0.2)
+    this.sb('glow', -16, y + 1, 2, 1, 1, 1, 0.8, 0.3, -0.4)
+
+    /* -- bridge: lantern caps + the Roc's claw grooves on the deck -- */
+    for (const px of [-3, 3])
+      for (let z = 41; z <= 57; z += 4) {
+        if (z < 54) this.sb('bonestone', px, y + 2, z, 2, 1, 2, 0, 0.7, 0)
+        this.sb('iron', px, y + 2, z, 1, 1, 1, 0, -0.7, 0)
+      }
+    // the talon grooves — the Roc has landed here before, and will again
+    this.sbA('darkstone', 0.9, b0 + 0.94, 55.4, 2, 1, 3)
+    this.sbA('darkstone', -0.9, b0 + 0.94, 55.4, 2, 1, 3)
+    this.sbA('darkstone', 1.6, b0 + 0.94, 57.0, 1, 1, 2)
+    this.sbA('darkstone', -1.6, b0 + 0.94, 57.0, 1, 1, 2)
+
+    /* -- apse mullions: ⅓ finial caps on the outer rim -- */
+    for (let dx = -8; dx <= 8; dx += 3) {
+      const depth = Math.floor(Math.sqrt(Math.max(0, 81 - dx * dx)) - 1)
+      this.sb('bonestone', dx, y + 15, -24 - depth, 1, 2, 1, 0, 0.4, 0)
+    }
+
+    /* -- bell tower: the clapper under the golden bell -- */
+    this.sbA('iron', -25.5, y + 20.4, 26.5, 1, 3, 1)
+    this.sbA('iron', -25.5, y + 23.4, 26.5, 2, 1, 2)
+
+    /* -- court processional path: ⅓ gold studs along the border -- */
+    for (let z = 22; z <= 32; z += 2) {
+      this.sbA('gold', -2.55, b0 + 0.94, z + 0.5, 1, 1, 1)
+      this.sbA('gold', 2.55, b0 + 0.94, z + 0.5, 1, 1, 1)
+    }
+
+    /* -- ossuary graves: ⅓ candle stubs already placed; add ⅓ bone overflow -- */
+    this.sb('bone', -28, y, 5, 1, 1, 2, 0.3, 0.45, 0)
+    this.sb('bone', -26, y, 14, 2, 1, 1, 0, 0.45, 0.3)
   }
 
   /* ============ sky ============ */

@@ -46,34 +46,44 @@ interface CineKey {
   pos: [number, number, number]
 }
 
-/** the grab-and-carry flight path — wall-clock keyframes */
+/** the grab-and-carry flight path — wall-clock keyframes.
+    Every waypoint is clearance-checked against the castle's own
+    geometry (gate spires top y≈40, west towers y≈44, bell tower
+    y≈48, lantern spire y≈53): the climb leaves the chasm eastward,
+    arcs OUTSIDE the whole footprint at y 46–57, and only crosses
+    the roofline once above the lantern's finial. No wall pierces
+    the bird's body or its ~9-unit wings. */
 const CINE_KEYS: CineKey[] = [
-  { t: 0, pos: [0, 62, 92] },
-  { t: 3.2, pos: [0, 17.5, 53] }, // the dive — low over the landing deck
-  { t: 5.5, pos: [10, 28, 28] }, // climbing, banking past the gate towers
-  { t: 8.0, pos: [6, 38, 2] }, // over the nave roofline
-  { t: 10.5, pos: [-14, 40, -11] }, // circling the lantern tower
-  { t: 13.0, pos: [0, 50, -30] }, // over the choir, heading out
-  { t: 15.5, pos: [0, 58, -90] }, // fading into the clouds
+  { t: 0, pos: [0, 60, 95] },
+  { t: 2.2, pos: [0, 34, 70] }, // the dive, aligned over the cloud chasm
+  { t: 3.1, pos: [0, 21, 58] }, // pulling up over the deck edge
+  { t: 3.7, pos: [0, 19.5, 54.5] }, // the hover — talons close on the rider
+  { t: 5.2, pos: [16, 30, 46] }, // climbing away east over the chasm
+  { t: 6.8, pos: [26, 40, 34] }, // banking north, clear of the gate spires
+  { t: 8.4, pos: [28, 46, 8] }, // along the east flank, above the buttresses
+  { t: 10.6, pos: [22, 54, -22] }, // wide arc over the NE shoulder
+  { t: 12.8, pos: [-8, 57, -44] }, // crossing the north skirt, above the apse
+  { t: 15.4, pos: [-24, 60, -76] }, // fading into the clouds
+  { t: 17.2, pos: [-30, 64, -105] },
 ]
 const CINE_DUR = 17.2
 
 const CINE_CAPTIONS: { t0: number; t1: number; title: string; sub: string }[] = [
   {
-    t0: 0.5,
-    t1: 4.6,
+    t0: 0.4,
+    t1: 2.9,
     title: 'سه لرد درّه افتادند…',
     sub: 'و آسمان، بدهکارِ خاکستر ماند — سروصدای بال‌ها از ابرها می‌آید.',
   },
   {
-    t0: 5.2,
-    t1: 10.2,
-    title: 'رُخِ شب — آخرین خدمتکار خدایان کهن',
-    sub: 'پنجه‌هایش مسافر را می‌گیرد؛ مقصد، قلعه‌ای است که جز از آسمان راهی به آن نیست.',
+    t0: 3.2,
+    t1: 9.8,
+    title: 'رُخِ شب — آخرین خدمتکار خدایانِ کهن',
+    sub: 'پنجه‌ها بسته می‌شود و خاکستر، از خاکِ درّه کنده می‌شود — مقصد، قلعه‌ای است که جز از آسمان راهی به آن نیست.',
   },
   {
-    t0: 12.6,
-    t1: 16.6,
+    t0: 12.8,
+    t1: 16.8,
     title: 'قلعهٔ مانولث',
     sub: 'سرایِ خدایانِ گم‌شده — بر فرازِ دریای ابر. (پیش‌نمایش — پس از تأیید، سکانس به پایانِ دستهٔ اول متصل می‌شود)',
   },
@@ -366,8 +376,17 @@ export default function MapViewer({ onClose }: Props) {
     let raf = 0
     const rocTmp = new THREE.Vector3()
     const rocNext = new THREE.Vector3()
-    const riderOffset = new THREE.Vector3()
-    const UP = new THREE.Vector3(0, 1, 0)
+    const grabLW = new THREE.Vector3()
+    const grabRW = new THREE.Vector3()
+    const grabMid = new THREE.Vector3()
+    const deckPos = new THREE.Vector3(0, 14, 56) // where the rider waits
+    const hangPos = new THREE.Vector3() // computed talon hang each frame
+    const hangHelper = (yaw: number) => {
+      // rider origin so its raised hands sit INSIDE the talon curl
+      hangPos.set(grabMid.x - Math.sin(yaw) * 0.32, grabMid.y - 1.88, grabMid.z - Math.cos(yaw) * 0.32)
+      return hangPos
+    }
+    const blend = (a: number, b: number, t: number) => a + (b - a) * Math.max(0, Math.min(1, t))
 
     const tick = () => {
       raf = requestAnimationFrame(tick)
@@ -405,31 +424,65 @@ export default function MapViewer({ onClose }: Props) {
               const dx = rocNext.x - rocTmp.x
               const dz = rocNext.z - rocTmp.z
               if (Math.abs(dx) + Math.abs(dz) > 0.001) rocG.rotation.y = Math.atan2(dx, dz)
-              rocG.rotation.z = 0.18 * Math.min(1, Math.max(0, (ct - 3.4) / 2))
+              rocG.rotation.z = 0.16 * Math.min(1, Math.max(0, (ct - 3.7) / 2))
               // animation beats
               rocClock.current += raw
-              if (ct < 1.6) animRocGlide(roc, rocClock.current)
-              else if (ct < 3.2) animRocGrab(roc, (ct - 1.6) / 1.6)
+              if (ct < 1.9) animRocGlide(roc, rocClock.current)
+              else if (ct < 3.7) animRocGrab(roc, (ct - 1.9) / 1.8)
               else animRocCarry(roc, rocClock.current)
-              // the rider clamps on at the low point
-              if (ct >= 2.9 && w.rider) {
-                w.rider.group.visible = true
-                riderOffset
-                  .set(0, -4.1, 0.5)
-                  .applyAxisAngle(UP, rocG.rotation.y)
-                w.rider.group.position.set(
-                  rocG.position.x + riderOffset.x,
-                  rocG.position.y + riderOffset.y,
-                  rocG.position.z + riderOffset.z
-                )
-                w.rider.group.rotation.y = rocG.rotation.y
-                w.rider.group.rotation.z = Math.sin(ct * 2.2) * 0.1
-                resetPose(w.rider)
-                w.rider.armL.rotation.x = Math.PI * 0.82
-                w.rider.armR.rotation.x = Math.PI * 0.82
-                w.rider.legL.rotation.x = 0.25
-                w.rider.legR.rotation.x = 0.2
+
+              /* ---- THE RIDER — the grab must be REAL ----
+                 He waits on the landing deck, watches the dive come
+                 down, and the moment the talons close he is scooped
+                 up: from then on his raised hands are welded to the
+                 rig's actual grip points every frame, so the claws
+                 hold his forearms and the bank swings him alive. */
+              const rider = w.rider!
+              rig.grabL.getWorldPosition(grabLW)
+              rig.grabR.getWorldPosition(grabRW)
+              grabMid.addVectors(grabLW, grabRW).multiplyScalar(0.5)
+              if (ct < 1.5) {
+                rider.group.visible = false
+              } else if (ct < 3.0) {
+                // waiting on the deck, face to the south wind
+                rider.group.visible = true
+                rider.group.position.copy(deckPos)
+                rider.group.rotation.set(0, 0, 0)
+                resetPose(rider)
+                rider.armL.rotation.x = 0.3
+                rider.armR.rotation.x = -0.4 // shield arm raised against the downdraft
+                rider.head.rotation.x = -0.55 // looking up at the dive
+              } else if (ct < 3.66) {
+                // the scoop — plucked off the deck as the claws shut
+                const p = (ct - 3.0) / 0.66
+                const e = 1 - (1 - p) * (1 - p)
+                rider.group.visible = true
+                rider.group.position.lerpVectors(deckPos, hangHelper(rocG.rotation.y), e)
+                rider.group.rotation.set(0, Math.PI * e, 0)
+                resetPose(rider)
+                rider.armL.rotation.x = blend(0.3, Math.PI * 0.82, e)
+                rider.armR.rotation.x = blend(-0.4, Math.PI * 0.82, e)
+                rider.armL.rotation.z = blend(0, -0.26, e)
+                rider.armR.rotation.z = blend(0, 0.26, e)
+                rider.legL.rotation.x = blend(0, 0.3, e)
+                rider.legR.rotation.x = blend(0, 0.22, e)
+                rider.head.rotation.x = blend(-0.55, 0.15, e)
+              } else {
+                // carried: hands inside the talon curl, dangling with the bank
+                rider.group.visible = true
+                const hp = hangHelper(rocG.rotation.y)
+                rider.group.position.set(hp.x, hp.y, hp.z)
+                rider.group.rotation.set(0, rocG.rotation.y, Math.sin(ct * 2.1) * 0.055)
+                resetPose(rider)
+                rider.armL.rotation.x = Math.PI * 0.82
+                rider.armR.rotation.x = Math.PI * 0.82
+                rider.armL.rotation.z = -0.26
+                rider.armR.rotation.z = 0.26
+                rider.legL.rotation.x = 0.3
+                rider.legR.rotation.x = 0.22
+                rider.head.rotation.x = 0.15
               }
+
               // caption state (kept in React state, never read during render)
               const capIdx = CINE_CAPTIONS.findIndex((cc) => ct >= cc.t0 && ct <= cc.t1)
               if (capIdx !== captionRef.current) {
@@ -438,13 +491,13 @@ export default function MapViewer({ onClose }: Props) {
               }
               /* cinematic camera — the director owns it */
               const c = cam.current
-              if (ct < 3.2) {
-                // locked on the landing deck, watching the dive come down
-                c.focus.lerp(new THREE.Vector3(0, 22, 47), Math.min(1, 3 * raw))
-                c.dist += (30 - c.dist) * Math.min(1, 2 * raw)
+              if (ct < 3.7) {
+                // locked on the landing deck: rider below, Roc diving in
+                c.focus.lerp(new THREE.Vector3(0, 20, 53), Math.min(1, 3 * raw))
+                c.dist += (26 - c.dist) * Math.min(1, 2 * raw)
                 c.theta += (0.02 - c.theta) * Math.min(1, 2 * raw)
-                c.phi += (1.1 - c.phi) * Math.min(1, 2 * raw)
-              } else if (ct < 13.2) {
+                c.phi += (1.08 - c.phi) * Math.min(1, 2 * raw)
+              } else if (ct < 13.4) {
                 // chase cam — the focus rides the Roc, the camera trails behind
                 const yaw = rocG.rotation.y
                 c.focus.lerp(rocG.position, Math.min(1, 6 * raw))
@@ -460,11 +513,13 @@ export default function MapViewer({ onClose }: Props) {
               }
             }
           } else {
-            /* ---- idle patrol: a slow circle above the castle ---- */
+            /* ---- idle patrol: a slow circle above the castle ----
+               y 50 keeps the talons clear of the bell tower's glow
+               finial (top y≈48) on the north-west pass */
             rocClock.current += raw
             const t = rocClock.current
             const a = t * 0.13
-            rocG.position.set(Math.cos(a) * 42, 41 + Math.sin(t * 0.6) * 2.5, Math.sin(a) * 42)
+            rocG.position.set(Math.cos(a) * 42, 50 + Math.sin(t * 0.6) * 2.5, Math.sin(a) * 42)
             const dx = -Math.sin(a)
             const dz = Math.cos(a)
             rocG.rotation.y = Math.atan2(dx, dz)
@@ -612,10 +667,10 @@ export default function MapViewer({ onClose }: Props) {
     setCaptionIdx(-1)
     fly.current = null
     // the director cuts straight to the landing deck
-    cam.current.focus.set(0, 22, 47)
-    cam.current.dist = 30
+    cam.current.focus.set(0, 20, 53)
+    cam.current.dist = 26
     cam.current.theta = 0.02
-    cam.current.phi = 1.1
+    cam.current.phi = 1.08
     setCineActive(true)
   }
   const stopCine = () => {

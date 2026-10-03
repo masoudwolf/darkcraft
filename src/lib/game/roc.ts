@@ -41,6 +41,9 @@ export interface RocRig {
   legR: THREE.Group
   shoulderL: THREE.Group
   shoulderR: THREE.Group
+  /** the exact talon grip points — the cinematic hangs the rider on these */
+  grabL: THREE.Object3D
+  grabR: THREE.Object3D
 }
 
 const F = {
@@ -175,12 +178,26 @@ export function createRoc(scale = 2.1): Humanoid {
     const brow = mk(headG, 0.24, 0.1, 0.2, dark, sx * 0.15, 0.32, 0.3)
     brow.rotation.x = 0.35
   }
-  // ember eyes — dark socket + white-hot core
+  /* eyes of the Night Roc — like every raptor they sit LATERAL on the
+     skull, angled forward so they burn toward the prey. Dark bony
+     socket plates stand PROUD of the head face (the old eyes were
+     buried inside the skull and vanished); the amber iris + white
+     core sit on the socket plates, visible from front AND side. */
   const eyeMat = glow(0xffb03a)
   const eyeCore = glow(0xfff2c8)
   for (const sx of [-1, 1] as const) {
-    mk(headG, 0.13, 0.1, 0.04, eyeMat, sx * 0.16, 0.2, 0.36)
-    mk(headG, 0.06, 0.05, 0.045, eyeCore, sx * 0.16, 0.2, 0.365)
+    // bony socket plate — proud of the skull flank, angled to the beak
+    const socket = mk(headG, 0.06, 0.2, 0.26, dark, sx * 0.3, 0.22, 0.2)
+    socket.rotation.y = -sx * 0.5
+    // amber iris on the plate
+    const iris = mk(headG, 0.05, 0.13, 0.16, eyeMat, sx * 0.335, 0.22, 0.225)
+    iris.rotation.y = -sx * 0.5
+    // white-hot core
+    const core = mk(headG, 0.055, 0.06, 0.07, eyeCore, sx * 0.352, 0.225, 0.235)
+    core.rotation.y = -sx * 0.5
+    // a front hint between the brow and the beak so the stare reads head-on
+    mk(headG, 0.11, 0.09, 0.04, eyeMat, sx * 0.14, 0.2, 0.4)
+    mk(headG, 0.05, 0.05, 0.05, eyeCore, sx * 0.14, 0.2, 0.415)
   }
   // hooked golden beak — upper mandible + working lower jaw
   mk(headG, 0.3, 0.2, 0.42, beak, 0, 0.14, 0.52)
@@ -259,28 +276,44 @@ export function createRoc(scale = 2.1): Humanoid {
     mk(tip, 1.0, 0.04, 0.05, glow(F.ember), sx * 0.5, 0.06, -0.2)
   }
 
-  /* ---------- tail fan — the steering oar ---------- */
+  /* ---------- tail fan — the steering oar, held WIDE ----------
+     A real raptor fans its tail open in flight; seven feathers radiate
+     from the rump like a peacock's fan (the old 5-feather row read as
+     one closed slab from every angle). Center feather longest, outers
+     step down, every vane separated by clear air. */
   const tail = new THREE.Group()
-  tail.position.set(0, 1.95, -1.85)
+  tail.position.set(0, 1.95, -1.8)
   spinInner.add(tail)
-  for (let f = -2; f <= 2; f++) {
-    const fe = mk(tail, 0.34, 0.06, f === 0 ? 1.7 : 1.45, flight, f * 0.24, -0.04, f === 0 ? -0.8 : -0.66)
-    fe.rotation.y = f * 0.17
-    const tipBand = mk(tail, 0.3, 0.05, 0.16, under, f * 0.3, -0.04, f === 0 ? -1.62 : -1.36)
-    tipBand.rotation.y = f * 0.17
+  for (let f = -3; f <= 3; f++) {
+    const a = f * 0.3 // ±51° total spread
+    const len = f === 0 ? 1.85 : Math.abs(f) === 1 ? 1.68 : Math.abs(f) === 2 ? 1.48 : 1.24
+    const mid = len * 0.46
+    const fe = mk(tail, 0.29, 0.055, len, flight, Math.sin(a) * mid, -0.04, -Math.cos(a) * mid)
+    fe.rotation.y = a
+    const tipBand = mk(tail, 0.25, 0.05, 0.16, under, Math.sin(a) * (len - 0.14), -0.045, -Math.cos(a) * (len - 0.14))
+    tipBand.rotation.y = a
   }
+  // tail coverts — the feathered root the fan grows from
+  mk(tail, 0.5, 0.3, 0.5, under, 0, 0.02, 0.18)
 
-  /* ---------- legs: feathered thigh, golden shin, talons ---------- */
+  /* ---------- legs: feathered thigh, golden shin, talons ----------
+     Pivot sits under the HIPS (z −0.75), not the chest — a bird's legs
+     hang from its hips; the old forward mount made the Roc look like a
+     man wading. Thighs still angle slightly ahead to keep the feet
+     under the center of mass in perched poses. */
   const legL = new THREE.Group()
   const legR = new THREE.Group()
-  legL.position.set(0.3, 1.5, 0.35)
-  legR.position.set(-0.3, 1.5, 0.35)
+  legL.position.set(0.3, 1.5, -0.75)
+  legR.position.set(-0.3, 1.5, -0.75)
   spinInner.add(legL, legR)
   const legs: [THREE.Group, number][] = [
     [legL, 1],
     [legR, -1],
   ]
+  const grabL = new THREE.Object3D()
+  const grabR = new THREE.Object3D()
   for (const [leg, sx] of legs) {
+    leg.rotation.x = 0.28 // femur angled ahead so the feet meet under the body
     mk(leg, 0.34, 0.55, 0.4, under, 0, -0.28, 0.02) // feathered thigh ("trousers")
     const shin = new THREE.Group()
     shin.position.set(0, -0.55, 0.05)
@@ -294,6 +327,9 @@ export function createRoc(scale = 2.1): Humanoid {
     }
     const rear = mk(shin, 0.08, 0.09, 0.16, scaleM, 0, -0.44, -0.14)
     rear.rotation.x = 0.5
+    // the invisible grip point the cinematic hangs riders from
+    ;(sx === 1 ? grabL : grabR).position.set(0, -0.52, 0.14)
+    shin.add(sx === 1 ? grabL : grabR)
   }
 
   group.scale.setScalar(scale)
@@ -311,6 +347,8 @@ export function createRoc(scale = 2.1): Humanoid {
     legR: (legR.children[1] as THREE.Group) ?? legR,
     shoulderL: armL,
     shoulderR: armR,
+    grabL,
+    grabR,
   }
   group.userData.roc = rig
 
@@ -355,8 +393,10 @@ function resetRoc(h: Humanoid) {
     r.wingMid[side].rotation.set(0, 0, 0)
     r.wingTip[side].rotation.set(0, 0, 0)
   }
-  h.legL.rotation.set(0, 0, 0)
-  h.legR.rotation.set(0, 0, 0)
+  h.legL.rotation.set(0.28, 0, 0) // the femur's ahead-lean is the rest state
+  h.legR.rotation.set(0.28, 0, 0)
+  r.legL.rotation.set(0, 0, 0)
+  r.legR.rotation.set(0, 0, 0)
   return r
 }
 
@@ -389,8 +429,11 @@ export function animRocPerch(h: Humanoid, t: number) {
   r.neck.rotation.x = 0.08 + Math.sin(t * 0.83) * 0.06
   r.headG.rotation.y = Math.sin(t * 0.31 + 1.2) * 0.3
   r.tail.rotation.x = 0.18 + Math.sin(t * 0.9) * 0.05
-  h.legL.rotation.x = 0.1
-  h.legR.rotation.x = 0.1
+  // the perch crouch: femur ahead, shin back, talons gripping the crag
+  h.legL.rotation.x = 0.34
+  h.legR.rotation.x = 0.34
+  r.legL.rotation.x = -0.42
+  r.legR.rotation.x = -0.42
 }
 
 /** the great wingbeat — three segments flex in phase, body rises */
@@ -413,9 +456,11 @@ export function animRocFlap(h: Humanoid, t: number) {
   r.neck.rotation.x = 0.14
   r.tail.rotation.x = 0.12 + s * 0.12
   r.jaw.rotation.x = Math.max(0, s - 0.6) * 0.9
-  // legs trail behind in flight
-  h.legL.rotation.x = -0.5
-  h.legR.rotation.x = -0.5
+  // legs trail behind in flight, talons slightly flexed
+  h.legL.rotation.x = -0.55
+  h.legR.rotation.x = -0.55
+  r.legL.rotation.x = 0.25
+  r.legR.rotation.x = 0.25
 }
 
 /** riding the wind: wings spread in a shallow V, the wind does the work */
@@ -437,6 +482,8 @@ export function animRocGlide(h: Humanoid, t: number) {
   r.headG.rotation.y = Math.sin(t * 0.45) * 0.12
   h.legL.rotation.x = -0.85
   h.legR.rotation.x = -0.85
+  r.legL.rotation.x = 0.35 // talons half-open, ready to strike
+  r.legR.rotation.x = 0.35
   r.jaw.rotation.x = 0.12
 }
 
@@ -456,7 +503,7 @@ export function animRocGrab(h: Humanoid, p: number) {
     h.legL.rotation.x = -0.2
     h.legR.rotation.x = -0.2
   } else if (p < 0.68) {
-    // the brake — one huge flare, talons swing forward
+    // the brake — one huge flare, talons swing forward and open wide
     const q = (p - 0.42) / 0.26
     r.shoulderL.rotation.y = lerpN(0.9, 0.15, q)
     r.shoulderR.rotation.y = -lerpN(0.9, 0.15, q)
@@ -464,17 +511,21 @@ export function animRocGrab(h: Humanoid, p: number) {
     r.shoulderR.rotation.z = -lerpN(0.12, 1.0, q)
     h.root.rotation.x = lerpN(-0.85, 0.35, q)
     r.tail.rotation.x = lerpN(-0.3, 0.55, q)
-    h.legL.rotation.x = lerpN(-0.2, 0.9, q)
-    h.legR.rotation.x = lerpN(-0.2, 0.9, q)
+    h.legL.rotation.x = lerpN(-0.35, 1.0, q)
+    h.legR.rotation.x = lerpN(-0.35, 1.0, q)
+    r.legL.rotation.x = lerpN(0.35, -0.45, q) // shins extend — claws gape
+    r.legR.rotation.x = lerpN(0.35, -0.45, q)
     r.jaw.rotation.x = 0.5 * Math.sin(q * Math.PI)
   } else {
-    // the clutch — wings close around, claws flex shut
+    // the clutch — wings close around, claws flex shut on the prey
     const q = (p - 0.68) / 0.32
     r.shoulderL.rotation.z = lerpN(1.0, 0.55, q)
     r.shoulderR.rotation.z = -lerpN(1.0, 0.55, q)
     h.root.rotation.x = lerpN(0.35, 0.1, q)
-    h.legL.rotation.x = 0.9 - 0.25 * q
-    h.legR.rotation.x = 0.9 - 0.25 * q
+    h.legL.rotation.x = lerpN(1.0, 0.62, q)
+    h.legR.rotation.x = lerpN(1.0, 0.62, q)
+    r.legL.rotation.x = lerpN(-0.45, 0.55, q) // the shin curl closes the fist
+    r.legR.rotation.x = lerpN(-0.45, 0.55, q)
     r.tail.rotation.x = 0.3
     r.jaw.rotation.x = 0.3 * (1 - q)
   }
@@ -497,8 +548,10 @@ export function animRocCarry(h: Humanoid, t: number) {
   h.root.position.y = Math.max(0, Math.cos(f)) * 0.06
   r.neck.rotation.x = 0.3
   r.tail.rotation.x = -0.15 + s * 0.08
-  h.legL.rotation.x = -0.45
-  h.legR.rotation.x = -0.45
+  h.legL.rotation.x = -0.4
+  h.legR.rotation.x = -0.4
+  r.legL.rotation.x = 0.5 + s * 0.06 // the grip flexes with each beat
+  r.legR.rotation.x = 0.5 + s * 0.06
   h.armL.rotation.z = -0.1
   h.armR.rotation.z = 0.1
 }
