@@ -14,6 +14,11 @@ import {
 /* ============================================================
    BESTIARY — the registry that powers the 3D viewer.
    Every mob of the game with every animation it can perform.
+
+   ⚠️ HOUSE RULE (user mandate): EVERY character that ever joins the
+   game — mob, boss, champion or NPC — MUST get an entry here in the
+   same change that introduces it. The viewer renders exactly this
+   list, so a missing entry means an invisible character.
    ============================================================ */
 
 export interface ViewerAnim {

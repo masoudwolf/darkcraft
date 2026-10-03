@@ -1028,8 +1028,10 @@ export class WorldV3 {
     this.b('coal', 25, floorY, -47) // a coal seam on the floor, pointing at it
     this.b('darkstone', 26, floorY, -46) // spilled rubble by the mouth
 
-    // the rockfall that seals the stair — pure visual; the game clamps
-    // the body until the Flame King falls, then this group is hidden
+    // the rockfall that seals the stair — a REAL physical seal: every
+    // rubble cell is marked solid so bodies (rolls included) slam into
+    // it, and the game's clamp band behind it stays as belt-and-braces
+    // until the Flame King falls, then this group is hidden + unmarked
     const rubble = new THREE.Group()
     const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c })
     const cobble = this.mats.cobble as THREE.Material
@@ -1056,11 +1058,20 @@ export class WorldV3 {
     rubble.visible = true // sealed until the Flame King falls
     this.group.add(rubble)
     this.pitRubble = rubble
+    // mark the rubble cells solid so the seal is physical, not just a
+    // clamp — a roll slams into stone instead of gliding through mist
+    for (let x = 45; x <= 48; x++)
+      for (let z = -41; z <= -38; z++)
+        for (let y = 7; y <= 9; y++) this.markSolid(x, y, z, true)
   }
 
   /** the Flame King is dead — the Vale cracks, the rockfall rolls clear */
   setPitOpen(open: boolean) {
     if (this.pitRubble) this.pitRubble.visible = !open
+    // the seal's solidity follows the stone: solid while it stands
+    for (let x = 45; x <= 48; x++)
+      for (let z = -41; z <= -38; z++)
+        for (let y = 7; y <= 9; y++) this.markSolid(x, y, z, !open)
   }
 
   /** secrets: illusion walls live in the same collision grid as stone —
@@ -1087,6 +1098,8 @@ export class WorldV3 {
     this.b('glow', -31, y0 + 4, gz - 1)
     // side walls (4 tall) seal the arena east & west — too high to mount
     // from the cloister walk or the flanks, so no wall-top shortcuts exist
+    // (the west wall STOPS at z=−23 on purpose: the cell at (−40,−24) is
+    // the cloister walk's mouth — the honest path to the church door)
     for (let z = gz - 1; z >= -23; z--) {
       this.fill('cobble', -40, -40, y0, y0 + 3, z, z)
       this.fill('cobble', -24, -24, y0, y0 + 3, z, z)
@@ -1095,17 +1108,20 @@ export class WorldV3 {
         this.b('mossy', -24, y0 + 3, z)
       }
     }
-    /* the cloister wall — the church front's ruined outer wall. It seals
-       the court's whole north side so the fog gate stays the only way in,
-       while the 2-wide walk between it and the church stays open (past the
-       broken columns — this walk is how the parish door is reached) */
+    /* the cloister wall — the church front's ruined outer wall, raised
+       5 tall so the knight and his court never leer over it at walkers
+       on the cloister path (the walk behind it is church ground, not
+       the arena — the fog gate stays the court's only door). It seals
+       the court's whole north side, while the 2-wide walk between it
+       and the church stays open (past the broken columns — this walk
+       is how the parish door is reached) */
     for (let x = -39; x <= -25; x++) {
-      this.fill('cobble', x, x, y0, y0 + 3, -22, -22)
+      this.fill('cobble', x, x, y0, y0 + 4, -22, -22)
       if (x === -36 || x === -30) this.b('glow', x, y0 + 3, -22)
-      else if (x % 3 === 0) this.b('mossy', x, y0 + 3, -22)
+      else if (x % 3 === 0) this.b('mossy', x, y0 + 4, -22)
     }
-    this.b('mossy', -34, y0 + 4, -22) // two broken rises crown the wall
-    this.b('mossy', -27, y0 + 4, -22)
+    this.b('mossy', -34, y0 + 5, -22) // two broken rises crown the wall
+    this.b('mossy', -27, y0 + 5, -22)
     // broken columns along the church front (the west span stays clear —
     // it is the cloister walk's mouth, marked by a lantern on the flank)
     for (const cx of [-35, -29, -25]) {
@@ -1189,9 +1205,11 @@ export class WorldV3 {
     /* the perimeter — stonebrick base with mossy coping, 2 tall.
        The north wall's east span becomes the columbarium (3 tall with
        urn niches); the mausoleum provides the north wall's west span. */
-    // south wall, west of the gate (corner pillar at −27, collapsed run at −26)
-    this.fill('stonebrick', -25, -25, y0, y0, -24, -24)
-    this.fill('mossy', -25, -25, y0 + 1, y0 + 1, -24, -24)
+    // south wall, west of the gate — 4 tall now: the slab tomb across the
+    // way (top face y0+2) let feet climb the old 2-tall run and hop the
+    // wall row into the knight's court
+    this.fill('stonebrick', -25, -25, y0, y0 + 2, -24, -24)
+    this.fill('mossy', -25, -25, y0 + 3, y0 + 3, -24, -24)
     // south wall, east of the gate (corner pillar at −18)
     this.fill('stonebrick', -20, -19, y0, y0, -24, -24)
     this.fill('mossy', -20, -19, y0 + 1, y0 + 1, -24, -24)
@@ -1206,10 +1224,12 @@ export class WorldV3 {
       this.b('stonebrick', -27, y0, z)
       this.b('mossy', -27, y0 + 1, z)
     }
-    /* the south gate — pillars kept low (2 tall) so their caps can never
-       serve as a step onto the arena's east wall; lanterns crown the arch */
-    this.fill('stonebrick', -24, -24, y0, y0 + 1, -24, -24)
-    this.fill('stonebrick', -21, -21, y0, y0 + 1, -24, -24)
+    /* the south gate — pillars raised 4 tall (the old 2-tall caps plus
+       the arch's lintel once staged a stair onto the arena's east wall
+       top: cap at y0+1 → lintel y0+2 → wall top y0+3, each a legal
+       1-block step). Lanterns crown the arch */
+    this.fill('stonebrick', -24, -24, y0, y0 + 3, -24, -24)
+    this.fill('stonebrick', -21, -21, y0, y0 + 3, -24, -24)
     this.fill('darkstone', -24, -21, y0 + 2, y0 + 2, -24, -24)
     this.b('glow', -24, y0 + 3, -24)
     this.b('glow', -21, y0 + 3, -24)
@@ -1221,11 +1241,19 @@ export class WorldV3 {
     }
     /* the leak seals — collapsed wall runs between the yard's corner
        and the arena's broken colonnade (they read as ruins, and they
-       keep the knight's court sealed behind its fog gate) */
+       keep the knight's court sealed behind its fog gate).
+       These stand 4 tall on purpose: the graveyard's slab tomb (top
+       at y0+2) and wall stubs once chained into a climbable stair
+       over the old 2-tall seals — feet landed at y0+2 and walked
+       straight into the knight's court behind his fog gate. */
     this.b('mossy', -28, y0, -24)
     this.b('cobble', -28, y0 + 1, -24)
+    this.b('stonebrick', -28, y0 + 2, -24)
+    this.b('mossy', -28, y0 + 3, -24)
     this.b('cobble', -26, y0, -24)
     this.b('mossy', -26, y0 + 1, -24)
+    this.b('stonebrick', -26, y0 + 2, -24)
+    this.b('cobble', -26, y0 + 3, -24)
 
     /* ---------- the Warden's mausoleum (north-west corner) ---------- */
     // shell: 3 tall, slab roof, darkstone door frame on the east face

@@ -2265,17 +2265,20 @@ export class Game {
     // the burned homestead — tucked behind the forge wall, a starter secret
     addChest(-40.5, 33.5, false, undefined, [{ id: 'ring_ember_knight', n: 1 }], Math.PI * 0.15)
     // the crypt — INSIDE the low stone box, on the tomb slab, under
-    // lock: the grey dead keep the grey tithe (z −34.5 lands in the
-    // interior cell; −35.5 used to bury the chest in the north wall)
-    addChest(-31.5, -34.5, true, 'key_crypt', [{ id: 'amulet_souls', n: 1 }, { id: 'ember_iron', n: 1 }], Math.PI)
+    // lock: the grey dead keep the grey tithe (z −35.0 keeps the mesh
+    // fully in the interior cell; −34.5 let the back edge clip the
+    // north wall blocks by ~0.3)
+    addChest(-31.5, -35.0, true, 'key_crypt', [{ id: 'amulet_souls', n: 1 }, { id: 'ember_iron', n: 1 }], Math.PI)
     // the watchtower ruin — the beacon-keeper's pay, under lock
     addChest(10.5, 3.5, true, 'key_tower', [{ id: 'ring_ashwalker', n: 1 }, { id: 'arrow_fire', n: 6 }], Math.PI * 0.7)
     // the church sacristy — behind the shimmering west wall
     addChest(-42.5, -29.5, false, undefined, [{ id: 'amulet_vigil', n: 1 }], Math.PI * 0.5)
     // the warden's closet — behind the barracks' shimmering north wall
-    addChest(44, -24.5, false, undefined, [{ id: 'amulet_iron_skin', n: 1 }, { id: 'iron_chunk', n: 2 }], Math.PI * 0.85)
+    // (x 43.8 keeps the swung lid clear of the closet's east wall)
+    addChest(43.8, -24.5, false, undefined, [{ id: 'amulet_iron_skin', n: 1 }, { id: 'iron_chunk', n: 2 }], Math.PI * 0.85)
     // the maker's seam — behind the pit's shimmering rim, the last secret
-    addChest(23.5, -45.5, false, undefined, [{ id: 'ring_first_maker', n: 1 }], Math.PI * 0.5)
+    // (x 23.25 keeps the chest clear of the illusion blocks at cell 24)
+    addChest(23.25, -45.5, false, undefined, [{ id: 'ring_first_maker', n: 1 }], Math.PI * 0.5)
 
     /* ---- the keys & the stray charm, waiting in the open ---- */
     const addPickup = (id: ItemId, x: number, z: number, lightColor: number | null) => {
@@ -4342,10 +4345,13 @@ export class Game {
     // the rockfall seals the pit stair until the Flame King falls.
     // the band is widened west of the rubble box so the whole stair
     // mouth is covered — the stair's lower half (x 41..44) sits past
-    // the rubble itself, and a roll that landed there used to be free
+    // the rubble itself, and a roll that landed there used to be free.
+    // the pin line now stands a full 1.4 south of the rubble box so the
+    // clamped body never rounds INTO a rubble-marked cell (supportAt
+    // would pop them on top of the stones and build a stair over the seal)
     if (!this.boss2Fell && this.fogPass2T <= 0) {
-      if (p.z < PIT_RUBBLE.z1 + 0.55 && p.x > PIT_RUBBLE.x0 - 4.6 && p.x < PIT_RUBBLE.x1 + 0.6) {
-        p.z = PIT_RUBBLE.z1 + 0.55
+      if (p.z < PIT_RUBBLE.z1 + 1.4 && p.x > PIT_RUBBLE.x0 - 4.6 && p.x < PIT_RUBBLE.x1 + 0.6) {
+        p.z = PIT_RUBBLE.z1 + 1.4
       }
     }
     // the Coal's arena seals behind his intro — the pit fights for him
