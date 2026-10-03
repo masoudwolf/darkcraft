@@ -1188,6 +1188,9 @@ class LootDrop {
   private t = Math.random() * 10
   private baseY: number
   private sparkT = 0
+  /** which world the drop fell in — a castle drop must never answer
+      the hand from the Vale (or the crypt's loot from the nave) */
+  zone: 'vale' | 'castle'
   /** seconds until self-destruction — null = a foe's drop, kept forever */
   private decay: number | null
   /** set once the decay timer runs out — the game loop disposes it */
@@ -1202,8 +1205,12 @@ class LootDrop {
     decay: number | null = null
   ) {
     this.decay = decay
+    this.zone = game.zone
     const def = ITEMS[id]
-    const y = game.world.surfaceAt(pos.x, pos.z)
+    /* underground-aware rest: supportAt from the body's own altitude —
+       a foe that fell in the crypt scatters its gear on the CRYPT floor
+       (surfaceAt would hang it on the cathedral floor seven blocks up) */
+    const y = game.world.supportAt(pos.x, pos.z, pos.y + 0.06)
     this.baseY = y + 0.5
 
     /* ---- the item itself — a real miniature, not a placeholder ---- */
@@ -1403,7 +1410,7 @@ export class Game {
   private lavaTick = 0
   /** the cloud sea around Manorloth — falls past y≈4 are the abyss */
   private abyssTick = 0
-  private bloodstain: { mesh: THREE.Group; amount: number } | null = null
+  private bloodstain: { mesh: THREE.Group; amount: number; zone: 'vale' | 'castle' } | null = null
   private boomLights: { light: THREE.PointLight; t: number }[] = []
   private estusShard: { mesh: THREE.Group; light: THREE.PointLight } | null = null
   private estusUp = false
@@ -2054,9 +2061,11 @@ export class Game {
       s.group.visible = v
       s.light.visible = v
     }
-    for (const l of this.loots) l.group.visible = v
+    /* loots & the bloodstain answer only to their own world — the
+       vale's gear sleeps while Manorloth walks (and the other way) */
+    for (const l of this.loots) l.group.visible = (l.zone === 'vale') ? v : !v
     for (const o of this.orbs) o.mesh.visible = v
-    if (this.bloodstain) this.bloodstain.mesh.visible = v
+    if (this.bloodstain) this.bloodstain.mesh.visible = (this.bloodstain.zone === 'vale') ? v : !v
     if (this.estusShard) {
       this.estusShard.mesh.visible = v
       this.estusShard.light.visible = v
@@ -2985,6 +2994,50 @@ export class Game {
     this.loots.push(new LootDrop(this, a.ammoId, 1, a.groundPos, true))
   }
 
+  /** the nearest fallen-foe drop of the CURRENT world — loot that fell
+      in the castle only answers the hand inside the castle */
+  private nearestLoot(): LootDrop | null {
+    let best: LootDrop | null = null
+    let bestD = 1.9
+    for (const l of this.loots) {
+      if (l.zone !== this.zone) continue
+      const d = Math.hypot(this.player.pos.x - l.group.position.x, this.player.pos.z - l.group.position.z)
+      if (d < bestD) {
+        bestD = d
+        best = l
+      }
+    }
+    return best
+  }
+
+  /** the loot pickup prompt — the item's own name invites the hand */
+  private lootPrompt(): string | null {
+    const l = this.nearestLoot()
+    if (!l) return null
+    const def = ITEMS[l.id]
+    const qty = l.n > 1 ? ` ×${l.n}` : ''
+    return def ? `برداشتن ${def.name}${qty}` : 'برداشتن غنیمت'
+  }
+
+  /** lost souls wait where the walker fell — same world only */
+  private recoverBloodstain(): boolean {
+    if (!this.bloodstain || this.bloodstain.zone !== this.zone) return false
+    if (this.bloodstain.mesh.position.distanceTo(this.player.pos) >= 1.7) return false
+    this.player.souls += this.bloodstain.amount
+    this.spawnBurst(this.bloodstain.mesh.position, 0x59ff6a, 22, 3.5)
+    this.spawnText(`+${this.bloodstain.amount}`, '#59ff6a', this.player.pos.clone().add(new THREE.Vector3(0, 2.2, 0)))
+    this.engine.scene.remove(this.bloodstain.mesh)
+    this.bloodstain = null
+    this.sfx.souls()
+    this.emit(true)
+    return true
+  }
+
+  private bloodstainPrompt(): string | null {
+    if (!this.bloodstain || this.bloodstain.zone !== this.zone) return null
+    return this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7 ? 'بازیابی سول‌ها' : null
+  }
+
   /** DS-style item-attained banner, fired on pickup */
   private collectLoot(l: LootDrop) {
     const def = ITEMS[l.id]
@@ -3130,7 +3183,7 @@ export class Game {
   /** the F key — world interactions */
   interact() {
     if (this.phase !== 'playing') return
-    // Manorloth's fire and bird
+    // Manorloth — its fire, its bird, and the same dead men's gear
     if (this.zone === 'castle') {
       if (Math.hypot(this.player.pos.x - CASTLE_BONFIRE.x, this.player.pos.z - CASTLE_BONFIRE.z) < 2.6) {
         this.rest()
@@ -3141,6 +3194,13 @@ export class Game {
         this.startRocJourney('toVale')
         return
       }
+      // the castle's dead drop their gear too — the hand must answer
+      const loot = this.nearestLoot()
+      if (loot) {
+        this.collectLoot(loot)
+        return
+      }
+      if (this.recoverBloodstain()) return
       return
     }
     // the roc on its old stage — fly to Manorloth
@@ -3151,18 +3211,10 @@ export class Game {
         return
       }
     }
-    // fallen foes' gear — the nearest loot drop first
-    let bestLoot: LootDrop | null = null
-    let bestD = 1.9
-    for (const l of this.loots) {
-      const d = Math.hypot(this.player.pos.x - l.group.position.x, this.player.pos.z - l.group.position.z)
-      if (d < bestD) {
-        bestD = d
-        bestLoot = l
-      }
-    }
-    if (bestLoot) {
-      this.collectLoot(bestLoot)
+    // fallen foes' gear — the nearest loot drop first (this world's drops only)
+    const loot = this.nearestLoot()
+    if (loot) {
+      this.collectLoot(loot)
       return
     }
     // the Vale's secrets — chests, shimmering walls, waiting keys
@@ -3189,16 +3241,7 @@ export class Game {
       return
     }
     // bloodstain
-    if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
-      this.player.souls += this.bloodstain.amount
-      this.spawnBurst(this.bloodstain.mesh.position, 0x59ff6a, 22, 3.5)
-      this.spawnText(`+${this.bloodstain.amount}`, '#59ff6a', this.player.pos.clone().add(new THREE.Vector3(0, 2.2, 0)))
-      this.engine.scene.remove(this.bloodstain.mesh)
-      this.bloodstain = null
-      this.sfx.souls()
-      this.emit(true)
-      return
-    }
+    if (this.recoverBloodstain()) return
     // estus shard dropped by the first boss
     if (this.estusShard) {
       const sp = this.estusShard.mesh.position
@@ -4525,9 +4568,12 @@ export class Game {
       new THREE.MeshBasicMaterial({ color: 0x2fbf4a, transparent: true, opacity: 0.35 })
     )
     g.add(core, glow)
-    g.position.set(this.player.pos.x, this.world.surfaceAt(this.player.pos.x, this.player.pos.z) + 0.45, this.player.pos.z)
+    /* underground-aware: a death in the crypt leaves its mark on the
+       crypt floor, not seven blocks up on the cathedral's
+       (supportAt from the body's own altitude, like the loot) */
+    g.position.set(this.player.pos.x, this.world.supportAt(this.player.pos.x, this.player.pos.z, this.player.pos.y + 0.06) + 0.45, this.player.pos.z)
     this.engine.scene.add(g)
-    this.bloodstain = { mesh: g, amount }
+    this.bloodstain = { mesh: g, amount, zone: this.zone }
     this.player.souls = 0
   }
 
@@ -4640,7 +4686,7 @@ export class Game {
   }
 
   private detectPrompt(): string | null {
-    // Manorloth — the castle has only two voices: its fire and its bird
+    // Manorloth — its fire, its bird, and the same dead men's gear
     if (this.zone === 'castle') {
       if (Math.hypot(this.player.pos.x - CASTLE_BONFIRE.x, this.player.pos.z - CASTLE_BONFIRE.z) < 2.6) {
         return 'استراحت در آتشگاه مانولث'
@@ -4649,7 +4695,10 @@ export class Game {
       if (rp && Math.hypot(this.player.pos.x - rp.x, this.player.pos.z - rp.z) < 3.4) {
         return 'سفر با رُخِ شب — درّهٔ اخگر'
       }
-      return null
+      // the castle's dead drop their gear too — walk close, press F
+      const lp = this.lootPrompt()
+      if (lp) return lp
+      return this.bloodstainPrompt()
     }
     // the sky road — the roc waits on its old stage east of the fortress
     if (this.castleOpen) {
@@ -4659,20 +4708,8 @@ export class Game {
       }
     }
     // nearest loot drop — the item's own name invites the pickup
-    let bestLoot: LootDrop | null = null
-    let bestD = 1.9
-    for (const l of this.loots) {
-      const d = Math.hypot(this.player.pos.x - l.group.position.x, this.player.pos.z - l.group.position.z)
-      if (d < bestD) {
-        bestD = d
-        bestLoot = l
-      }
-    }
-    if (bestLoot) {
-      const def = ITEMS[bestLoot.id]
-      const qty = bestLoot.n > 1 ? ` ×${bestLoot.n}` : ''
-      return def ? `برداشتن ${def.name}${qty}` : 'برداشتن غنیمت'
-    }
+    const lp = this.lootPrompt()
+    if (lp) return lp
     // the Vale's secrets — chests, shimmering walls, waiting keys
     const secret = this.nearestSecret()
     if (secret) return secret.prompt
@@ -4682,9 +4719,7 @@ export class Game {
         return (s.seen ? 'خواندن دوباره سنگ‌یاد — ' : 'خواندن سنگ‌یاد — ') + s.title
       }
     }
-    if (this.bloodstain && this.bloodstain.mesh.position.distanceTo(this.player.pos) < 1.7) {
-      return 'بازیابی سول‌ها'
-    }
+    if (this.bloodstainPrompt()) return 'بازیابی سول‌ها'
     if (this.estusShard) {
       const sp = this.estusShard.mesh.position
       if (Math.hypot(this.player.pos.x - sp.x, this.player.pos.z - sp.z) < 1.9) {
@@ -5378,7 +5413,7 @@ export class Game {
       const sy = this.camTarget.y + dirY * t
       const blocked =
         this.world.solidStruct(Math.round(sx), Math.round(sy - 0.4), Math.round(sz)) ||
-        this.world.surfaceAt(sx, sz) + 0.45 > sy
+        this.world.supportAt(sx, sz, sy) + 0.45 > sy
       if (blocked) {
         d = Math.max(1.15, t - dist / csteps)
         break
@@ -5387,8 +5422,9 @@ export class Game {
     const cx = this.camTarget.x + dirX * d
     const cz = this.camTarget.z + dirZ * d
     let cy = this.camTarget.y + dirY * d
-    // keep above ground
-    const ground = this.world.surfaceAt(cx, cz) + 0.45
+    // keep above ground — supportAt, so a walker in the crypt keeps the
+    // camera down in the crypt instead of pinned on the cathedral roof
+    const ground = this.world.supportAt(cx, cz, Math.max(cy, this.camTarget.y)) + 0.45
     if (cy < ground) cy = ground
     this.camPos.set(cx, cy, cz)
     this.engine.camera.position.lerp(this.camPos, Math.min(1, 11 * dt))

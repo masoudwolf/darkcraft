@@ -245,14 +245,17 @@ export class CastleZone implements GameWorld {
     const h = this.getH(bx, bz)
     let best = h + 1
     const top = Math.min(63, Math.floor(fromY + 0.06))
-    /* the scan stops at the terrain height — but a walker INSIDE the
-       crypt stands BELOW the plateau (h=13) in a carved room whose
-       floor is built block-work at y=6. For them the scan must reach
-       through the crust: the topmost built block under the feet is
-       the true floor. With no block found the old terrain fallback
-       stands (open ground outside the buildings). */
-    const bottom = top < h ? 0 : h
-    for (let y = top; y > bottom; y--)
+    /* ── FULL-DEPTH SCAN ──
+       The old scan stopped at the plateau crust, so every carved
+       opening (the crypt stair shaft, the stair tunnel, the crypt
+       itself) was bridged by an invisible floor at plateau height —
+       nobody could ever walk DOWN the hidden stairs. The truth: the
+       topmost built block under the feet is the floor wherever one
+       exists; the terrain height is only the fallback for open
+       ground that carries no masonry at all. sealVoids() guarantees
+       every built footprint owns a floor, so the deep scan can never
+       drop a walker through a legit floor. */
+    for (let y = top; y >= 0; y--)
       if (this.solid[this.cellIdx(bx, bz, y)] === 1) { best = y + 1; break }
     return best
   }
