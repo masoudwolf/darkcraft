@@ -10,6 +10,7 @@ import {
   lerp, resetPose, setFlash, setFlashWhite,
   type Humanoid,
 } from './models'
+import { createRoc, animRocPerch, animRocFlap, animRocGlide, animRocGrab, animRocCarry, animRocScreech } from './roc'
 
 /* ============================================================
    BESTIARY — the registry that powers the 3D viewer.
@@ -291,6 +292,25 @@ export const BESTIARY: BestiaryEntry[] = [
       { id: 'atk', label: 'تشه‌ی سنگین', dur: 0.55, fn: shot(0.55, (h, p) => animAttack(h, p, 'light0')) },
       { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
       { id: 'dead', label: 'مرگ', dur: 1.0, fn: shot(1.0, (h, p) => animDead(h, p)) },
+    ],
+  },
+
+  /* ---------------- THE NIGHT ROC ---------------- */
+  {
+    id: 'roc',
+    name: 'رُخِ شب',
+    sub: 'پرندهٔ افسانه‌ای — آخرین خدمتکار خدایان کهن، برندهٔ سفر به قلعه',
+    dot: '#7fa8d9',
+    scale: 2.6,
+    build: () => createRoc(2.6),
+    anims: [
+      { id: 'perch', label: 'نشستن بر صخره', fn: (h, t) => animRocPerch(h, t) },
+      { id: 'flap', label: 'بال‌زدن', fn: (h, t) => animRocFlap(h, t) },
+      { id: 'glide', label: 'سُرخوردن در باد', fn: (h, t) => animRocGlide(h, t) },
+      { id: 'grab', label: 'شیرجه و گرفتن', dur: 2.2, fn: shot(2.2, (h, p) => animRocGrab(h, p)) },
+      { id: 'carry', label: 'حمل مسافر', fn: (h, t) => animRocCarry(h, t) },
+      { id: 'screech', label: 'فریاد آسمان', dur: 1.7, fn: shot(1.7, (h, p) => animRocScreech(h, p)) },
+      { id: 'hit', label: 'ضربه خوردن', dur: 0.45, fn: shot(0.45, (h, p) => animHit(h, p)) },
     ],
   },
 

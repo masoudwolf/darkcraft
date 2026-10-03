@@ -33,7 +33,7 @@ export function makeTex(
   return tex
 }
 
-function fillNoise(
+export function fillNoise(
   ctx: CanvasRenderingContext2D,
   rng: Rng,
   s: number,
@@ -309,6 +309,107 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     }
   })
 
+  /* ---- V6 gothic castle — every block of Manorloth is dressed ---- */
+  // gothic ashlar — tall courses of blue-gray stone, fine mortar, the
+  // cathedral-castle's load-bearing voice (Notre-Dame's coursed stone)
+  const goBrickTex = makeTex(16, 60, (c, r, s) => {
+    fillNoise(c, r, s, [86, 88, 100], 9)
+    for (const y of [0, 5, 10, 15] as const) for (let i = 0; i < s; i++) px(c, i, y, 'rgb(58,60,70)')
+    for (const [row, off] of [[0, 0], [1, 8], [2, 4], [3, 12]] as const) {
+      const y = row * 5
+      for (let x = (off + 3) % s; x < s; x += 8)
+        for (let j = 0; j < 5; j++) px(c, x, (y + j) % s, 'rgb(62,64,74)')
+    }
+    for (let i = 0; i < 5; i++) {
+      const bx = Math.floor(r() * s), by = Math.floor(r() * (s - 3))
+      px(c, bx, by, 'rgb(104,106,118)', 3, 2)
+    }
+    for (let i = 0; i < 7; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(70,104,66)')
+  })
+  // pale limestone trim — arch bands, tracery, capitals (the bone-white
+  // dressings that carve gothic silhouettes out of dark walls)
+  const boneStoneTex = makeTex(16, 61, (c, r, s) => {
+    fillNoise(c, r, s, [196, 190, 172], 10)
+    for (let i = 0; i < s; i++) { px(c, i, 0, 'rgb(222,216,198)'); px(c, i, s - 1, 'rgb(160,154,138)') }
+    for (let i = 0; i < 4; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(170,164,148)', 2, 1)
+  })
+  // black marble — veined slab of the sanctuary floor
+  const marbleDarkTex = makeTex(16, 62, (c, r, s) => {
+    fillNoise(c, r, s, [38, 38, 44], 7)
+    for (let i = 0; i < 3; i++) {
+      let x = Math.floor(r() * s)
+      for (let y = 0; y < s; y++) {
+        px(c, (x + s) % s, y, 'rgb(96,96,108)')
+        x += r() < 0.5 ? 1 : r() < 0.2 ? -1 : 0
+      }
+    }
+    for (let i = 0; i < s; i++) { px(c, i, 0, 'rgb(58,58,66)'); px(c, 0, i, 'rgb(58,58,66)') }
+  })
+  // white marble — its checker pair, worn by a thousand processions
+  const marbleTex = makeTex(16, 63, (c, r, s) => {
+    fillNoise(c, r, s, [206, 204, 196], 7)
+    for (let i = 0; i < 2; i++) {
+      let x = Math.floor(r() * s)
+      for (let y = 0; y < s; y++) {
+        px(c, (x + s) % s, y, 'rgb(160,158,152)')
+        x += r() < 0.5 ? 1 : r() < 0.25 ? -1 : 0
+      }
+    }
+    for (let i = 0; i < s; i++) { px(c, i, 0, 'rgb(178,176,170)'); px(c, 0, i, 'rgb(178,176,170)') }
+  })
+  // slate shingle — steep gothic spires shedding the moonlight
+  const slateTex = makeTex(16, 64, (c, r, s) => {
+    fillNoise(c, r, s, [64, 70, 84], 8)
+    for (let y = 0; y < s; y += 4) {
+      for (let i = 0; i < s; i++) px(c, i, y, 'rgb(38,42,52)')
+      for (let i = 0; i < s; i += 2) px(c, (i + (y % 8 === 0 ? 0 : 1)) % s, (y + 2) % s, 'rgb(52,58,72)')
+    }
+    for (let i = 0; i < 6; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(30,34,44)', 2, 1)
+  })
+  // forged iron — portcullis bars, chandelier rings, crypt gates
+  const ironTex = makeTex(16, 65, (c, r, s) => {
+    fillNoise(c, r, s, [58, 56, 60], 7)
+    for (let i = 0; i < s; i++) { px(c, i, 3, 'rgb(40,38,42)'); px(c, i, 11, 'rgb(40,38,42)') }
+    for (const [rx, ry] of [[3, 3], [11, 3], [3, 11], [11, 11], [7, 7]] as const) px(c, rx, ry, 'rgb(96,94,100)', 2, 2)
+    for (let i = 0; i < 8; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(30,28,32)')
+  })
+  // stained glass — leaded panes; the moon burns each color into the floor
+  const stained = (base: [number, number, number], lead: string, lit: string, seed: number) =>
+    makeTex(16, seed, (c, r, s) => {
+      fillNoise(c, r, s, base, 12)
+      for (const y of [0, 7, 15] as const) for (let i = 0; i < s; i++) px(c, i, y, lead)
+      for (const x of [0, 7, 15] as const) for (let i = 0; i < s; i++) px(c, x, i, lead)
+      for (let i = 0; i < 6; i++) px(c, 1 + Math.floor(r() * 13), 1 + Math.floor(r() * 13), lit, 2, 2)
+    })
+  const stainedBlueTex = stained([52, 84, 148], 'rgb(28,34,52)', 'rgb(150,196,255)', 66)
+  const stainedRedTex = stained([148, 44, 48], 'rgb(52,18,22)', 'rgb(255,150,130)', 67)
+  const stainedVioletTex = stained([92, 56, 132], 'rgb(38,24,54)', 'rgb(196,150,255)', 68)
+  const stainedGoldTex = stained([188, 142, 52], 'rgb(84,58,18)', 'rgb(255,226,140)', 69)
+  const stainedMat = (t: THREE.CanvasTexture) =>
+    new THREE.MeshLambertMaterial({ map: t, transparent: true, opacity: 0.92 })
+  // processional carpet — crimson wool with a woven gold hem
+  const carpetTex = makeTex(16, 70, (c, r, s) => {
+    fillNoise(c, r, s, [128, 38, 34], 9)
+    for (const x of [0, 1, 14, 15] as const) for (let i = 0; i < s; i++) px(c, x, i, 'rgb(190,152,64)')
+    for (let i = 2; i < 14; i += 2) for (let j = 2; j < 14; j += 3) px(c, i, j, 'rgb(108,30,28)')
+  })
+  // grave bone — heaped remains of the crypt's tenants
+  const boneTex = makeTex(16, 71, (c, r, s) => {
+    fillNoise(c, r, s, [206, 198, 178], 10)
+    for (let i = 0; i < 7; i++) {
+      const x = Math.floor(r() * 12), y = Math.floor(r() * 14)
+      px(c, x, y, 'rgb(232,226,208)', 4, 2)
+      px(c, x + 1, y + 2, 'rgb(170,162,146)', 2, 1)
+    }
+  })
+  // cloud — the sea the castle sails above (soft, moon-caught)
+  const cloudTex = makeTex(16, 72, (c, r, s) => {
+    fillNoise(c, r, s, [216, 222, 234], 6)
+    for (let i = 0; i < 10; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(238,242,250)', 3, 2)
+    for (let i = 0; i < 8; i++) px(c, Math.floor(r() * s), Math.floor(r() * s), 'rgb(186,194,212)', 3, 1)
+  })
+  const cloud = new THREE.MeshLambertMaterial({ map: cloudTex, transparent: true, opacity: 0.94, emissive: 0x566078, emissiveIntensity: 0.85 })
+
   const grassSide = lam(grassSideTex)
   blockMats = {
     grass: [grassSide, grassSide, lam(grassTopTex), lam(dirtTex), grassSide, grassSide],
@@ -337,6 +438,20 @@ export function blockMaterials(): Record<string, THREE.Material | THREE.Material
     hay: lam(hayTex),
     woolred: lam(woolRedTex),
     shelf: lam(shelfTex),
+    /* ---- V6 gothic castle ---- */
+    gobrick: lam(goBrickTex),
+    bonestone: lam(boneStoneTex),
+    marble: lam(marbleTex),
+    marbledark: lam(marbleDarkTex),
+    slate: lam(slateTex),
+    iron: lam(ironTex),
+    stainedb: stainedMat(stainedBlueTex),
+    stainedr: stainedMat(stainedRedTex),
+    stainedv: stainedMat(stainedVioletTex),
+    stainedg: stainedMat(stainedGoldTex),
+    carpet: lam(carpetTex),
+    bone: lam(boneTex),
+    cloud,
   }
   return blockMats
 }
