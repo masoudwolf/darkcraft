@@ -4,7 +4,7 @@ import {
   resetPose, setOpacity, setFlash, type Humanoid,
 } from './models'
 import type { Input } from './engine'
-import type { WorldV3 } from './worldV3'
+import type { GameWorld } from './worldContract'
 import type { Game } from './game'
 import type { DmgType, RollTier } from './items'
 
@@ -41,7 +41,7 @@ export interface PlayerCtx {
   input: Input
   camYaw: number
   dt: number
-  world: WorldV3
+  world: GameWorld
   game: Game
 }
 
@@ -648,7 +648,7 @@ export class Player {
 
   /** would a stance with feet at `sup` in this column cram the body into
       an overhead built block (low roof, eave, lintel)? */
-  private headBumped(world: WorldV3, x: number, z: number, sup: number): boolean {
+  private headBumped(world: GameWorld, x: number, z: number, sup: number): boolean {
     const bx = Math.round(x)
     const bz = Math.round(z)
     const y0 = Math.floor(sup + 1.06)
@@ -665,7 +665,7 @@ export class Player {
       raised floor) retries the head check at the lower support — the
       body falls as it crosses the threshold, so a lintel can never
       seal the player inside a room they walked into */
-  private slide(world: WorldV3, dx: number, dz: number) {
+  private slide(world: GameWorld, dx: number, dz: number) {
     const r = 0.28
     if (dx !== 0) {
       const nx = this.pos.x + dx
@@ -711,7 +711,7 @@ export class Player {
     }
   }
 
-  private resolveGround(world: WorldV3, dt: number, sinking: boolean) {
+  private resolveGround(world: GameWorld, dt: number, sinking: boolean) {
     const ground = world.supportAt(this.pos.x, this.pos.z, this.pos.y)
     if (this.pos.y > ground + 0.02) {
       this.vy -= 24 * dt

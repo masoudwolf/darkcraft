@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { blockMaterials, mulberry32, createFogMaterial } from './textures'
+import type { GameWorld } from './worldContract'
 
 /* ==================================================================
    WORLD V4 — V3's clarity, grown into a living world.
@@ -195,7 +196,7 @@ const RAMPS: RampDef[] = [
   { x0: 47, z0: -39.5, x1: 41, z1: -43.5, h0: 6, h1: 2, w: 2.4 },
 ]
 
-export class WorldV3 {
+export class WorldV3 implements GameWorld {
   group = new THREE.Group()
   mats = blockMaterials()
   private heights = new Int8Array(V3_HALF * 2 * V3_HALF * 2)
@@ -222,6 +223,7 @@ export class WorldV3 {
     this.buildParish()
     this.buildWastes()
     this.buildFortress()
+    this.buildRocPlatform()
     this.buildPit()
     this.buildMeadow()
     this.buildFogGates()
@@ -1628,6 +1630,51 @@ export class WorldV3 {
     for (const px of [33, 36]) {
       this.col('log', px, -30, y0 + 1, y0 + 2)
       this.b('gold', px, y0 + 3, -30)
+    }
+  }
+
+  /* ================= THE ROC'S LANDING STAGE =================
+     An ancient landing platform on the pit's east rim, south of the
+     CINDER FORTRESS: the old gods' post where the Night Roc once set
+     its riders down. It stands empty through the whole story — claw
+     grooves burned into the stone, a beacon that never dies —
+     waiting for the ash-walker who fells three lords. Built a
+     man-height above the ash on piers so the roc's dive has room,
+     and the wings clear the corner watch-stones. The stair keeps
+     clear of the rockfall cells (x 44.5..48.5, z -41.5..-38.2). */
+  private buildRocPlatform() {
+    const d0 = 9 // deck block bottom → walk on 10 (ash around is h 6..7)
+    // the deck — a 7×7 slab of dark stone; two pairs of coal cells
+    // inlaid where the talons have gripped since the gods still flew
+    for (let x = 49; x <= 55; x++)
+      for (let z = -42; z <= -36; z++) {
+        const groove = (x === 51 || x === 53) && (z === -40 || z === -38)
+        this.b(groove ? 'coal' : 'darkstone', x, d0, z)
+      }
+    // piers — the load walks straight down into the ash
+    for (const [px, pz] of [[49, -42], [55, -42], [49, -36], [55, -36], [52, -42], [52, -36]] as const) {
+      this.col('cobble', px, pz, 7, d0 - 1)
+    }
+    // the stair — west approach, one-block steps (walk 7→8→9→deck 10)
+    for (const z of [-37, -36]) {
+      this.col('cobble', 47, z, 7, 7)
+      this.col('cobble', 48, z, 7, 8)
+    }
+    // the four corner watch-stones — low, so the wings pass over
+    for (const [sx, sz] of [[49, -42], [55, -42], [49, -36], [55, -36]] as const) {
+      this.col('darkstone', sx, sz, d0 + 1, d0 + 1)
+      this.b('coal', sx, d0 + 2, sz)
+    }
+    // the beacon — a brazier at the deck's north edge that never dies
+    this.col('darkstone', 52, -36, d0 + 1, d0 + 1)
+    this.b('glow', 52, d0 + 2, -36)
+    const beacon = new THREE.PointLight(0xff8a40, 1.6, 12, 1.7)
+    beacon.position.set(52.5, d0 + 3.2, -35.5)
+    this.group.add(beacon)
+    // banner poles at the south edge — the cloth burned away long ago
+    for (const px of [50, 54]) {
+      this.col('log', px, -42, d0 + 1, d0 + 2)
+      this.b('gold', px, d0 + 3, -42)
     }
   }
 

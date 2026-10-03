@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { blockMaterials, mulberry32 } from './textures'
+import type { GameWorld } from './worldContract'
 
 /* ==================================================================
    MANORLOTH — «قلعهٔ مانولث» — جهانِ دومِ دارک‌کرفت (پیش‌نمایش)
@@ -155,7 +156,7 @@ export const CRYPT_SHAFT = { x0: 9, x1: 10, z0: -7, z1: -6 }
 
 interface Vec3Lite { x: number; y: number; z: number }
 
-export class CastleZone {
+export class CastleZone implements GameWorld {
   group = new THREE.Group()
   /** roof + vault — hidden for the dollhouse (interior) view */
   ceil = new THREE.Group()
@@ -223,6 +224,25 @@ export class CastleZone {
     for (let y = Math.min(63, Math.floor(fromY + 0.06)); y > h; y--)
       if (this.solid[this.cellIdx(bx, bz, y)] === 1) { best = y + 1; break }
     return best
+  }
+
+  /* ---- GameWorld contract pieces the Vale has and the castle
+          never needs — kept as honest stubs so the Game can treat
+          both worlds through one interface ---- */
+  surfAt(): number {
+    return 0 // the whole island is dressed stone
+  }
+  isLava(): boolean {
+    return false // no molten ground above the cloud sea
+  }
+  markSolid(x: number, y: number, z: number, on: boolean) {
+    this.solid[this.cellIdx(Math.round(x), Math.round(z), Math.round(y))] = on ? 1 : 0
+  }
+  setFogGatesVisible() {
+    /* no fog gates in Manorloth — the sky is the only gate */
+  }
+  setPitOpen() {
+    /* no rockfall here */
   }
 
   /* ============ block helpers ============ */

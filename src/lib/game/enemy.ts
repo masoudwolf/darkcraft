@@ -16,8 +16,8 @@ import {
   V3_COAL_ARENA,
   V3_HALF,
   V3_LAVA_POOLS,
-  type WorldV3,
 } from './worldV3'
+import type { GameWorld } from './worldContract'
 import type { Game } from './game'
 import type { Player } from './player'
 
@@ -94,7 +94,7 @@ export class Enemy {
   private stunDur = 0.38
   /** progress of the last stagger beat (so dust FX fire exactly once) */
   protected staggerBeat = 0
-  world?: WorldV3
+  world?: GameWorld
   /** the owning game — gives mobs knowledge of closed gates & arena walls */
   game?: import('./game').Game
 

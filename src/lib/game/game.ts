@@ -18,6 +18,9 @@ import {
   V3_SURF_NAMES,
 } from './worldV3'
 import { blockMaterials } from './textures'
+import type { GameWorld } from './worldContract'
+import { CastleZone } from './castle'
+import { RocFlight, type RocTrack } from './rocFlight'
 import { LORE_STONES, MERCHANT_LINES } from './lore'
 import { Player } from './player'
 import { Enemy, BossEnemy, CreeperEnemy, SkeletonEnemy, WitherSkeletonEnemy, BlazeEnemy, BossFlameEnemy, CoalLordEnemy, setNgMult } from './enemy'
@@ -240,6 +243,8 @@ export interface SaveData {
   ngPlus?: number
   /** the ending this ember chose: 'lit' kindled the Coal, 'fade' let it sleep */
   ending?: 'lit' | 'fade'
+  /** the roc's sky road to Manorloth has opened (set when the ember answers) */
+  castleOpen?: boolean
 }
 
 const SAVE_KEY = 'minesouls_v1'
@@ -288,6 +293,11 @@ const REGIONS = [
 
 /** the forge-keeper — he never left the house the fire took */
 const SMITH = { x: -42, z: 30.6 }
+
+/** Manorloth's bonfire — on the roc's landing platform (castle deck y=14) */
+const CASTLE_BONFIRE = { x: 2.5, z: 56, y: 14 }
+/** the Vale's ancient roc landing stage — on the pit's east rim */
+const ROC_STAGE = { x: 52, z: -39, y: 10 }
 
 
 /* ================= PARTICLES / EFFECTS ================= */
@@ -1288,7 +1298,23 @@ class LootDrop {
 
 export class Game {
   engine: Engine
-  world: WorldV3
+  world: GameWorld
+  /** the two worlds — the Vale below, Manorloth above the cloud sea */
+  zone: 'vale' | 'castle' = 'vale'
+  private valeWorld!: WorldV3
+  private castleZone: CastleZone | null = null
+  /** the Night Roc and its journey director */
+  rocFlight!: RocFlight
+  /** the sky road opens once the ember has answered */
+  castleOpen = false
+  private valeHemi!: THREE.HemisphereLight
+  private valeFireSword!: THREE.Object3D
+  private merchantStall!: THREE.Group
+  /** Manorloth's own bonfire (visible only while in the castle) */
+  private castleFireSword!: THREE.Object3D
+  private castleBonfireLight!: THREE.PointLight
+  private castleBonfireFlame!: THREE.Points
+  private castleFlameSeeds!: Float32Array
   player: Player
   sfx = new Sfx()
   enemies: Enemy[] = []
@@ -1474,6 +1500,7 @@ export class Game {
 
     const hemi = new THREE.HemisphereLight(0xa8b2ce, 0x64513a, 1.4)
     scene.add(hemi)
+    this.valeHemi = hemi
     const sun = new THREE.DirectionalLight(0xffcf96, 1.55)
     sun.position.set(-52, 58, 22)
     sun.castShadow = true
@@ -1489,12 +1516,15 @@ export class Game {
     sun.shadow.bias = -0.0005
     scene.add(sun)
 
-    this.world = new WorldV3()
-    scene.add(this.world.group)
+    const vale = new WorldV3()
+    this.valeWorld = vale
+    this.world = vale
+    scene.add(vale.group)
 
     // bonfire decor: stuck sword + light + flame particles
     const bY = this.world.surfaceAt(BONFIRE.x, BONFIRE.z)
     const fireSword = createSword(1.5)
+    this.valeFireSword = fireSword
     fireSword.position.set(BONFIRE.x, bY + 0.1, BONFIRE.z)
     fireSword.rotation.z = 0.16
     fireSword.rotation.x = 0.1
@@ -1525,6 +1555,10 @@ export class Game {
       })
     )
     scene.add(this.bonfireFlame)
+
+    // the Night Roc — its director owns the sky road to Manorloth
+    this.rocFlight = new RocFlight(this)
+    this.buildCastleBonfire(scene)
 
     /* ---- the grey merchant: NPC + stall pitched behind the bonfire ---- */
     this.merchant = createMerchant()
@@ -1644,6 +1678,7 @@ export class Game {
     stall.position.set(MERCHANT.x + fwdX * 1.0, mY, MERCHANT.z + fwdZ * 1.0)
     stall.rotation.y = mYaw
     scene.add(stall)
+    this.merchantStall = stall
     // lantern rides on the stall frame so it always tracks the counter
     this.merchantLamp = new THREE.PointLight(0xffb050, 1.6, 7, 1.7)
     this.merchantLamp.position.set(1.08, 2.1, 0.72)
@@ -1905,6 +1940,159 @@ export class Game {
     // an ended story keeps the NG+ door open in the menu
     this.ended = true
     this.emit(true)
+  }
+
+  /* ========== THE SKY ROAD — the roc carries the ash between worlds ========== */
+
+  /** swap the entire world under the player's feet (the roc's doing) */
+  applyZone(zone: 'vale' | 'castle') {
+    const scene = this.engine.scene
+    if (zone === 'castle') {
+      if (!this.castleZone) this.castleZone = new CastleZone()
+      if (this.world === this.valeWorld) {
+        scene.remove(this.valeWorld.group)
+        scene.add(this.castleZone.group)
+        this.world = this.castleZone
+      }
+      this.castleZone.ceil.visible = true // real roofs in the real castle
+      this.sun.visible = false // the Vale's warm sun sleeps — Manorloth brings its own moon
+      this.valeHemi.visible = false
+      this.setValeEntitiesVisible(false)
+      this.castleFireSword.visible = true
+      this.castleBonfireLight.visible = true
+      this.castleBonfireFlame.visible = true
+    } else {
+      if (this.castleZone && this.world === this.castleZone) {
+        scene.remove(this.castleZone.group)
+        scene.add(this.valeWorld.group)
+        this.world = this.valeWorld
+      }
+      this.sun.visible = true
+      this.valeHemi.visible = true
+      this.setValeEntitiesVisible(true)
+      this.castleFireSword.visible = false
+      this.castleBonfireLight.visible = false
+      this.castleBonfireFlame.visible = false
+    }
+    this.zone = zone
+  }
+
+  /** the Vale's cast sleeps while the ash-walker walks Manorloth */
+  private setValeEntitiesVisible(v: boolean) {
+    for (const e of this.enemies) e.h.group.visible = v
+    for (const b of [this.boss, this.boss2, this.boss3]) b.h.group.visible = v
+    this.merchant.group.visible = v
+    this.merchantStall.visible = v
+    this.merchantLamp.visible = v
+    this.smith.group.visible = v
+    this.valeFireSword.visible = v
+    this.bonfireLight.visible = v
+    this.bonfireFlame.visible = v
+    for (const c of this.chests) c.group.visible = v
+    for (const p of this.pickups) {
+      p.mesh.visible = v
+      if (p.light) p.light.visible = v
+    }
+    for (const il of this.illusions) il.group.visible = v
+    for (const s of this.loreStones) {
+      s.group.visible = v
+      s.light.visible = v
+    }
+    for (const l of this.loots) l.group.visible = v
+    for (const o of this.orbs) o.mesh.visible = v
+    if (this.bloodstain) this.bloodstain.mesh.visible = v
+    if (this.estusShard) {
+      this.estusShard.mesh.visible = v
+      this.estusShard.light.visible = v
+    }
+    if (this.pyroItem) {
+      this.pyroItem.mesh.visible = v
+      this.pyroItem.light.visible = v
+    }
+    if (this.emberItem) {
+      this.emberItem.mesh.visible = v
+      this.emberItem.light.visible = v
+    }
+  }
+
+  /** Manorloth's bonfire — the same stuck-sword rite, above the clouds */
+  private buildCastleBonfire(scene: THREE.Scene) {
+    const y = CASTLE_BONFIRE.y
+    const sword = createSword(1.5)
+    this.castleFireSword = sword
+    sword.position.set(CASTLE_BONFIRE.x, y + 0.1, CASTLE_BONFIRE.z)
+    sword.rotation.z = 0.16
+    sword.rotation.x = 0.1
+    scene.add(sword)
+    this.castleBonfireLight = new THREE.PointLight(0xff8033, 3, 16, 1.6)
+    this.castleBonfireLight.position.set(CASTLE_BONFIRE.x, y + 1.4, CASTLE_BONFIRE.z)
+    scene.add(this.castleBonfireLight)
+    const n = 30
+    const pos = new Float32Array(n * 3)
+    const col = new Float32Array(n * 3)
+    this.castleFlameSeeds = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+      this.castleFlameSeeds[i] = Math.random()
+      col[i * 3] = 1
+      col[i * 3 + 1] = 0.45 + Math.random() * 0.4
+      col[i * 3 + 2] = 0.1
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    this.castleBonfireFlame = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        size: 0.16, vertexColors: true, transparent: true, opacity: 0.95,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+      })
+    )
+    scene.add(this.castleBonfireFlame)
+    this.castleFireSword.visible = false
+    this.castleBonfireLight.visible = false
+    this.castleBonfireFlame.visible = false
+  }
+
+  /** the ember has answered — now the sky keeps its old promise */
+  private afterEnding() {
+    this.castleOpen = true
+    this.save()
+    this.startRocJourney('toCastle')
+  }
+
+  /** the Night Roc's journey — wrapped in the engine's cinematic */
+  private startRocJourney(track: RocTrack) {
+    if (this.cine || this.rocFlight.flying) return
+    this.prompt = null // no interact hint over the flight
+    if (track === 'toCastle') {
+      // the ash-walker waits on the old landing stage
+      this.player.reset(new THREE.Vector3(ROC_STAGE.x, ROC_STAGE.y, ROC_STAGE.z), Math.PI)
+    }
+    this.player.lockedTarget = null
+    this.rocFlight.begin(track)
+    this.startCinematic(
+      [
+        {
+          dur: track === 'toCastle' ? 35.2 : 23.6,
+          pos: this.engine.camera.position.clone(),
+          look: this.engine.camera.position.clone().add(new THREE.Vector3(0, 0, -1)),
+        },
+      ],
+      {
+        actor: { cineRoarStep: (dt: number) => this.rocFlight.step(dt) },
+        onEnd: () => {
+          this.rocFlight.finish()
+          // a sane follow-cam hand-back behind the dismounted rider
+          this.camYaw = track === 'toCastle' ? 0 : Math.PI / 2
+          this.camPitch = 0.34
+          if (track === 'toCastle') {
+            this.showCard('قلعهٔ مانولث', 'سرایِ خدایانِ گم‌شده — بر فرازِ دریای ابر')
+          } else {
+            this.showCard('درّهٔ اخگر', 'خانهٔ آتش‌های کوچک و راه‌های خاکستری')
+          }
+        },
+      }
+    )
   }
 
   applySettings(patch: Partial<GameSettings>) {
@@ -2885,6 +3073,27 @@ export class Game {
   /** the F key — world interactions */
   interact() {
     if (this.phase !== 'playing') return
+    // Manorloth's fire and bird
+    if (this.zone === 'castle') {
+      if (Math.hypot(this.player.pos.x - CASTLE_BONFIRE.x, this.player.pos.z - CASTLE_BONFIRE.z) < 2.6) {
+        this.rest()
+        return
+      }
+      const rp = this.rocFlight.perchPos
+      if (rp && Math.hypot(this.player.pos.x - rp.x, this.player.pos.z - rp.z) < 3.4) {
+        this.startRocJourney('toVale')
+        return
+      }
+      return
+    }
+    // the roc on its old stage — fly to Manorloth
+    if (this.castleOpen) {
+      const rp = this.rocFlight.perchPos
+      if (rp && Math.hypot(this.player.pos.x - rp.x, this.player.pos.z - rp.z) < 3.4) {
+        this.startRocJourney('toCastle')
+        return
+      }
+    }
     // fallen foes' gear — the nearest loot drop first
     let bestLoot: LootDrop | null = null
     let bestD = 1.9
@@ -3056,6 +3265,7 @@ export class Game {
         cine: this.cineSeen,
         upgrades: this.upgrades,
         ngPlus: this.ng,
+        castleOpen: this.castleOpen,
       }
       localStorage.setItem(SAVE_KEY, JSON.stringify(data))
     } catch { /* ignore */ }
@@ -3068,6 +3278,9 @@ export class Game {
       const d = JSON.parse(raw) as SaveData
       // one-time cinematics already watched
       this.cineSeen = d.cine ?? {}
+      // the sky road, once opened, stays open — the roc returns to its stage
+      this.castleOpen = !!d.castleOpen
+      if (this.castleOpen && this.zone === 'vale') this.rocFlight.perch('vale')
       // re-apply levels from scratch for consistency
       const target = { vit: d.vit ?? 0, end: d.end ?? 0, str: d.str ?? 0 }
       this.player.vit = 0
@@ -3387,7 +3600,7 @@ export class Game {
             onStart: () => this.setCaption('و در نورِ تازه، خانه‌های دهکده یک بار دیگر شکل گرفتند.'),
           },
         ],
-        { title: 'پایانِ افروختن', sub: 'آتش باز برگشت — و تو، نخستین اخگرِ دوباره', onEnd: () => this.exitToMenu() }
+        { title: 'پایانِ افروختن', sub: 'آتش باز برگشت — و تو، نخستین اخگرِ دوباره', onEnd: () => this.afterEnding() }
       )
     } else {
       this.startCinematic(
@@ -3417,7 +3630,7 @@ export class Game {
             onStart: () => this.setCaption('شبِ سازندگان فرا رسید — اما هر شب، سهمِ خودش از سپیده را دارد.'),
           },
         ],
-        { title: 'پایانِ خاموشی', sub: 'عصرِ تاریک — و اخگری که راهش را جدا کرد', onEnd: () => this.exitToMenu() }
+        { title: 'پایانِ خاموشی', sub: 'عصرِ تاریک — و اخگری که راهش را جدا کرد', onEnd: () => this.afterEnding() }
       )
     }
     // the ending itself is written into the save — the choice stands forever
@@ -3436,6 +3649,8 @@ export class Game {
       const raw = localStorage.getItem(SAVE_KEY)
       const d: SaveData = raw ? JSON.parse(raw) : {}
       d.ngPlus = (d.ngPlus ?? 0) + 1
+      // a new cycle walks the old road — the sky road locks until the lords fall again
+      d.castleOpen = false
       localStorage.setItem(SAVE_KEY, JSON.stringify(d))
     } catch { /* ignore */ }
     window.location.reload()
@@ -3629,7 +3844,7 @@ export class Game {
     this.emit(false)
   }
 
-  private setCaption(text: string) {
+  setCaption(text: string | null) {
     if (!this.cine) return
     this.cine.caption = text
     this.emit(true)
@@ -4267,7 +4482,11 @@ export class Game {
     this.cine = null
     this.cineBlendT = 0
     this.beat1Pending = 0
-    const p = new THREE.Vector3(BONFIRE.x + 2.5, 0, BONFIRE.z + 2)
+    // the dead rise by the fire of the world they fell in
+    const p =
+      this.zone === 'castle'
+        ? new THREE.Vector3(CASTLE_BONFIRE.x - 1.8, 0, CASTLE_BONFIRE.z + 1.2)
+        : new THREE.Vector3(BONFIRE.x + 2.5, 0, BONFIRE.z + 2)
     p.y = this.world.surfaceAt(p.x, p.z)
     this.player.reset(p, Math.PI * 0.85)
     this.player.fullRestore()
@@ -4301,7 +4520,8 @@ export class Game {
 
   private clampPlayer() {
     const p = this.player.pos
-    const lim = V3_HALF - 1.6
+    // the Vale's edge is closer than Manorloth's (island grid ±64 vs vale ±56)
+    const lim = (this.zone === 'castle' ? 64 : V3_HALF) - 1.6
     p.x = Math.max(-lim, Math.min(lim, p.x))
     p.z = Math.max(-lim, Math.min(lim, p.z))
     // fog gate 1 seals only the lane between the gate pillars, and only
@@ -4362,6 +4582,24 @@ export class Game {
   }
 
   private detectPrompt(): string | null {
+    // Manorloth — the castle has only two voices: its fire and its bird
+    if (this.zone === 'castle') {
+      if (Math.hypot(this.player.pos.x - CASTLE_BONFIRE.x, this.player.pos.z - CASTLE_BONFIRE.z) < 2.6) {
+        return 'استراحت در آتشگاه مانولث'
+      }
+      const rp = this.rocFlight.perchPos
+      if (rp && Math.hypot(this.player.pos.x - rp.x, this.player.pos.z - rp.z) < 3.4) {
+        return 'سفر با رُخِ شب — درّهٔ اخگر'
+      }
+      return null
+    }
+    // the sky road — the roc waits on its old stage east of the fortress
+    if (this.castleOpen) {
+      const rp = this.rocFlight.perchPos
+      if (rp && Math.hypot(this.player.pos.x - rp.x, this.player.pos.z - rp.z) < 3.4) {
+        return 'سفر با رُخِ شب — قلعهٔ مانولث'
+      }
+    }
     // nearest loot drop — the item's own name invites the pickup
     let bestLoot: LootDrop | null = null
     let bestD = 1.9
@@ -4685,16 +4923,27 @@ export class Game {
       }
     }
 
-    // ash-wastes ambience — the sky reddens over the burned east
-    const inAsh = this.player.pos.x > 20.5
+    // ash-wastes ambience — the sky reddens over the burned east;
+    // Manorloth keeps its own moonlit blue
     const fog = this.engine.scene.fog as THREE.Fog
     const bg = this.engine.scene.background as THREE.Color
-    fog.color.lerp(this.tmpColor.set(inAsh ? 0x261016 : 0x101720), Math.min(1, 2.5 * dt))
-    bg.lerp(this.tmpColor.set(inAsh ? 0x1c0c10 : 0x101720), Math.min(1, 2.5 * dt))
+    if (this.zone === 'vale') {
+      const inAsh = this.player.pos.x > 20.5
+      fog.color.lerp(this.tmpColor.set(inAsh ? 0x261016 : 0x101720), Math.min(1, 2.5 * dt))
+      bg.lerp(this.tmpColor.set(inAsh ? 0x1c0c10 : 0x101720), Math.min(1, 2.5 * dt))
+    } else {
+      fog.color.lerp(this.tmpColor.set(0x161f33), Math.min(1, 2.5 * dt))
+      bg.lerp(this.tmpColor.set(0x101720), Math.min(1, 2.5 * dt))
+      fog.near += (40 - fog.near) * Math.min(1, 2.5 * dt)
+      fog.far += (240 - fog.far) * Math.min(1, 2.5 * dt)
+    }
 
-    // lava burns whoever stands in it
+    // lava burns whoever stands in it (the Vale only — Manorloth has no molten ground)
     this.lavaTick -= dt
-    if (this.lavaTick <= 0 && this.player.alive && this.fogPassT <= 0 && this.fogPass2T <= 0) {
+    if (
+      this.zone === 'vale' &&
+      this.lavaTick <= 0 && this.player.alive && this.fogPassT <= 0 && this.fogPass2T <= 0
+    ) {
       const px = Math.round(this.player.pos.x)
       const pz = Math.round(this.player.pos.z)
       let inLava = this.world.isLava(px, pz)
@@ -4754,21 +5003,26 @@ export class Game {
       return
     }
 
-    for (const e of this.enemies) e.update(dt, this.player, this)
-    // fallen lords keep updating so their cinematic death animation + FX can play out
-    this.boss.update(dt, this.player, this)
-    this.boss2.update(dt, this.player, this)
-    this.boss3.update(dt, this.player, this)
+    if (this.zone === 'vale') {
+      for (const e of this.enemies) e.update(dt, this.player, this)
+      // fallen lords keep updating so their cinematic death animation + FX can play out
+      this.boss.update(dt, this.player, this)
+      this.boss2.update(dt, this.player, this)
+      this.boss3.update(dt, this.player, this)
+    }
 
     this.world.update(dt)
     this.updateBonfire(dt)
-    this.updateSecrets(dt)
+    if (this.zone === 'vale') this.updateSecrets(dt)
     this.updateLoot(dt)
     this.updateEffects(dt)
     this.updateOrbs(dt)
 
     // the ending choice waits for the banner to fade
     this.maybeOpenEnding(dt)
+
+    // the perched roc breathes on its stone
+    this.rocFlight.idleTick(dt)
 
     // prompt
     this.prompt = this.fogPassT > 0 || this.fogPass2T > 0 ? null : this.detectPrompt()
@@ -4783,8 +5037,11 @@ export class Game {
       }
     }
 
-    // the Coal wakes when the unkindled steps onto his bed
-    if (!this.boss3Active && !this.boss3Fell && !this.cine && this.boss2Fell) {
+    // the Coal wakes when the unkindled steps onto his bed (the Vale only)
+    if (
+      this.zone === 'vale' &&
+      !this.boss3Active && !this.boss3Fell && !this.cine && this.boss2Fell
+    ) {
       const pp = this.player.pos
       const inPit =
         pp.x > 25 && pp.x < 44.5 && pp.z < -40.5 && pp.z > -53 &&
@@ -4798,8 +5055,10 @@ export class Game {
     const vig = Math.max(this.hurtFlash, lowHp ? 0.22 + Math.sin(this.time * 5) * 0.08 : 0)
     this.vignette.style.opacity = String(vig)
 
-    this.updateMerchant(dt)
-    this.updateSmith(dt)
+    if (this.zone === 'vale') {
+      this.updateMerchant(dt)
+      this.updateSmith(dt)
+    }
     this.updateCameraFollow(dt, false)
     this.updateReticle()
     this.drawMinimap()
@@ -4807,23 +5066,39 @@ export class Game {
   }
 
   private updateBonfire(dt: number) {
-    this.bonfireLight.intensity = 2.6 + Math.sin(this.time * 13) * 0.35 + Math.random() * 0.3
-    const pos = this.bonfireFlame.geometry.getAttribute('position') as THREE.BufferAttribute
-    const bY = this.world.surfaceAt(BONFIRE.x, BONFIRE.z)
+    if (this.zone === 'castle') {
+      this.animateFlame(
+        this.castleBonfireLight, this.castleBonfireFlame, this.castleFlameSeeds,
+        CASTLE_BONFIRE.x, CASTLE_BONFIRE.z, CASTLE_BONFIRE.y
+      )
+      return
+    }
+    this.animateFlame(
+      this.bonfireLight, this.bonfireFlame, this.flameSeeds,
+      BONFIRE.x, BONFIRE.z, this.world.surfaceAt(BONFIRE.x, BONFIRE.z)
+    )
+    void dt
+  }
+
+  /** the shared bonfire flame — light flicker + rising ember points */
+  private animateFlame(
+    light: THREE.PointLight,
+    flame: THREE.Points,
+    seeds: Float32Array,
+    x: number,
+    z: number,
+    baseY: number
+  ) {
+    light.intensity = 2.6 + Math.sin(this.time * 13) * 0.35 + Math.random() * 0.3
+    const pos = flame.geometry.getAttribute('position') as THREE.BufferAttribute
     for (let i = 0; i < pos.count; i++) {
-      const seed = this.flameSeeds[i]
+      const seed = seeds[i]
       const cycle = (this.time * (0.8 + seed * 0.7) + seed * 3) % 1
       const ang = seed * Math.PI * 2 + this.time * (0.5 + seed)
       const r = 0.28 * (1 - cycle)
-      pos.setXYZ(
-        i,
-        BONFIRE.x + Math.cos(ang) * r,
-        bY + 0.15 + cycle * 1.7,
-        BONFIRE.z + Math.sin(ang) * r
-      )
+      pos.setXYZ(i, x + Math.cos(ang) * r, baseY + 0.15 + cycle * 1.7, z + Math.sin(ang) * r)
     }
     pos.needsUpdate = true
-    void dt
   }
 
   /** the grey merchant: idle sway, greets nearby unkindled, lamp flicker */
